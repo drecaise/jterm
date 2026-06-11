@@ -4,16 +4,18 @@ import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 
 /**
- * A node in the saved-sessions tree: either a {@link FolderNode} (recursive container)
- * or an {@link SshSessionConfig} (a saved SSH connection). Persisted polymorphically via
- * a {@code "type"} discriminator.
+ * A node in the saved-sessions tree: a {@link FolderNode} (recursive container), an
+ * {@link SshSessionConfig} (a saved SSH connection), or a {@link WslDistroNode} (a WSL2
+ * distribution discovered at runtime). Folders and SSH sessions are persisted polymorphically
+ * via a {@code "type"} discriminator; {@code WslDistroNode}s live only in memory and so have no
+ * {@code @JsonSubTypes} entry — they are never written to {@code sessions.json}.
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
 @JsonSubTypes({
         @JsonSubTypes.Type(value = FolderNode.class, name = "folder"),
         @JsonSubTypes.Type(value = SshSessionConfig.class, name = "ssh")
 })
-public sealed interface SessionNode permits FolderNode, SshSessionConfig {
+public sealed interface SessionNode permits FolderNode, SshSessionConfig, WslDistroNode {
 
     String getName();
 

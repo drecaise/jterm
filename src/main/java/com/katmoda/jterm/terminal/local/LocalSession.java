@@ -24,12 +24,19 @@ public final class LocalSession implements TerminalSession {
     private final PtyTtyConnector connector;
     private final String title;
     private final TerminalProfile profile;
+    private final String iconId;
 
-    private LocalSession(PtyProcess process, String title, TerminalProfile profile) {
+    private LocalSession(PtyProcess process, String title, TerminalProfile profile, String iconId) {
         this.process = process;
         this.profile = profile;
         this.connector = new PtyTtyConnector(process, title, profile.charset());
         this.title = title;
+        this.iconId = iconId;
+    }
+
+    /** Icon-library id for this session's tab/pane, or {@code null} to use the default local glyph. */
+    public String iconId() {
+        return iconId;
     }
 
     /** Starts a login/interactive shell in {@code workingDir} (or the user's home if null). */
@@ -50,7 +57,27 @@ public final class LocalSession implements TerminalSession {
                 .start();
 
         String label = (workingDir != null) ? lastSegment(workingDir) : "local";
-        return new LocalSession(process, label, profile);
+        return new LocalSession(process, label, profile, null);
+    }
+
+    /** Starts a shell inside the given WSL2 distribution via {@code wsl.exe -d <distro>}. */
+    public static LocalSession startWsl(String distro) throws IOException {
+        TerminalProfile profile = AppSettings.get().defaultProfile();
+
+        Map<String, String> env = new HashMap<>(System.getenv());
+        env.put("TERM", profile.terminalType());
+        env.putIfAbsent("TERM_PROGRAM", "jterm");
+
+        // --cd ~ starts in the distro's Linux home; without it WSL inherits the (Windows)
+        // working directory and lands the user under /mnt/c/... instead.
+        PtyProcess process = new PtyProcessBuilder(new String[]{"wsl.exe", "-d", distro, "--cd", "~"})
+                .setEnvironment(env)
+                .setDirectory(System.getProperty("user.home", "."))
+                .setInitialColumns(80)
+                .setInitialRows(24)
+                .start();
+
+        return new LocalSession(process, distro, profile, "builtin/wsl");
     }
 
     private static String[] defaultShellCommand() {
