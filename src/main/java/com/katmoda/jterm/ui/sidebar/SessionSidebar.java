@@ -617,6 +617,65 @@ public final class SessionSidebar extends JPanel {
         }
     }
 
+    /** Moves the selected node one position earlier among its siblings. */
+    public void moveSelectedUp() {
+        moveSelected(-1);
+    }
+
+    /** Moves the selected node one position later among its siblings. */
+    public void moveSelectedDown() {
+        moveSelected(1);
+    }
+
+    /**
+     * Reorders the selected node within its parent folder by {@code delta} (-1 up, +1 down).
+     * Runtime WSL nodes and the root are not reorderable; out-of-range moves are no-ops.
+     */
+    private void moveSelected(int delta) {
+        SessionNode node = selectedNode();
+        if (node == null || node == store.root()
+                || node instanceof WslDistroNode || node == wslFolder) {
+            return;
+        }
+        FolderNode parent = parentFolderOf(node);
+        if (parent == null) {
+            return;
+        }
+        List<SessionNode> siblings = parent.getChildren();
+        int i = siblings.indexOf(node);
+        int j = i + delta;
+        if (i < 0 || j < 0 || j >= siblings.size()) {
+            return;
+        }
+        siblings.set(i, siblings.get(j));
+        siblings.set(j, node);
+        rebuild();
+        selectNode(node);
+    }
+
+    /** Selects (and scrolls to) the tree row backing {@code node}, after a rebuild. */
+    private void selectNode(SessionNode node) {
+        DefaultMutableTreeNode match = findTreeNode((DefaultMutableTreeNode) model.getRoot(), node);
+        if (match != null) {
+            TreePath path = new TreePath(match.getPath());
+            tree.setSelectionPath(path);
+            tree.scrollPathToVisible(path);
+        }
+    }
+
+    private DefaultMutableTreeNode findTreeNode(DefaultMutableTreeNode tn, SessionNode node) {
+        if (tn.getUserObject() == node) {
+            return tn;
+        }
+        for (int i = 0; i < tn.getChildCount(); i++) {
+            DefaultMutableTreeNode found = findTreeNode((DefaultMutableTreeNode) tn.getChildAt(i), node);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
     private void maybeShowMenu(MouseEvent e) {
         if (!e.isPopupTrigger()) {
             return;
@@ -688,6 +747,7 @@ public final class SessionSidebar extends JPanel {
             menu.add(edit);
             menu.add(duplicate);
             menu.add(delete);
+            addMoveItems(menu, ssh);
         } else {
             JMenuItem newFolder = new JMenuItem("New Folder…");
             newFolder.addActionListener(a -> newFolder());
@@ -711,10 +771,29 @@ public final class SessionSidebar extends JPanel {
                     menu.addSeparator();
                     menu.add(edit);
                     menu.add(delete);
+                    addMoveItems(menu, folder);
                 }
             }
         }
         return menu;
+    }
+
+    /** Appends "Move Up"/"Move Down" items, disabled at the ends of {@code node}'s sibling list. */
+    private void addMoveItems(JPopupMenu menu, SessionNode node) {
+        FolderNode parent = parentFolderOf(node);
+        int idx = (parent != null) ? parent.getChildren().indexOf(node) : -1;
+        int count = (parent != null) ? parent.getChildren().size() : 0;
+
+        JMenuItem up = new JMenuItem("Move Up");
+        up.setEnabled(idx > 0);
+        up.addActionListener(a -> moveSelectedUp());
+        JMenuItem down = new JMenuItem("Move Down");
+        down.setEnabled(idx >= 0 && idx < count - 1);
+        down.addActionListener(a -> moveSelectedDown());
+
+        menu.addSeparator();
+        menu.add(up);
+        menu.add(down);
     }
 
     private void newFolder() {

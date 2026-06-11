@@ -76,9 +76,10 @@ public final class MainWindow {
     private int tabCounter = 0;
     /** While true, the global terminal-shortcut dispatcher stands down so the editor can capture keys. */
     private boolean shortcutCaptureActive = false;
+    private SessionSidebar sidebar;
 
     public void show() {
-        SessionSidebar sidebar = new SessionSidebar(sessionStore, this::openSshSession,
+        sidebar = new SessionSidebar(sessionStore, this::openSshSession,
                 this::openLocalInCurrent, this::openWslSession);
 
         configureTabs();
@@ -501,6 +502,16 @@ public final class MainWindow {
             case TOGGLE_BROADCAST -> {
                 if (grid != null) {
                     grid.toggleBroadcast();
+                }
+            }
+            case MOVE_SESSION_UP -> {
+                if (sidebar != null) {
+                    sidebar.moveSelectedUp();
+                }
+            }
+            case MOVE_SESSION_DOWN -> {
+                if (sidebar != null) {
+                    sidebar.moveSelectedDown();
                 }
             }
         }
