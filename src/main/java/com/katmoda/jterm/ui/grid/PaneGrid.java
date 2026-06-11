@@ -8,6 +8,7 @@ import com.katmoda.jterm.dnd.LocalTransferable;
 import com.katmoda.jterm.dnd.SessionDropHandler;
 import com.katmoda.jterm.dnd.SessionTransferable;
 import com.katmoda.jterm.session.SshSessionConfig;
+import com.katmoda.jterm.terminal.SessionFactory;
 import com.katmoda.jterm.terminal.TerminalSession;
 import com.katmoda.jterm.terminal.local.LocalSession;
 import com.katmoda.jterm.ui.pane.TerminalPane;
@@ -48,6 +49,8 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     private static final int CONTENT_BORDER = 2;
 
     private final TerminalPane[][] panes = new TerminalPane[MAX][MAX];
+    /** How to recreate the session in each cell (for restart), parallel to {@link #panes}. */
+    private final SessionFactory[][] factories = new SessionFactory[MAX][MAX];
     private int rows = 1;
     private int cols = 1;
     private int activeRow = 0;
@@ -92,7 +95,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     public void splitColumn() {
         TerminalSession session = safeLocalSession();
         if (session != null) {
-            splitColumnAndOpen(session);
+            splitColumnAndOpen(session, localFactory());
         }
     }
 
@@ -100,47 +103,48 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     public void splitRow() {
         TerminalSession session = safeLocalSession();
         if (session != null) {
-            splitRowAndOpen(session);
+            splitRowAndOpen(session, localFactory());
         }
     }
 
     /** Add a column (if room) and open the given session in it; else replace the active cell. */
-    public void splitColumnAndOpen(TerminalSession session) {
+    public void splitColumnAndOpen(TerminalSession session, SessionFactory factory) {
         if (cols < MAX) {
             int newCol = cols;
             cols++;
-            placeAt(activeRow, newCol, session);
+            placeAt(activeRow, newCol, session, factory);
         } else {
-            replaceActiveContent(session);
+            replaceActiveContent(session, factory);
         }
         relayout();
         focusActive();
     }
 
     /** Add a row (if room) and open the given session in it; else replace the active cell. */
-    public void splitRowAndOpen(TerminalSession session) {
+    public void splitRowAndOpen(TerminalSession session, SessionFactory factory) {
         if (rows < MAX) {
             int newRow = rows;
             rows++;
-            placeAt(newRow, activeCol, session);
+            placeAt(newRow, activeCol, session, factory);
         } else {
-            replaceActiveContent(session);
+            replaceActiveContent(session, factory);
         }
         relayout();
         focusActive();
     }
 
     /** Drop/context-menu entry: split relative to a specific pane, then open the session. */
-    public void splitFromPaneAndOpen(TerminalPane target, DropRegion region, TerminalSession session) {
+    public void splitFromPaneAndOpen(TerminalPane target, DropRegion region,
+                                     TerminalSession session, SessionFactory factory) {
         int[] pos = locate(target);
         if (pos != null) {
             activeRow = pos[0];
             activeCol = pos[1];
         }
         if (region == DropRegion.COLUMN) {
-            splitColumnAndOpen(session);
+            splitColumnAndOpen(session, factory);
         } else {
-            splitRowAndOpen(session);
+            splitRowAndOpen(session, factory);
         }
     }
 
@@ -162,15 +166,15 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     public void openLocalInActive() {
         TerminalSession session = safeLocalSession();
         if (session != null) {
-            replaceActiveContent(session);
+            replaceActiveContent(session, localFactory());
             relayout();
             focusActive();
         }
     }
 
     /** Place an already-connected session in the active cell (replacing any existing pane). */
-    public void placeSessionInActive(TerminalSession session) {
-        replaceActiveContent(session);
+    public void placeSessionInActive(TerminalSession session, SessionFactory factory) {
+        replaceActiveContent(session, factory);
         relayout();
         focusActive();
     }
@@ -187,6 +191,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
                 if (panes[r][c] != null) {
                     panes[r][c].close();
                     panes[r][c] = null;
+                    factories[r][c] = null;
                 }
             }
         }
@@ -229,7 +234,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
 
     // ---- internals ----
 
-    private void replaceActiveContent(TerminalSession session) {
+    private void replaceActiveContent(TerminalSession session, SessionFactory factory) {
         if (session == null) {
             return;
         }
@@ -237,12 +242,13 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         if (existing != null) {
             existing.close();
         }
-        placeAt(activeRow, activeCol, session);
+        placeAt(activeRow, activeCol, session, factory);
     }
 
-    private void placeAt(int r, int c, TerminalSession session) {
+    private void placeAt(int r, int c, TerminalSession session, SessionFactory factory) {
         TerminalPane pane = makePane(session);
         panes[r][c] = pane;
+        factories[r][c] = factory;
         activeRow = r;
         activeCol = c;
         if (broadcastActive) {
@@ -253,8 +259,18 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     private void openLocalAt(int r, int c) {
         TerminalSession session = safeLocalSession();
         if (session != null) {
-            placeAt(r, c, session);
+            placeAt(r, c, session, localFactory());
         }
+    }
+
+    /** A factory that synchronously opens a fresh local shell (used for restart). */
+    private SessionFactory localFactory() {
+        return onReady -> {
+            TerminalSession session = safeLocalSession();
+            if (session != null) {
+                onReady.accept(session);
+            }
+        };
     }
 
     private TerminalSession safeLocalSession() {
@@ -311,7 +327,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
                         dtde.acceptDrop(DnDConstants.ACTION_COPY);
                         TerminalSession session = safeLocalSession();
                         if (session != null) {
-                            splitFromPaneAndOpen(pane, region, session);
+                            splitFromPaneAndOpen(pane, region, session, localFactory());
                         }
                         dtde.dropComplete(true);
                     } else {
@@ -329,17 +345,57 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         });
     }
 
+    /**
+     * The session backing a pane ended: keep the pane and show its "Session stopped" screen,
+     * wiring Return → remove the pane and R → restart a fresh session in the same cell.
+     */
     private void handleSessionEnd(TerminalPane pane) {
+        if (locate(pane) == null) {
+            return;
+        }
+        pane.showSessionStopped(() -> removePane(pane), () -> restartPane(pane));
+    }
+
+    /** Return/exit on the stopped screen: drop the pane and collapse the grid (old behavior). */
+    private void removePane(TerminalPane pane) {
         int[] pos = locate(pane);
         if (pos == null) {
             return;
         }
         pane.close();
         panes[pos[0]][pos[1]] = null;
+        factories[pos[0]][pos[1]] = null;
         collapseTrailingEmpty();
         relayout();
         moveActiveToExistingPane();
         focusActive();
+    }
+
+    /** R/restart on the stopped screen: reopen the same kind of session in the same cell. */
+    private void restartPane(TerminalPane pane) {
+        int[] pos = locate(pane);
+        if (pos == null) {
+            return;
+        }
+        SessionFactory factory = factories[pos[0]][pos[1]];
+        if (factory == null) {
+            return;
+        }
+        int r = pos[0];
+        int c = pos[1];
+        factory.create(session -> {
+            if (session == null || panes[r][c] != pane) {
+                // Pane was removed/replaced while connecting (async SSH); drop the late session.
+                if (session != null && panes[r][c] != pane) {
+                    session.close();
+                }
+                return;
+            }
+            pane.close();
+            placeAt(r, c, session, factory);
+            relayout();
+            focusActive();
+        });
     }
 
     private void setActiveByPane(TerminalPane pane) {
