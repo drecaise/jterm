@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- keycap base / rim -->
+  <rect x="40" y="46" width="176" height="166" rx="30" fill="#8C8C97"/>
+  <!-- keycap top face (inset on sides, shorter at bottom to reveal the rim) -->
+  <rect x="44" y="46" width="168" height="150" rx="26" fill="#2E2F3A"/>
+  <!-- subtle top highlight on the face -->
+  <rect x="52" y="52" width="152" height="6" rx="3" fill="#3A3B47"/>
+  <!-- cyan prompt: chevron + underscore, upper-left -->
+  <g fill="none" stroke="#57C7DD" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="84,98 107,114 84,130"/>
+    <line x1="116" y1="129" x2="144" y2="129"/>
+  </g>
+</svg>

@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=jterm
+GenericName=Terminal
+Comment=Tabbed, splittable terminal emulator with SSH sessions
+Exec=java -jar JTERM_JAR_PATH
+Icon=jterm
+Terminal=false
+Categories=System;TerminalEmulator;Utility;
+Keywords=terminal;shell;ssh;console;
+StartupNotify=true
+StartupWMClass=jterm
