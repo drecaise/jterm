@@ -8,20 +8,37 @@ import com.katmoda.jterm.terminal.TerminalSession;
 import com.katmoda.jterm.ui.theme.JTermSettingsProvider;
 import com.katmoda.jterm.ui.theme.ThemeColors;
 
+import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
+import javax.swing.Box;
 import javax.swing.JCheckBox;
+import javax.swing.JComponent;
+import javax.swing.JFileChooser;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JSeparator;
+import javax.swing.KeyStroke;
+import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.UIManager;
 import javax.swing.border.Border;
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
+import java.awt.Font;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
+import java.awt.event.ActionEvent;
 import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 
 /**
  * A single terminal cell: a JediTerm widget driving one {@link TerminalSession}.
@@ -34,6 +51,8 @@ public final class TerminalPane extends JPanel {
 
     private final TerminalSession session;
     private final JtermJediTermWidget widget;
+    private final TtyConnector inputConnector;
+    private final ThemeColors theme;
 
     private final JPanel broadcastBar;
     private final JCheckBox broadcastCheck;
@@ -43,10 +62,13 @@ public final class TerminalPane extends JPanel {
     private Runnable onFocus;
     private Runnable onSessionEnd;
     private Border savedBorder;
+    private boolean stopped;
 
     public TerminalPane(TerminalSession session, ThemeColors theme, TtyConnector connector) {
         super(new BorderLayout());
         this.session = session;
+        this.inputConnector = connector;
+        this.theme = theme;
         var profile = session.profile();
         this.widget = new JtermJediTermWidget(
                 new JTermSettingsProvider(theme, profile.fontFamily(), profile.fontSize()));
@@ -90,6 +112,14 @@ public final class TerminalPane extends JPanel {
         return session.connector();
     }
 
+    /**
+     * The connector terminal input is written through (the grid's broadcasting wrapper).
+     * Macros run on this so they respect broadcast mode, like manual typing.
+     */
+    public TtyConnector inputConnector() {
+        return inputConnector;
+    }
+
     public String title() {
         return session.title();
     }
@@ -100,6 +130,123 @@ public final class TerminalPane extends JPanel {
 
     public void setOnSessionEnd(Runnable onSessionEnd) {
         this.onSessionEnd = onSessionEnd;
+    }
+
+    // ---- session-stopped screen ----
+
+    /** Whether the stopped overlay is currently shown (the backend session has ended). */
+    public boolean isStopped() {
+        return stopped;
+    }
+
+    /**
+     * Replaces nothing — keeps the dead terminal's final output visible and appends a
+     * "Session stopped" panel below it (a separator plus key hints). {@code onExit} removes the
+     * pane and {@code onRestart} reopens a fresh session in its place; saving the output is
+     * handled internally. The panel grabs focus and binds Return / R / S.
+     */
+    public void showSessionStopped(Runnable onExit, Runnable onRestart) {
+        if (stopped) {
+            return;
+        }
+        stopped = true;
+        titleTimer.stop();
+        JPanel panel = buildStoppedPanel(onExit, onRestart);
+        add(panel, BorderLayout.SOUTH);
+        revalidate();
+        repaint();
+        SwingUtilities.invokeLater(panel::requestFocusInWindow);
+    }
+
+    private JPanel buildStoppedPanel(Runnable onExit, Runnable onRestart) {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setOpaque(true);
+        panel.setBackground(theme.background());
+        panel.add(new JSeparator(SwingConstants.HORIZONTAL), BorderLayout.NORTH);
+
+        Color red = ansi(1, theme.foreground());
+        Color cyan = ansi(6, theme.foreground());
+        Color magenta = ansi(5, theme.foreground());
+        Font mono = new Font(session.profile().fontFamily(), Font.PLAIN, session.profile().fontSize());
+
+        Box lines = Box.createVerticalBox();
+        lines.setOpaque(true);
+        lines.setBackground(theme.background());
+        lines.setBorder(BorderFactory.createEmptyBorder(6, 8, 8, 8));
+        lines.add(label("<html><b style='color:" + hex(red) + "'>Session stopped</b></html>", mono));
+        lines.add(label(hintLine("&lt;Return&gt;", cyan, " to exit tab"), mono));
+        lines.add(label(hintLine("R", magenta, " to restart session"), mono));
+        lines.add(label(hintLine("S", magenta, " to save terminal output to file"), mono));
+        panel.add(lines, BorderLayout.CENTER);
+
+        panel.setFocusable(true);
+        bindKey(panel, java.awt.event.KeyEvent.VK_ENTER, onExit);
+        bindKey(panel, java.awt.event.KeyEvent.VK_R, onRestart);
+        bindKey(panel, java.awt.event.KeyEvent.VK_S, this::saveOutput);
+        panel.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+                panel.requestFocusInWindow();
+            }
+        });
+        return panel;
+    }
+
+    /** One indented "    - Press <key> <suffix>" line with the key letter colored. */
+    private String hintLine(String key, Color keyColor, String suffix) {
+        return "<html>&nbsp;&nbsp;&nbsp;&nbsp;- Press <span style='color:" + hex(keyColor)
+                + "'>" + key + "</span>" + suffix + "</html>";
+    }
+
+    private JLabel label(String html, Font mono) {
+        JLabel label = new JLabel(html);
+        label.setFont(mono);
+        label.setForeground(theme.foreground());
+        label.setAlignmentX(Component.LEFT_ALIGNMENT);
+        return label;
+    }
+
+    private void bindKey(JComponent comp, int keyCode, Runnable action) {
+        String name = "stopped-" + keyCode;
+        comp.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke(keyCode, 0), name);
+        comp.getActionMap().put(name, new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                action.run();
+            }
+        });
+    }
+
+    /** Writes the terminal's full scrollback + screen to a user-chosen file. */
+    private void saveOutput() {
+        String text = TerminalBufferText.collect(widget);
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Save terminal output");
+        chooser.setSelectedFile(new File(safeBaseName(session.title()) + "-output.txt"));
+        if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+        try {
+            Files.writeString(chooser.getSelectedFile().toPath(), text, StandardCharsets.UTF_8);
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(this, "Could not save output:\n" + ex.getMessage(),
+                    "jterm", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private static String safeBaseName(String title) {
+        String base = (title == null || title.isBlank()) ? "terminal" : title;
+        return base.replaceAll("[^A-Za-z0-9._-]+", "_");
+    }
+
+    private Color ansi(int index, Color fallback) {
+        Color[] palette = theme.ansi();
+        return (palette != null && index < palette.length && palette[index] != null)
+                ? palette[index] : fallback;
+    }
+
+    private static String hex(Color c) {
+        return String.format("#%06X", c.getRGB() & 0xFFFFFF);
     }
 
     // ---- broadcast ----

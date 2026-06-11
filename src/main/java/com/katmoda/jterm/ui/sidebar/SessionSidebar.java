@@ -6,6 +6,8 @@ import com.formdev.flatlaf.extras.FlatSVGIcon;
 import com.katmoda.jterm.dnd.LocalTransferable;
 import com.katmoda.jterm.dnd.SessionTransferable;
 import com.katmoda.jterm.icon.IconLibrary;
+import com.katmoda.jterm.macro.Macro;
+import com.katmoda.jterm.macro.MacroLibrary;
 import com.katmoda.jterm.session.FolderNode;
 import com.katmoda.jterm.session.SessionExport;
 import com.katmoda.jterm.session.SessionNode;
@@ -821,6 +823,8 @@ public final class SessionSidebar extends JPanel {
             }
         }
 
+        JComboBox<MacroOption> macroCombo = buildMacroCombo(cfg.getMacroId());
+
         JPanel basic = formPanel();
         row(basic, "Name:", name);
         row(basic, "Folder:", folderCombo);
@@ -832,6 +836,7 @@ public final class SessionSidebar extends JPanel {
         row(basic, "Password auth:", passwordAuth);
         row(basic, "Password:", password);
         row(basic, "Save password:", savePassword);
+        row(basic, "Run macro on connect:", macroCombo);
 
         // ---- Terminal settings ---- (blank fields inherit the application defaults)
         TerminalSettingsForm terminalSettings = new TerminalSettingsForm(true,
@@ -860,10 +865,36 @@ public final class SessionSidebar extends JPanel {
         cfg.setFontFamily(terminalSettings.fontFamily());
         cfg.setFontSize(terminalSettings.fontSize());
         cfg.setTerminalCharset(terminalSettings.charset());
+        MacroOption macro = (MacroOption) macroCombo.getSelectedItem();
+        cfg.setMacroId(macro != null ? macro.id() : null);
         applyPasswordSettings(cfg, passwordAuth.isSelected(), savePassword.isSelected(), password.getPassword());
 
         FolderOption chosen = (FolderOption) folderCombo.getSelectedItem();
         return chosen != null ? chosen.folder() : initialFolder;
+    }
+
+    /** A macro choice in the "Run macro on connect" combo; a null {@code id} is "(none)". */
+    private record MacroOption(String id, String label) {
+        @Override
+        public String toString() {
+            return label;
+        }
+    }
+
+    /** Builds the run-on-connect combo: "(none)" plus every macro, preselecting {@code currentId}. */
+    private static JComboBox<MacroOption> buildMacroCombo(String currentId) {
+        JComboBox<MacroOption> combo = new JComboBox<>();
+        MacroOption none = new MacroOption(null, "(none)");
+        combo.addItem(none);
+        combo.setSelectedItem(none);
+        for (Macro macro : MacroLibrary.get().macros()) {
+            MacroOption option = new MacroOption(macro.getId(), macro.getName());
+            combo.addItem(option);
+            if (macro.getId().equals(currentId)) {
+                combo.setSelectedItem(option);
+            }
+        }
+        return combo;
     }
 
     private static JPanel formPanel() {

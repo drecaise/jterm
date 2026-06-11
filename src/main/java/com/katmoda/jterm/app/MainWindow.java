@@ -5,10 +5,14 @@ import com.katmoda.jterm.config.AppSettings;
 import com.katmoda.jterm.icon.IconLibrary;
 import com.katmoda.jterm.keymap.Keymap;
 import com.katmoda.jterm.keymap.TermAction;
+import com.katmoda.jterm.macro.Macro;
+import com.katmoda.jterm.macro.MacroLibrary;
+import com.katmoda.jterm.macro.MacroRunner;
 import com.katmoda.jterm.security.VaultException;
 import com.katmoda.jterm.security.VaultManager;
 import com.katmoda.jterm.session.SessionStore;
 import com.katmoda.jterm.session.SshSessionConfig;
+import com.katmoda.jterm.terminal.SessionFactory;
 import com.katmoda.jterm.terminal.TerminalProfile;
 import com.katmoda.jterm.terminal.TerminalSession;
 import com.katmoda.jterm.terminal.ssh.SshSession;
@@ -16,6 +20,7 @@ import com.katmoda.jterm.terminal.ssh.agent.AgentSupport;
 import com.katmoda.jterm.ui.AgentKeysDialog;
 import com.katmoda.jterm.ui.ErrorDialog;
 import com.katmoda.jterm.ui.grid.PaneGrid;
+import com.katmoda.jterm.ui.macro.MacroManagerDialog;
 import com.katmoda.jterm.ui.pane.TerminalPane;
 import com.katmoda.jterm.ui.preferences.PreferencesDialog;
 import com.katmoda.jterm.ui.preferences.ShortcutsDialog;
@@ -179,16 +184,22 @@ public final class MainWindow {
         tabs.setTitleAt(at, cfg.getName());
         tabs.setIconAt(at, iconFor(cfg.getIconId()));
         grid.initEmpty();
-        connectAsync(cfg, grid::placeSessionInActive);
+        connectAsync(cfg, session -> grid.placeSessionInActive(session, sshFactory(cfg)));
     }
 
     private PaneGrid newGrid() {
         PaneGrid grid = new PaneGrid();
         // A session dropped on a pane connects off-EDT, then splits + opens at that pane.
         grid.setDropHandler((target, region, cfg) ->
-                connectAsync(cfg, session -> grid.splitFromPaneAndOpen(target, region, session)));
+                connectAsync(cfg, session ->
+                        grid.splitFromPaneAndOpen(target, region, session, sshFactory(cfg))));
         grid.setOnActiveChanged(() -> decorateTab(grid));
         return grid;
+    }
+
+    /** A factory that reconnects this SSH session (async, with re-auth) for restart. */
+    private SessionFactory sshFactory(SshSessionConfig cfg) {
+        return onReady -> connectAsync(cfg, onReady::accept);
     }
 
     /** Inserts a grid as a new tab right before the "+" placeholder and selects it. */
@@ -297,10 +308,11 @@ public final class MainWindow {
             return;
         }
         connectAsync(cfg, session -> {
+            SessionFactory factory = sshFactory(cfg);
             switch (mode) {
-                case ACTIVE -> grid.placeSessionInActive(session);
-                case SPLIT_COLUMN -> grid.splitColumnAndOpen(session);
-                case SPLIT_ROW -> grid.splitRowAndOpen(session);
+                case ACTIVE -> grid.placeSessionInActive(session, factory);
+                case SPLIT_COLUMN -> grid.splitColumnAndOpen(session, factory);
+                case SPLIT_ROW -> grid.splitRowAndOpen(session, factory);
                 default -> { }
             }
         });
@@ -322,13 +334,23 @@ public final class MainWindow {
             @Override
             protected void done() {
                 try {
-                    onConnected.accept(get());
+                    SshSession session = get();
+                    onConnected.accept(session);
+                    runConnectMacro(cfg, session);
                 } catch (Exception e) {
                     Throwable cause = e.getCause() != null ? e.getCause() : e;
                     ErrorDialog.show(frame, "jterm", "SSH connection failed:", cause);
                 }
             }
         }.execute();
+    }
+
+    /** If the session has a configured run-on-connect macro, replay it into the new channel. */
+    private void runConnectMacro(SshSessionConfig cfg, SshSession session) {
+        Macro macro = MacroLibrary.get().byId(cfg.getMacroId());
+        if (macro != null) {
+            MacroRunner.run(macro, session.connector());
+        }
     }
 
     /**
@@ -369,6 +391,13 @@ public final class MainWindow {
             KeyStroke stroke = KeyStroke.getKeyStrokeForEvent(e);
             TermAction action = keymap.actionFor(stroke);
             if (action == null) {
+                // No keymap action: a macro may claim this stroke (conflicts are prevented at
+                // assignment time, so a stroke never maps to both an action and a macro).
+                Macro macro = MacroLibrary.get().byHotkey(stroke.toString());
+                if (macro != null) {
+                    runMacroOnActivePane(macro);
+                    return true;
+                }
                 return false;
             }
             handle(action);
@@ -443,8 +472,59 @@ public final class MainWindow {
         bar.add(file);
         bar.add(terminal);
         bar.add(ssh);
+        bar.add(buildMacrosMenu());
         bar.add(preferences);
         return bar;
+    }
+
+    /**
+     * The Macros menu: one item per saved macro (runs it on the active pane), then
+     * "Manage Macros…" to edit the collection. Rebuilt with the menu bar so it reflects the
+     * current {@link MacroLibrary}.
+     */
+    private JMenu buildMacrosMenu() {
+        JMenu macros = new JMenu("Macros");
+        List<Macro> all = MacroLibrary.get().macros();
+        for (Macro macro : all) {
+            JMenuItem item = new JMenuItem(macro.getName());
+            item.addActionListener(e -> runMacroOnActivePane(macro));
+            macros.add(item);
+        }
+        if (!all.isEmpty()) {
+            macros.addSeparator();
+        }
+        JMenuItem manage = new JMenuItem("Manage Macros…");
+        manage.addActionListener(e -> openMacroManager());
+        macros.add(manage);
+        return macros;
+    }
+
+    /** Runs a macro on the active pane's (broadcasting) connector, so broadcast is respected. */
+    private void runMacroOnActivePane(Macro macro) {
+        PaneGrid grid = currentGrid();
+        if (grid == null) {
+            return;
+        }
+        TerminalPane pane = grid.activePane();
+        if (pane != null) {
+            MacroRunner.run(macro, pane.inputConnector());
+        }
+    }
+
+    /**
+     * Opens the macro manager with the global shortcut dispatcher suppressed, so the hotkey
+     * recorder inside captures combinations instead of firing their actions (same mechanism as
+     * the keyboard-shortcuts editor). Rebuilds the menu afterwards to reflect any changes.
+     */
+    private void openMacroManager() {
+        shortcutCaptureActive = true;
+        try {
+            MacroManagerDialog.show(frame, keymap);
+        } finally {
+            shortcutCaptureActive = false;
+        }
+        frame.setJMenuBar(buildMenuBar());
+        frame.revalidate();
     }
 
     /**

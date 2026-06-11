@@ -26,6 +26,10 @@ public final class SshSessionConfig implements SessionNode {
     private String fontFamily = "";
     private int fontSize = 0;
 
+    // Id of a macro (in the MacroLibrary) to replay automatically right after connecting;
+    // null means "run nothing". A stale id (macro deleted) is simply ignored at connect time.
+    private String macroId;
+
     public SshSessionConfig() {
     }
 
@@ -140,5 +144,14 @@ public final class SshSessionConfig implements SessionNode {
 
     public void setFontSize(int fontSize) {
         this.fontSize = fontSize;
+    }
+
+    /** Id of the macro to run automatically right after connecting, or {@code null} for none. */
+    public String getMacroId() {
+        return macroId;
+    }
+
+    public void setMacroId(String macroId) {
+        this.macroId = (macroId != null && !macroId.isBlank()) ? macroId : null;
     }
 }
