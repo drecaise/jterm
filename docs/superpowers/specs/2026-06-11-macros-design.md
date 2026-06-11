@@ -99,7 +99,8 @@ steps     : List<MacroStep>
 - A new `Macros` `JMenu`, added to the menu bar after the `SSH` menu.
 - Rebuilt from `MacroLibrary.get().macros()`: one `JMenuItem` per macro (label = name) whose
   action runs the macro on the active pane. Then a separator and **Manage Macros…** which
-  opens `MacroManagerDialog`.
+  opens `MacroManagerDialog` via the `MainWindow` method that suppresses the global shortcut
+  dispatcher and passes the `Keymap` (see *Per-macro hotkey*).
 - Running on the active pane writes to that pane's **broadcasting** connector
   (`TerminalPane.inputConnector()`), so when broadcast mode is on the macro fans out to the
   broadcast panes — consistent with manual typing.
@@ -108,13 +109,25 @@ steps     : List<MacroStep>
 
 ### Per-macro hotkey
 
-- Hotkeys are chosen from a **fixed dropdown** in the editor: `<none>`, `Ctrl+Shift+F1` …
-  `Ctrl+Shift+F12`. A curated `MacroHotkeys` list pairs each label with a `KeyStroke`; the
-  stored value is `KeyStroke.toString()`. No key-capture, so it never clashes with the
-  shortcut editor's capture mode.
+- Each macro may be assigned an **arbitrary** hotkey, captured the same way the keyboard-
+  shortcuts editor does it (see [ShortcutsDialog](../../../src/main/java/com/katmoda/jterm/ui/preferences/ShortcutsDialog.java)):
+  the editor has a "Set hotkey" button that records the next key combination via a temporary
+  `KeyEventDispatcher` and `KeyStroke.getKeyStrokeForEvent(e)`, plus a "Clear" button for
+  none. The stored value is `KeyStroke.toString()`.
+- **Conflict validation** — a captured stroke is rejected (warning dialog, prior value kept)
+  if it is already in use by:
+  - any keymap action (`keymap.actionFor(stroke) != null`), or
+  - any *other* macro's hotkey (`MacroLibrary` scan, excluding the macro being edited).
+  This requires the editor to receive the `Keymap` and the current macro list.
+- **Capture suppression** — while recording, `MainWindow`'s global shortcut dispatcher must
+  stand down (otherwise it consumes the combo before the recorder sees it), exactly as the
+  shortcut editor relies on `shortcutCaptureActive`. So the Macros menu opens the manager
+  through a `MainWindow` method that sets `shortcutCaptureActive = true` for the manager's
+  (modal) lifetime, passing the `Keymap` in.
 - `MainWindow.installShortcutDispatcher()` is extended: after the existing keymap-action
   match fails, it asks `MacroLibrary.get().byHotkey(strokeString)`. If a macro matches, run
-  it on the active pane and return `true` (consume).
+  it on the active pane and return `true` (consume). Conflict validation guarantees a stroke
+  never maps to both a keymap action and a macro, so keymap-first ordering is unambiguous.
 
 ### Run-on-connect (saved SSH sessions)
 
@@ -129,17 +142,22 @@ steps     : List<MacroStep>
 
 ### `MacroManagerDialog`
 
-- Modal dialog: a `JList<Macro>` of all macros + buttons **New**, **Edit**, **Delete**.
-- New → create a `Macro` with a default name, open `MacroEditDialog`; on OK add + save.
+- Modal dialog constructed with the `Keymap`: a `JList<Macro>` of all macros + buttons
+  **New**, **Edit**, **Delete**.
+- New → create a `Macro` with a default name, open `MacroEditDialog` (passing the keymap and
+  the other macros); on OK add + save.
 - Edit → open `MacroEditDialog` on a copy; on OK replace + save.
 - Delete → confirm, remove + save.
 
 ### `MacroEditDialog` (matches screenshot 1)
 
+- Constructed with the working `Macro`, the `Keymap`, and the list of other macros (for
+  conflict checks).
 - Fields: **Name** text field; the **step-line list** (`JList<MacroStep>` rendering
   `displayLine()`); buttons **Edit selected line**, **Insert new line above**,
-  **Insert new line below**, **Delete line**; a **hotkey** `JComboBox` (`MacroHotkeys`);
-  OK / Cancel.
+  **Insert new line below**, **Delete line**; a **hotkey** row — a button showing the current
+  binding (or "Set hotkey") that records the next combo, plus a **Clear** button — validated
+  against the keymap and other macros as described under *Per-macro hotkey*; OK / Cancel.
 - The four line buttons open `MacroLineDialog`; insert-above/below place the new step
   relative to the selection (append if none selected).
 - OK mutates the working `Macro` (name, steps, hotkey) and returns it.
