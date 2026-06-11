@@ -58,6 +58,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     private boolean broadcastActive = false;
     private SessionDropHandler dropHandler;
     private Runnable onActiveChanged;
+    private Runnable onEmpty;
 
     public PaneGrid() {
         super(new GridBagLayout());
@@ -70,6 +71,12 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     /** Fired whenever the active pane or its content changes, so the owning tab can re-decorate. */
     public void setOnActiveChanged(Runnable onActiveChanged) {
         this.onActiveChanged = onActiveChanged;
+    }
+
+    /** Fired when the last pane is removed (e.g. "exit" on the stopped screen), so the owning
+     *  tab can close itself instead of leaving an empty grid. */
+    public void setOnEmpty(Runnable onEmpty) {
+        this.onEmpty = onEmpty;
     }
 
     /** The currently focused pane, or {@code null} if the active cell is empty. */
@@ -365,10 +372,26 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         pane.close();
         panes[pos[0]][pos[1]] = null;
         factories[pos[0]][pos[1]] = null;
+        if (!hasAnyPane() && onEmpty != null) {
+            // Last pane gone (single-session tab): let the owner close the whole tab.
+            onEmpty.run();
+            return;
+        }
         collapseTrailingEmpty();
         relayout();
         moveActiveToExistingPane();
         focusActive();
+    }
+
+    private boolean hasAnyPane() {
+        for (int r = 0; r < rows; r++) {
+            for (int c = 0; c < cols; c++) {
+                if (panes[r][c] != null) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /** R/restart on the stopped screen: reopen the same kind of session in the same cell. */

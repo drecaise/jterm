@@ -13,6 +13,8 @@ import com.katmoda.jterm.session.SessionExport;
 import com.katmoda.jterm.session.SessionNode;
 import com.katmoda.jterm.session.SessionStore;
 import com.katmoda.jterm.session.SshSessionConfig;
+import com.katmoda.jterm.session.WslDistroNode;
+import com.katmoda.jterm.terminal.wsl.WslDistributions;
 import com.katmoda.jterm.security.CredentialVault;
 import com.katmoda.jterm.security.VaultException;
 import com.katmoda.jterm.security.VaultManager;
@@ -40,6 +42,7 @@ import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
 import javax.swing.JToolBar;
 import javax.swing.JTree;
+import javax.swing.SwingWorker;
 import javax.swing.TransferHandler;
 import javax.swing.event.TreeExpansionEvent;
 import javax.swing.event.TreeExpansionListener;
@@ -83,24 +86,35 @@ public final class SessionSidebar extends JPanel {
 
     private final BiConsumer<SshSessionConfig, OpenMode> onOpenSsh;
     private final Runnable onOpenLocal;
+    private final BiConsumer<String, OpenMode> onOpenWsl;
+
+    /**
+     * The pinned, non-editable "WSL" folder of runtime-detected WSL2 distributions, or
+     * {@code null} off Windows. It lives only in memory — never added to {@link SessionStore} —
+     * so it's never serialized and never offered the saved-session edit actions.
+     */
+    private final FolderNode wslFolder;
 
     /** Guards the expand/collapse listener while we programmatically restore saved state. */
     private boolean syncingExpansion;
 
     public SessionSidebar(SessionStore store,
                           BiConsumer<SshSessionConfig, OpenMode> onOpenSsh,
-                          Runnable onOpenLocal) {
+                          Runnable onOpenLocal,
+                          BiConsumer<String, OpenMode> onOpenWsl) {
         super(new BorderLayout());
         this.store = store;
         this.onOpenSsh = onOpenSsh;
         this.onOpenLocal = onOpenLocal;
+        this.onOpenWsl = onOpenWsl;
+        this.wslFolder = isWindows() ? new FolderNode("WSL") : null;
 
-        this.model = new DefaultTreeModel(buildNode(store.root()));
+        this.model = new DefaultTreeModel(buildRoot());
         this.tree = new JTree(model);
         tree.setRootVisible(true);
         tree.getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
         tree.setShowsRootHandles(true);
-        tree.setCellRenderer(new SessionNodeRenderer());
+        tree.setCellRenderer(new SessionNodeRenderer(wslFolder));
 
         // Drag a saved SSH session out onto a pane, or onto another folder to move it.
         tree.setDragEnabled(true);
@@ -176,6 +190,10 @@ public final class SessionSidebar extends JPanel {
         setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
 
         applyExpansionState();
+
+        if (wslFolder != null) {
+            refreshWsl(); // populate the WSL folder on startup (off the EDT)
+        }
     }
 
     private JComponent buildToolbar() {
@@ -238,10 +256,52 @@ public final class SessionSidebar extends JPanel {
         return tn;
     }
 
+    /** The saved tree, with the runtime WSL folder appended at the end when it has distros. */
+    private DefaultMutableTreeNode buildRoot() {
+        DefaultMutableTreeNode root = buildNode(store.root());
+        if (wslFolder != null && !wslFolder.getChildren().isEmpty()) {
+            root.add(buildNode(wslFolder));
+        }
+        return root;
+    }
+
     private void rebuild() {
-        model.setRoot(buildNode(store.root()));
+        model.setRoot(buildRoot());
         applyExpansionState();
         store.save();
+    }
+
+    /** Re-detects WSL2 distributions off the EDT and rebuilds the WSL folder when done. */
+    private void refreshWsl() {
+        if (wslFolder == null) {
+            return;
+        }
+        new SwingWorker<List<String>, Void>() {
+            @Override
+            protected List<String> doInBackground() {
+                return WslDistributions.listVersion2();
+            }
+
+            @Override
+            protected void done() {
+                List<String> distros;
+                try {
+                    distros = get();
+                } catch (Exception e) {
+                    return;
+                }
+                wslFolder.getChildren().clear();
+                for (String distro : distros) {
+                    wslFolder.getChildren().add(new WslDistroNode(distro));
+                }
+                rebuild();
+            }
+        }.execute();
+    }
+
+    private static boolean isWindows() {
+        return System.getProperty("os.name", "")
+                .toLowerCase(java.util.Locale.ROOT).contains("win");
     }
 
     // ---- folder expansion state (remembered across restarts) ----
@@ -310,7 +370,7 @@ public final class SessionSidebar extends JPanel {
         }
         Object uo = tn.getUserObject();
         if (uo instanceof FolderNode folder) {
-            return folder;
+            return folder == wslFolder ? null : folder; // can't drop into the runtime WSL folder
         }
         if (uo instanceof SshSessionConfig ssh) {
             return parentFolderOf(ssh); // dropping onto a session targets its containing folder
@@ -552,6 +612,8 @@ public final class SessionSidebar extends JPanel {
         SessionNode node = selectedNode();
         if (node instanceof SshSessionConfig ssh) {
             onOpenSsh.accept(ssh, OpenMode.NEW_TAB);
+        } else if (node instanceof WslDistroNode wsl) {
+            onOpenWsl.accept(wsl.distro(), OpenMode.NEW_TAB);
         }
     }
 
@@ -569,6 +631,34 @@ public final class SessionSidebar extends JPanel {
     private JPopupMenu buildPopup() {
         JPopupMenu menu = new JPopupMenu();
         SessionNode node = selectedNode();
+
+        if (node instanceof WslDistroNode wsl) {
+            JMenuItem open = new JMenuItem("Open");
+            open.addActionListener(a -> onOpenWsl.accept(wsl.distro(), OpenMode.NEW_TAB));
+            JMenuItem openActive = new JMenuItem("Open in Active Pane");
+            openActive.addActionListener(a -> onOpenWsl.accept(wsl.distro(), OpenMode.ACTIVE));
+            JMenu split = new JMenu("Open in Split Pane");
+            JMenuItem right = new JMenuItem("Split Right (new column)");
+            right.addActionListener(a -> onOpenWsl.accept(wsl.distro(), OpenMode.SPLIT_COLUMN));
+            JMenuItem below = new JMenuItem("Split Below (new row)");
+            below.addActionListener(a -> onOpenWsl.accept(wsl.distro(), OpenMode.SPLIT_ROW));
+            split.add(right);
+            split.add(below);
+            JMenuItem refresh = new JMenuItem("Refresh WSL");
+            refresh.addActionListener(a -> refreshWsl());
+            menu.add(open);
+            menu.add(openActive);
+            menu.add(split);
+            menu.addSeparator();
+            menu.add(refresh);
+            return menu;
+        }
+        if (wslFolder != null && node == wslFolder) {
+            JMenuItem refresh = new JMenuItem("Refresh WSL");
+            refresh.addActionListener(a -> refreshWsl());
+            menu.add(refresh);
+            return menu;
+        }
 
         if (node instanceof SshSessionConfig ssh) {
             JMenuItem open = new JMenuItem("Open");

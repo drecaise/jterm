@@ -13,6 +13,7 @@ import com.katmoda.jterm.security.VaultManager;
 import com.katmoda.jterm.session.SessionStore;
 import com.katmoda.jterm.session.SshSessionConfig;
 import com.katmoda.jterm.terminal.SessionFactory;
+import com.katmoda.jterm.terminal.local.LocalSession;
 import com.katmoda.jterm.terminal.TerminalProfile;
 import com.katmoda.jterm.terminal.TerminalSession;
 import com.katmoda.jterm.terminal.ssh.SshSession;
@@ -77,7 +78,8 @@ public final class MainWindow {
     private boolean shortcutCaptureActive = false;
 
     public void show() {
-        SessionSidebar sidebar = new SessionSidebar(sessionStore, this::openSshSession, this::openLocalInCurrent);
+        SessionSidebar sidebar = new SessionSidebar(sessionStore, this::openSshSession,
+                this::openLocalInCurrent, this::openWslSession);
 
         configureTabs();
 
@@ -194,7 +196,17 @@ public final class MainWindow {
                 connectAsync(cfg, session ->
                         grid.splitFromPaneAndOpen(target, region, session, sshFactory(cfg))));
         grid.setOnActiveChanged(() -> decorateTab(grid));
+        // When the last pane is closed from the stopped screen, close the tab too.
+        grid.setOnEmpty(() -> closeTabForGrid(grid));
         return grid;
+    }
+
+    /** Closes the tab hosting {@code grid}, if it's still present. */
+    private void closeTabForGrid(PaneGrid grid) {
+        int index = tabs.indexOfComponent(grid);
+        if (index >= 0) {
+            closeTabAt(index);
+        }
     }
 
     /** A factory that reconnects this SSH session (async, with re-auth) for restart. */
@@ -273,7 +285,10 @@ public final class MainWindow {
             tabs.setIconAt(idx, iconFor(ssh.iconId()));
             tabs.setTitleAt(idx, ssh.title());
         } else {
-            tabs.setIconAt(idx, terminalTabIcon());
+            Icon icon = (session instanceof LocalSession local && local.iconId() != null)
+                    ? IconLibrary.get().icon(local.iconId(), 16)
+                    : terminalTabIcon();
+            tabs.setIconAt(idx, icon);
             Object base = grid.getClientProperty("baseTitle");
             tabs.setTitleAt(idx, base != null ? base.toString() : session.title());
         }
@@ -316,6 +331,62 @@ public final class MainWindow {
                 default -> { }
             }
         });
+    }
+
+    /** Opens a detected WSL2 distribution (synchronously — it's a local pty, no network connect). */
+    private void openWslSession(String distro, OpenMode mode) {
+        if (mode == OpenMode.NEW_TAB) {
+            addWslTab(distro);
+            return;
+        }
+        PaneGrid grid = currentGrid();
+        if (grid == null) {
+            return;
+        }
+        LocalSession session = safeWslSession(distro);
+        if (session == null) {
+            return;
+        }
+        SessionFactory factory = wslFactory(distro);
+        switch (mode) {
+            case ACTIVE -> grid.placeSessionInActive(session, factory);
+            case SPLIT_COLUMN -> grid.splitColumnAndOpen(session, factory);
+            case SPLIT_ROW -> grid.splitRowAndOpen(session, factory);
+            default -> { }
+        }
+    }
+
+    /** Opens a WSL2 distribution in a fresh tab titled with the distro name. */
+    private void addWslTab(String distro) {
+        LocalSession session = safeWslSession(distro);
+        if (session == null) {
+            return;
+        }
+        PaneGrid grid = newGrid();
+        insertGrid(grid);
+        grid.putClientProperty("baseTitle", distro); // a WSL session is local, so decorateTab uses this
+        grid.initEmpty();
+        grid.placeSessionInActive(session, wslFactory(distro));
+    }
+
+    /** Starts a WSL session, surfacing any failure as a dialog (mirrors the local-shell path). */
+    private LocalSession safeWslSession(String distro) {
+        try {
+            return LocalSession.startWsl(distro);
+        } catch (Exception e) {
+            ErrorDialog.show(frame, "jterm", "Failed to start WSL distribution \"" + distro + "\":", e);
+            return null;
+        }
+    }
+
+    /** A factory that restarts this WSL session (e.g. from the session-stopped screen). */
+    private SessionFactory wslFactory(String distro) {
+        return onReady -> {
+            LocalSession session = safeWslSession(distro);
+            if (session != null) {
+                onReady.accept(session);
+            }
+        };
     }
 
     /** Connect an SSH session off the EDT, then hand the live session to {@code onConnected} on the EDT. */
