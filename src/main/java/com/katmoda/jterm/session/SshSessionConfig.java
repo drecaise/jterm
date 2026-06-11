@@ -19,9 +19,10 @@ public final class SshSessionConfig implements SessionNode {
     private boolean passwordAuth = false;
     private boolean savePassword = false;
 
-    // Terminal settings. Empty/zero means "use the application default".
-    private String terminalType = "xterm-256color";
-    private String terminalCharset = "UTF-8";
+    // Terminal settings. Empty/zero means "use the application default" (configured in
+    // Preferences ▸ Terminal Settings); new sessions inherit all of them by default.
+    private String terminalType = "";
+    private String terminalCharset = "";
     private String fontFamily = "";
     private int fontSize = 0;
 

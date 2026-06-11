@@ -1,13 +1,80 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 176 166"
+   width="176"
+   height="166"
+   version="1.1"
+   id="svg3"
+   sodipodi:docname="app.svg"
+   inkscape:version="1.3 (0e150ed6c4, 2023-07-21)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs3" />
+  <sodipodi:namedview
+     id="namedview3"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="4.4414062"
+     inkscape:cx="87.922603"
+     inkscape:cy="82.068602"
+     inkscape:window-width="2560"
+     inkscape:window-height="1351"
+     inkscape:window-x="2551"
+     inkscape:window-y="-9"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg3" />
   <!-- keycap base / rim -->
-  <rect x="40" y="46" width="176" height="166" rx="30" fill="#8C8C97"/>
+  <rect
+     x="0"
+     y="0"
+     width="176"
+     height="166"
+     rx="30"
+     fill="#8c8c97"
+     id="rect1" />
   <!-- keycap top face (inset on sides, shorter at bottom to reveal the rim) -->
-  <rect x="44" y="46" width="168" height="150" rx="26" fill="#2E2F3A"/>
+  <rect
+     x="4"
+     y="0"
+     width="168"
+     height="150"
+     rx="26"
+     fill="#2e2f3a"
+     id="rect2" />
   <!-- subtle top highlight on the face -->
-  <rect x="52" y="52" width="152" height="6" rx="3" fill="#3A3B47"/>
+  <rect
+     x="12"
+     y="6"
+     width="152"
+     height="6"
+     rx="3"
+     fill="#3a3b47"
+     id="rect3" />
   <!-- cyan prompt: chevron + underscore, upper-left -->
-  <g fill="none" stroke="#57C7DD" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">
-    <polyline points="84,98 107,114 84,130"/>
-    <line x1="116" y1="129" x2="144" y2="129"/>
+  <g
+     fill="none"
+     stroke="#57c7dd"
+     stroke-width="11"
+     stroke-linecap="round"
+     stroke-linejoin="round"
+     id="g3"
+     transform="translate(-40,-46)">
+    <polyline
+       points="84,98 107,114 84,130"
+       id="polyline3" />
+    <line
+       x1="116"
+       y1="129"
+       x2="144"
+       y2="129"
+       id="line3" />
   </g>
 </svg>

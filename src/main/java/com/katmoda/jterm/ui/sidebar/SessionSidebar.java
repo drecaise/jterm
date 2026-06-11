@@ -1,22 +1,31 @@
 package com.katmoda.jterm.ui.sidebar;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.formdev.flatlaf.extras.FlatSVGIcon;
 import com.katmoda.jterm.dnd.LocalTransferable;
 import com.katmoda.jterm.dnd.SessionTransferable;
 import com.katmoda.jterm.icon.IconLibrary;
 import com.katmoda.jterm.session.FolderNode;
+import com.katmoda.jterm.session.SessionExport;
 import com.katmoda.jterm.session.SessionNode;
 import com.katmoda.jterm.session.SessionStore;
 import com.katmoda.jterm.session.SshSessionConfig;
+import com.katmoda.jterm.security.CredentialVault;
 import com.katmoda.jterm.security.VaultException;
 import com.katmoda.jterm.security.VaultManager;
+import com.katmoda.jterm.ui.security.MasterPasswordDialog;
+import com.katmoda.jterm.ui.component.TerminalSettingsForm;
 import com.katmoda.jterm.ui.component.ToggleSwitch;
 
 import javax.swing.BorderFactory;
+import javax.swing.DropMode;
 import javax.swing.Icon;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
+import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JMenu;
 import javax.swing.JMenuItem;
@@ -25,27 +34,33 @@ import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
-import javax.swing.JSpinner;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
 import javax.swing.JToolBar;
 import javax.swing.JTree;
-import javax.swing.SpinnerNumberModel;
 import javax.swing.TransferHandler;
+import javax.swing.event.TreeExpansionEvent;
+import javax.swing.event.TreeExpansionListener;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
 import java.awt.BorderLayout;
-import java.awt.GraphicsEnvironment;
 import java.awt.GridLayout;
 import java.awt.datatransfer.Transferable;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.nio.charset.Charset;
+import java.io.File;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import java.util.function.BiConsumer;
 
 /**
@@ -57,12 +72,18 @@ import java.util.function.BiConsumer;
  */
 public final class SessionSidebar extends JPanel {
 
+    private static final ObjectMapper EXPORT_MAPPER =
+            new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
+
     private final SessionStore store;
     private final JTree tree;
     private final DefaultTreeModel model;
 
     private final BiConsumer<SshSessionConfig, OpenMode> onOpenSsh;
     private final Runnable onOpenLocal;
+
+    /** Guards the expand/collapse listener while we programmatically restore saved state. */
+    private boolean syncingExpansion;
 
     public SessionSidebar(SessionStore store,
                           BiConsumer<SshSessionConfig, OpenMode> onOpenSsh,
@@ -79,8 +100,9 @@ public final class SessionSidebar extends JPanel {
         tree.setShowsRootHandles(true);
         tree.setCellRenderer(new SessionNodeRenderer());
 
-        // Drag a saved SSH session out onto a pane.
+        // Drag a saved SSH session out onto a pane, or onto another folder to move it.
         tree.setDragEnabled(true);
+        tree.setDropMode(DropMode.ON);
         tree.setTransferHandler(new TransferHandler() {
             @Override
             public int getSourceActions(JComponent c) {
@@ -91,6 +113,39 @@ public final class SessionSidebar extends JPanel {
             protected Transferable createTransferable(JComponent c) {
                 return (selectedNode() instanceof SshSessionConfig ssh)
                         ? new SessionTransferable(ssh) : null;
+            }
+
+            @Override
+            public boolean canImport(TransferSupport support) {
+                return support.isDrop()
+                        && support.isDataFlavorSupported(SessionTransferable.SESSION_FLAVOR)
+                        && dropTargetFolder(support) != null;
+            }
+
+            @Override
+            public boolean importData(TransferSupport support) {
+                if (!canImport(support)) {
+                    return false;
+                }
+                try {
+                    SshSessionConfig dragged = (SshSessionConfig) support.getTransferable()
+                            .getTransferData(SessionTransferable.SESSION_FLAVOR);
+                    return moveSession(dragged, dropTargetFolder(support));
+                } catch (Exception e) {
+                    return false;
+                }
+            }
+        });
+
+        tree.addTreeExpansionListener(new TreeExpansionListener() {
+            @Override
+            public void treeExpanded(TreeExpansionEvent event) {
+                onExpansionChanged(event.getPath(), true);
+            }
+
+            @Override
+            public void treeCollapsed(TreeExpansionEvent event) {
+                onExpansionChanged(event.getPath(), false);
             }
         });
 
@@ -117,6 +172,8 @@ public final class SessionSidebar extends JPanel {
         add(new JScrollPane(tree), BorderLayout.CENTER);
         add(buildLocalEntry(), BorderLayout.SOUTH);
         setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
+
+        applyExpansionState();
     }
 
     private JComponent buildToolbar() {
@@ -181,7 +238,310 @@ public final class SessionSidebar extends JPanel {
 
     private void rebuild() {
         model.setRoot(buildNode(store.root()));
+        applyExpansionState();
         store.save();
+    }
+
+    // ---- folder expansion state (remembered across restarts) ----
+
+    /** Restores each folder's saved expanded/collapsed state onto the freshly built tree. */
+    private void applyExpansionState() {
+        syncingExpansion = true;
+        try {
+            applyExpansion((DefaultMutableTreeNode) model.getRoot());
+        } finally {
+            syncingExpansion = false;
+        }
+    }
+
+    /**
+     * Expands or collapses {@code tn} per its folder's flag, descending only into expanded
+     * folders — JTree won't render a collapsed folder's children, and {@code expandPath}
+     * would otherwise force their (collapsed) ancestors open. Nested state for a folder that
+     * is reopened later is reapplied lazily in {@link #onExpansionChanged}.
+     */
+    private void applyExpansion(DefaultMutableTreeNode tn) {
+        if (!(tn.getUserObject() instanceof FolderNode folder)) {
+            return;
+        }
+        TreePath path = new TreePath(tn.getPath());
+        if (folder.isExpanded()) {
+            tree.expandPath(path);
+            for (int i = 0; i < tn.getChildCount(); i++) {
+                applyExpansion((DefaultMutableTreeNode) tn.getChildAt(i));
+            }
+        } else {
+            tree.collapsePath(path);
+        }
+    }
+
+    private void onExpansionChanged(TreePath path, boolean expanded) {
+        if (!(path.getLastPathComponent() instanceof DefaultMutableTreeNode tn)
+                || !(tn.getUserObject() instanceof FolderNode folder)) {
+            return;
+        }
+        folder.setExpanded(expanded);
+        if (syncingExpansion) {
+            return; // programmatic restore — already persisted, and recursion is handled there
+        }
+        store.save();
+        if (expanded) {
+            // Now that the children are visible, reapply their own saved expansion state.
+            syncingExpansion = true;
+            try {
+                for (int i = 0; i < tn.getChildCount(); i++) {
+                    applyExpansion((DefaultMutableTreeNode) tn.getChildAt(i));
+                }
+            } finally {
+                syncingExpansion = false;
+            }
+        }
+    }
+
+    // ---- moving sessions between folders ----
+
+    /** Resolves a tree drop location to the folder a session would land in, or {@code null}. */
+    private FolderNode dropTargetFolder(TransferHandler.TransferSupport support) {
+        if (!(support.getDropLocation() instanceof JTree.DropLocation dl) || dl.getPath() == null
+                || !(dl.getPath().getLastPathComponent() instanceof DefaultMutableTreeNode tn)) {
+            return null;
+        }
+        Object uo = tn.getUserObject();
+        if (uo instanceof FolderNode folder) {
+            return folder;
+        }
+        if (uo instanceof SshSessionConfig ssh) {
+            return parentFolderOf(ssh); // dropping onto a session targets its containing folder
+        }
+        return null;
+    }
+
+    /** Reparents {@code session} into {@code target}. Returns whether anything changed. */
+    private boolean moveSession(SshSessionConfig session, FolderNode target) {
+        FolderNode current = parentFolderOf(session);
+        if (current == null || target == null || target == current) {
+            return false;
+        }
+        current.getChildren().remove(session);
+        target.getChildren().add(session);
+        rebuild();
+        return true;
+    }
+
+    /** Finds the folder directly containing {@code node}, searching the whole tree. */
+    private FolderNode parentFolderOf(SessionNode node) {
+        return findParent(store.root(), node);
+    }
+
+    private FolderNode findParent(FolderNode folder, SessionNode node) {
+        for (SessionNode child : folder.getChildren()) {
+            if (child == node) {
+                return folder;
+            }
+            if (child instanceof FolderNode sub) {
+                FolderNode found = findParent(sub, node);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** A folder choice in the edit dialog's drop-down; indented to show nesting depth. */
+    private record FolderOption(FolderNode folder, String label) {
+        @Override
+        public String toString() {
+            return label;
+        }
+    }
+
+    private List<FolderOption> folderOptions() {
+        List<FolderOption> options = new ArrayList<>();
+        collectFolderOptions(store.root(), 0, options);
+        return options;
+    }
+
+    private void collectFolderOptions(FolderNode folder, int depth, List<FolderOption> out) {
+        out.add(new FolderOption(folder, "    ".repeat(depth) + folder.getName()));
+        for (SessionNode child : folder.getChildren()) {
+            if (child instanceof FolderNode sub) {
+                collectFolderOptions(sub, depth + 1, out);
+            }
+        }
+    }
+
+    // ---- import / export (JSON) ----
+
+    /**
+     * Writes {@code folder} and its subtree to a user-chosen JSON file. A checkbox offers to
+     * also include saved passwords; opting in first requires the master password, after which
+     * the plaintext passwords are embedded in the file.
+     */
+    private void exportFolder(FolderNode folder) {
+        JCheckBox includeCreds = new JCheckBox("Include saved credentials (passwords)");
+        includeCreds.setToolTipText("Embeds plaintext passwords; requires the master password");
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Export Sessions");
+        chooser.setSelectedFile(new File(safeFileName(folder.getName()) + ".json"));
+        chooser.setAccessory(includeCreds);
+        if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+
+        SessionExport export = new SessionExport();
+        export.folder = folder;
+        if (includeCreds.isSelected() && !collectCredentials(folder, export.credentials)) {
+            return; // user cancelled the master-password prompt
+        }
+
+        Path target = chooser.getSelectedFile().toPath();
+        try {
+            EXPORT_MAPPER.writeValue(target.toFile(), export);
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Export failed:\n" + e.getMessage(),
+                    "Export Sessions", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        JOptionPane.showMessageDialog(this, "Exported to:\n" + target,
+                "Export Sessions", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    /**
+     * Gathers plaintext passwords for every saved session under {@code folder} into {@code out}.
+     * Requires the master password up front; returns {@code false} if the user cancels it.
+     */
+    private boolean collectCredentials(FolderNode folder, Map<String, String> out) {
+        CredentialVault vault = VaultManager.get().vault();
+        if (!vault.isInitialized()) {
+            JOptionPane.showMessageDialog(this, "There are no saved credentials to export.",
+                    "Export Sessions", JOptionPane.INFORMATION_MESSAGE);
+            return true; // nothing to include — export the sessions without credentials
+        }
+        if (!verifyMasterPassword(vault)) {
+            return false;
+        }
+        try {
+            collectCredentials(folder, vault, out);
+        } catch (VaultException e) {
+            JOptionPane.showMessageDialog(this, "Could not read saved credentials:\n" + e.getMessage(),
+                    "Export Sessions", JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
+        return true;
+    }
+
+    private void collectCredentials(FolderNode folder, CredentialVault vault, Map<String, String> out)
+            throws VaultException {
+        for (SessionNode child : folder.getChildren()) {
+            if (child instanceof FolderNode sub) {
+                collectCredentials(sub, vault, out);
+            } else if (child instanceof SshSessionConfig ssh && ssh.isSavePassword()) {
+                String password = vault.getPassword(ssh.getId());
+                if (password != null) {
+                    out.put(ssh.getId(), password);
+                }
+            }
+        }
+    }
+
+    /** Prompts for and verifies the master password, unlocking the vault. */
+    private boolean verifyMasterPassword(CredentialVault vault) {
+        String error = null;
+        while (true) {
+            char[] master = MasterPasswordDialog.promptEnter(this, error);
+            if (master == null) {
+                return false;
+            }
+            try {
+                if (vault.unlock(master)) {
+                    return true;
+                }
+                error = "Incorrect master password — try again.";
+            } catch (VaultException e) {
+                error = "Could not unlock the vault.";
+            } finally {
+                Arrays.fill(master, '\0');
+            }
+        }
+    }
+
+    /**
+     * Reads a JSON export and adds its folder (with fresh session ids) under {@code target}.
+     * Any embedded credentials are stored into the local vault, keyed by the new ids.
+     */
+    private void importSessions(FolderNode target) {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Import Sessions");
+        if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+
+        SessionExport export;
+        try {
+            export = EXPORT_MAPPER.readValue(chooser.getSelectedFile(), SessionExport.class);
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Import failed:\n" + e.getMessage(),
+                    "Import Sessions", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        if (export == null || export.folder == null) {
+            JOptionPane.showMessageDialog(this, "That file is not a valid sessions export.",
+                    "Import Sessions", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // Reassign session ids so imports never collide with existing vault entries, remapping
+        // any imported credentials onto the new ids.
+        Map<String, String> remapped = new LinkedHashMap<>();
+        reassignIds(export.folder, export.credentials, remapped);
+        if (!remapped.isEmpty()) {
+            importCredentials(remapped);
+        }
+
+        target.getChildren().add(export.folder);
+        rebuild();
+        JOptionPane.showMessageDialog(this, "Imported \"" + export.folder.getName() + "\".",
+                "Import Sessions", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private void reassignIds(FolderNode folder, Map<String, String> oldCreds, Map<String, String> newCreds) {
+        for (SessionNode child : folder.getChildren()) {
+            if (child instanceof FolderNode sub) {
+                reassignIds(sub, oldCreds, newCreds);
+            } else if (child instanceof SshSessionConfig ssh) {
+                String oldId = ssh.getId();
+                String newId = UUID.randomUUID().toString();
+                ssh.setId(newId);
+                String password = (oldCreds != null) ? oldCreds.get(oldId) : null;
+                if (password != null) {
+                    newCreds.put(newId, password);
+                }
+            }
+        }
+    }
+
+    private void importCredentials(Map<String, String> credentials) {
+        if (!VaultManager.get().ensureUnlocked(this)) {
+            return; // sessions still import; their passwords just won't be stored
+        }
+        CredentialVault vault = VaultManager.get().vault();
+        for (Map.Entry<String, String> entry : credentials.entrySet()) {
+            char[] password = entry.getValue().toCharArray();
+            try {
+                vault.setPassword(entry.getKey(), password);
+            } catch (VaultException ignored) {
+                // Skip a single bad entry rather than abort the whole import.
+            } finally {
+                Arrays.fill(password, '\0');
+            }
+        }
+    }
+
+    /** Sanitises a folder name for use as a default file name. */
+    private static String safeFileName(String name) {
+        String cleaned = name.replaceAll("[^a-zA-Z0-9-_]+", "_").replaceAll("^_+|_+$", "");
+        return cleaned.isEmpty() ? "sessions" : cleaned;
     }
 
     // ---- actions ----
@@ -225,6 +585,8 @@ public final class SessionSidebar extends JPanel {
 
             JMenuItem edit = new JMenuItem("Edit…");
             edit.addActionListener(a -> editSsh(ssh));
+            JMenuItem duplicate = new JMenuItem("Duplicate");
+            duplicate.addActionListener(a -> duplicateSession(ssh));
             JMenuItem delete = new JMenuItem("Delete");
             delete.addActionListener(a -> deleteSelected());
             menu.add(open);
@@ -232,6 +594,7 @@ public final class SessionSidebar extends JPanel {
             menu.add(split);
             menu.addSeparator();
             menu.add(edit);
+            menu.add(duplicate);
             menu.add(delete);
         } else {
             JMenuItem newFolder = new JMenuItem("New Folder…");
@@ -240,14 +603,23 @@ public final class SessionSidebar extends JPanel {
             newSsh.addActionListener(a -> newSsh());
             menu.add(newFolder);
             menu.add(newSsh);
-            if (node instanceof FolderNode folder && folder != store.root()) {
-                JMenuItem edit = new JMenuItem("Edit Folder…");
-                edit.addActionListener(a -> editFolder(folder));
-                JMenuItem delete = new JMenuItem("Delete");
-                delete.addActionListener(a -> deleteSelected());
+            if (node instanceof FolderNode folder) {
+                JMenuItem export = new JMenuItem("Export Sessions…");
+                export.addActionListener(a -> exportFolder(folder));
+                JMenuItem importInto = new JMenuItem("Import Sessions…");
+                importInto.addActionListener(a -> importSessions(folder));
                 menu.addSeparator();
-                menu.add(edit);
-                menu.add(delete);
+                menu.add(export);
+                menu.add(importInto);
+                if (folder != store.root()) {
+                    JMenuItem edit = new JMenuItem("Edit Folder…");
+                    edit.addActionListener(a -> editFolder(folder));
+                    JMenuItem delete = new JMenuItem("Delete");
+                    delete.addActionListener(a -> deleteSelected());
+                    menu.addSeparator();
+                    menu.add(edit);
+                    menu.add(delete);
+                }
             }
         }
         return menu;
@@ -263,16 +635,84 @@ public final class SessionSidebar extends JPanel {
 
     private void newSsh() {
         SshSessionConfig cfg = new SshSessionConfig();
-        if (showSshDialog(cfg, "New SSH Session")) {
-            targetFolder().getChildren().add(cfg);
+        FolderNode dest = showSshDialog(cfg, "New SSH Session", targetFolder());
+        if (dest != null) {
+            dest.getChildren().add(cfg);
             rebuild();
         }
     }
 
-    private void editSsh(SshSessionConfig ssh) {
-        if (showSshDialog(ssh, "Edit SSH Session")) {
+    /**
+     * Opens the add-session dialog prefilled with a copy of {@code original}, its name suffixed
+     * with the next free {@code (n)} counter. The copy gets a fresh id and lands in the same
+     * folder unless the user picks another.
+     */
+    private void duplicateSession(SshSessionConfig original) {
+        SshSessionConfig copy = copyOf(original);
+        copy.setName(uniqueDuplicateName(original.getName()));
+        FolderNode parent = parentFolderOf(original);
+        FolderNode dest = showSshDialog(copy, "Duplicate SSH Session",
+                parent != null ? parent : store.root());
+        if (dest != null) {
+            dest.getChildren().add(copy);
             rebuild();
         }
+    }
+
+    /** Copies every editable setting (but not the id or any saved vault password). */
+    private static SshSessionConfig copyOf(SshSessionConfig src) {
+        SshSessionConfig copy = new SshSessionConfig();
+        copy.setName(src.getName());
+        copy.setIconId(src.getIconId());
+        copy.setHost(src.getHost());
+        copy.setPort(src.getPort());
+        copy.setUser(src.getUser());
+        copy.setAgentForwarding(src.isAgentForwarding());
+        copy.setPasswordAuth(src.isPasswordAuth());
+        copy.setSavePassword(src.isSavePassword());
+        copy.setTerminalType(src.getTerminalType());
+        copy.setTerminalCharset(src.getTerminalCharset());
+        copy.setFontFamily(src.getFontFamily());
+        copy.setFontSize(src.getFontSize());
+        return copy;
+    }
+
+    /**
+     * Builds a unique name by appending {@code (n)} to {@code original} (minus any counter it
+     * already carries), choosing the smallest {@code n} ≥ 1 not already in use anywhere.
+     */
+    private String uniqueDuplicateName(String original) {
+        String base = original.replaceFirst("\\s*\\(\\d+\\)$", "");
+        Set<String> taken = new HashSet<>();
+        collectNames(store.root(), taken);
+        for (int n = 1; ; n++) {
+            String candidate = base + " (" + n + ")";
+            if (!taken.contains(candidate)) {
+                return candidate;
+            }
+        }
+    }
+
+    private void collectNames(FolderNode folder, Set<String> out) {
+        for (SessionNode child : folder.getChildren()) {
+            out.add(child.getName());
+            if (child instanceof FolderNode sub) {
+                collectNames(sub, out);
+            }
+        }
+    }
+
+    private void editSsh(SshSessionConfig ssh) {
+        FolderNode current = parentFolderOf(ssh);
+        FolderNode dest = showSshDialog(ssh, "Edit SSH Session", current);
+        if (dest == null) {
+            return;
+        }
+        if (current != null && dest != current) {
+            current.getChildren().remove(ssh);
+            dest.getChildren().add(ssh);
+        }
+        rebuild();
     }
 
     private void editFolder(FolderNode folder) {
@@ -334,25 +774,12 @@ public final class SessionSidebar extends JPanel {
         }
     }
 
-    /** Terminal types offered in the dialog (the combo is editable for anything not listed). */
-    private static final String[] TERMINAL_TYPES = {
-            "xterm-256color", "xterm", "xterm-color", "vt100", "vt220", "vt320",
-            "ansi", "linux", "screen", "screen-256color", "tmux-256color", "rxvt-unicode"
-    };
-
-    /** Common stream charsets offered in the dialog (filtered to those the JVM supports). */
-    private static final String[] COMMON_CHARSETS = {
-            "UTF-8", "US-ASCII", "ISO-8859-1", "ISO-8859-15", "windows-1252",
-            "GBK", "GB2312", "Big5", "Shift_JIS", "EUC-JP", "EUC-KR", "KOI8-R"
-    };
-
-    private static final String DEFAULT_FONT_LABEL = "(Default)";
-
     /**
      * Tabbed form dialog ("Basic settings" + "Terminal Settings"); mutates {@code cfg} on OK.
-     * Returns whether the user confirmed.
+     * Returns the folder the user chose to place the session in, or {@code null} if cancelled.
+     * {@code initialFolder} is preselected in the folder drop-down.
      */
-    private boolean showSshDialog(SshSessionConfig cfg, String title) {
+    private FolderNode showSshDialog(SshSessionConfig cfg, String title, FolderNode initialFolder) {
         // ---- Basic settings ----
         JTextField name = new JTextField(cfg.getName());
         JTextField host = new JTextField(cfg.getHost());
@@ -385,8 +812,18 @@ public final class SessionSidebar extends JPanel {
             }
         });
 
+        List<FolderOption> folders = folderOptions();
+        JComboBox<FolderOption> folderCombo = new JComboBox<>(folders.toArray(new FolderOption[0]));
+        for (FolderOption option : folders) {
+            if (option.folder() == initialFolder) {
+                folderCombo.setSelectedItem(option);
+                break;
+            }
+        }
+
         JPanel basic = formPanel();
         row(basic, "Name:", name);
+        row(basic, "Folder:", folderCombo);
         row(basic, "Host:", host);
         row(basic, "Port:", port);
         row(basic, "User:", user);
@@ -396,40 +833,18 @@ public final class SessionSidebar extends JPanel {
         row(basic, "Password:", password);
         row(basic, "Save password:", savePassword);
 
-        // ---- Terminal settings ----
-        JComboBox<String> terminalType = new JComboBox<>(TERMINAL_TYPES);
-        terminalType.setEditable(true);
-        terminalType.setSelectedItem(blankToDefault(cfg.getTerminalType(), "xterm-256color"));
-
-        JComboBox<String> font = new JComboBox<>();
-        font.addItem(DEFAULT_FONT_LABEL);
-        for (String family : GraphicsEnvironment.getLocalGraphicsEnvironment().getAvailableFontFamilyNames()) {
-            font.addItem(family);
-        }
-        font.setSelectedItem((cfg.getFontFamily() == null || cfg.getFontFamily().isBlank())
-                ? DEFAULT_FONT_LABEL : cfg.getFontFamily());
-
-        int initialSize = cfg.getFontSize() > 0 ? cfg.getFontSize() : 14;
-        JSpinner fontSize = new JSpinner(new SpinnerNumberModel(initialSize, 6, 72, 1));
-
-        JComboBox<String> charset = new JComboBox<>(supportedCharsets());
-        charset.setEditable(true);
-        charset.setSelectedItem(blankToDefault(cfg.getTerminalCharset(), "UTF-8"));
-
-        JPanel terminal = formPanel();
-        row(terminal, "Terminal Type:", terminalType);
-        row(terminal, "Font:", font);
-        row(terminal, "Font Size:", fontSize);
-        row(terminal, "Terminal Charset:", charset);
+        // ---- Terminal settings ---- (blank fields inherit the application defaults)
+        TerminalSettingsForm terminalSettings = new TerminalSettingsForm(true,
+                cfg.getTerminalType(), cfg.getTerminalCharset(), cfg.getFontFamily(), cfg.getFontSize());
 
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Basic settings", basic);
-        tabs.addTab("Terminal Settings", terminal);
+        tabs.addTab("Terminal Settings", terminalSettings.component());
 
         int result = JOptionPane.showConfirmDialog(this, tabs, title,
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
         if (result != JOptionPane.OK_OPTION) {
-            return false;
+            return null;
         }
         cfg.setName(blankToDefault(name.getText(), "ssh"));
         cfg.setHost(host.getText().trim());
@@ -441,14 +856,14 @@ public final class SessionSidebar extends JPanel {
         } catch (NumberFormatException ex) {
             cfg.setPort(22);
         }
-        cfg.setTerminalType(blankToDefault(comboText(terminalType), "xterm-256color"));
-        Object selectedFont = font.getSelectedItem();
-        cfg.setFontFamily((selectedFont == null || DEFAULT_FONT_LABEL.equals(selectedFont))
-                ? "" : selectedFont.toString());
-        cfg.setFontSize((Integer) fontSize.getValue());
-        cfg.setTerminalCharset(blankToDefault(comboText(charset), "UTF-8"));
+        cfg.setTerminalType(terminalSettings.terminalType());
+        cfg.setFontFamily(terminalSettings.fontFamily());
+        cfg.setFontSize(terminalSettings.fontSize());
+        cfg.setTerminalCharset(terminalSettings.charset());
         applyPasswordSettings(cfg, passwordAuth.isSelected(), savePassword.isSelected(), password.getPassword());
-        return true;
+
+        FolderOption chosen = (FolderOption) folderCombo.getSelectedItem();
+        return chosen != null ? chosen.folder() : initialFolder;
     }
 
     private static JPanel formPanel() {
@@ -458,22 +873,6 @@ public final class SessionSidebar extends JPanel {
     private static void row(JPanel form, String label, JComponent field) {
         form.add(new JLabel(label));
         form.add(field);
-    }
-
-    private static String comboText(JComboBox<String> combo) {
-        Object value = combo.getSelectedItem();
-        return value == null ? "" : value.toString().trim();
-    }
-
-    /** The {@link #COMMON_CHARSETS} the running JVM actually supports. */
-    private static String[] supportedCharsets() {
-        List<String> supported = new ArrayList<>();
-        for (String name : COMMON_CHARSETS) {
-            if (Charset.isSupported(name)) {
-                supported.add(name);
-            }
-        }
-        return supported.toArray(new String[0]);
     }
 
     /**
