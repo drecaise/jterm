@@ -15,6 +15,11 @@ public interface TerminalSession {
     /** Human-readable label (session name or working directory). */
     String title();
 
+    /** Per-session terminal/font settings; defaults to {@link TerminalProfile#DEFAULT}. */
+    default TerminalProfile profile() {
+        return TerminalProfile.DEFAULT;
+    }
+
     /** Whether the underlying process/channel is still running. */
     boolean isAlive();
 

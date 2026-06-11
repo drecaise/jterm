@@ -9,7 +9,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
+import java.nio.charset.Charset;
 import java.util.EnumSet;
 
 /**
@@ -21,15 +21,17 @@ final class SshTtyConnector implements TtyConnector {
 
     private final ChannelShell channel;
     private final String name;
+    private final Charset charset;
     private final OutputStream toRemote;
     private final InputStreamReader fromRemote;
 
-    SshTtyConnector(ChannelShell channel, String name) {
+    SshTtyConnector(ChannelShell channel, String name, Charset charset) {
         this.channel = channel;
         this.name = name;
+        this.charset = charset;
         this.toRemote = channel.getInvertedIn();
         InputStream out = channel.getInvertedOut();
-        this.fromRemote = new InputStreamReader(out, StandardCharsets.UTF_8);
+        this.fromRemote = new InputStreamReader(out, charset);
     }
 
     @Override
@@ -45,7 +47,7 @@ final class SshTtyConnector implements TtyConnector {
 
     @Override
     public void write(String string) throws IOException {
-        write(string.getBytes(StandardCharsets.UTF_8));
+        write(string.getBytes(charset));
     }
 
     @Override

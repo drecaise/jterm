@@ -8,6 +8,7 @@ import com.katmoda.jterm.security.VaultException;
 import com.katmoda.jterm.security.VaultManager;
 import com.katmoda.jterm.session.SessionStore;
 import com.katmoda.jterm.session.SshSessionConfig;
+import com.katmoda.jterm.terminal.TerminalProfile;
 import com.katmoda.jterm.terminal.TerminalSession;
 import com.katmoda.jterm.terminal.ssh.SshSession;
 import com.katmoda.jterm.terminal.ssh.agent.AgentSupport;
@@ -311,8 +312,10 @@ public final class MainWindow {
         new SwingWorker<SshSession, Void>() {
             @Override
             protected SshSession doInBackground() throws Exception {
+                TerminalProfile profile = TerminalProfile.from(cfg.getTerminalType(),
+                        cfg.getTerminalCharset(), cfg.getFontFamily(), cfg.getFontSize());
                 return SshSession.connect(cfg.getHost(), cfg.getPort(), cfg.getUser(),
-                        cfg.isAgentForwarding(), password, cfg.getName(), cfg.getIconId());
+                        cfg.isAgentForwarding(), password, cfg.getName(), cfg.getIconId(), profile);
             }
 
             @Override

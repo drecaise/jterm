@@ -19,6 +19,12 @@ public final class SshSessionConfig implements SessionNode {
     private boolean passwordAuth = false;
     private boolean savePassword = false;
 
+    // Terminal settings. Empty/zero means "use the application default".
+    private String terminalType = "xterm-256color";
+    private String terminalCharset = "UTF-8";
+    private String fontFamily = "";
+    private int fontSize = 0;
+
     public SshSessionConfig() {
     }
 
@@ -97,5 +103,41 @@ public final class SshSessionConfig implements SessionNode {
 
     public void setSavePassword(boolean savePassword) {
         this.savePassword = savePassword;
+    }
+
+    /** Remote terminal type sent as the pty type (e.g. {@code xterm-256color}, {@code vt100}). */
+    public String getTerminalType() {
+        return terminalType;
+    }
+
+    public void setTerminalType(String terminalType) {
+        this.terminalType = terminalType;
+    }
+
+    /** Charset used to decode/encode the terminal stream (e.g. {@code UTF-8}). */
+    public String getTerminalCharset() {
+        return terminalCharset;
+    }
+
+    public void setTerminalCharset(String terminalCharset) {
+        this.terminalCharset = terminalCharset;
+    }
+
+    /** Terminal font family; empty means use the application default. */
+    public String getFontFamily() {
+        return fontFamily;
+    }
+
+    public void setFontFamily(String fontFamily) {
+        this.fontFamily = fontFamily;
+    }
+
+    /** Terminal font size in points; {@code 0} means use the application default. */
+    public int getFontSize() {
+        return fontSize;
+    }
+
+    public void setFontSize(int fontSize) {
+        this.fontSize = fontSize;
     }
 }
