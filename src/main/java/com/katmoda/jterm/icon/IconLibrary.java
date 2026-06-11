@@ -117,14 +117,15 @@ public final class IconLibrary {
     /** Loads a bundled resource by file name: SVGs through FlatLaf, rasters scaled via ImageIcon. */
     private Icon loadResource(String fileName, int size) {
         if (fileName.toLowerCase(Locale.ROOT).endsWith(".svg")) {
-            return new FlatSVGIcon("icons/" + fileName, size, size);
+            FlatSVGIcon svg = new FlatSVGIcon("icons/" + fileName);
+            int[] d = fit(svg.getIconWidth(), svg.getIconHeight(), size);
+            return svg.derive(d[0], d[1]);
         }
         URL url = IconLibrary.class.getResource("/icons/" + fileName);
         if (url == null) {
             return null;
         }
-        Image img = new ImageIcon(url).getImage().getScaledInstance(size, size, Image.SCALE_SMOOTH);
-        return new ImageIcon(img);
+        return scaledRaster(new ImageIcon(url), size);
     }
 
     private Icon loadImported(ImportedIcon ii, int size) {
@@ -133,11 +134,26 @@ public final class IconLibrary {
             return null;
         }
         if (ii.getFileName().toLowerCase(Locale.ROOT).endsWith(".svg")) {
-            return new FlatSVGIcon(path.toFile()).derive(size, size);
+            FlatSVGIcon svg = new FlatSVGIcon(path.toFile());
+            int[] d = fit(svg.getIconWidth(), svg.getIconHeight(), size);
+            return svg.derive(d[0], d[1]);
         }
-        Image img = new ImageIcon(path.toString()).getImage()
-                .getScaledInstance(size, size, Image.SCALE_SMOOTH);
-        return new ImageIcon(img);
+        return scaledRaster(new ImageIcon(path.toString()), size);
+    }
+
+    /** Scales a raster icon to fit within {@code size}×{@code size}, preserving its aspect ratio. */
+    private static Icon scaledRaster(ImageIcon raw, int size) {
+        int[] d = fit(raw.getIconWidth(), raw.getIconHeight(), size);
+        return new ImageIcon(raw.getImage().getScaledInstance(d[0], d[1], Image.SCALE_SMOOTH));
+    }
+
+    /** Scales (w,h) down to fit a {@code box}×{@code box} square without distorting aspect ratio. */
+    private static int[] fit(int w, int h, int box) {
+        if (w <= 0 || h <= 0) {
+            return new int[]{box, box};
+        }
+        double scale = Math.min((double) box / w, (double) box / h);
+        return new int[]{Math.max(1, (int) Math.round(w * scale)), Math.max(1, (int) Math.round(h * scale))};
     }
 
     /**

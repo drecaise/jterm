@@ -5,6 +5,8 @@ import com.jediterm.terminal.ProcessTtyConnector;
 import com.pty4j.PtyProcess;
 import com.pty4j.WinSize;
 
+import java.nio.charset.Charset;
+
 /**
  * Bridges a pty4j {@link PtyProcess} to JediTerm. {@link ProcessTtyConnector} already
  * implements stream reading/writing against {@link Process}; we only add a name and
@@ -15,8 +17,8 @@ final class PtyTtyConnector extends ProcessTtyConnector {
     private final PtyProcess process;
     private final String name;
 
-    PtyTtyConnector(PtyProcess process, String name) {
-        super(process, LocalSession.charset());
+    PtyTtyConnector(PtyProcess process, String name, Charset charset) {
+        super(process, charset);
         this.process = process;
         this.name = name;
     }

@@ -4,6 +4,7 @@ import com.jediterm.terminal.TerminalColor;
 import com.jediterm.terminal.TextStyle;
 import com.jediterm.terminal.emulator.ColorPalette;
 import com.jediterm.terminal.ui.settings.DefaultSettingsProvider;
+import com.katmoda.jterm.config.AppSettings;
 
 import java.awt.Font;
 
@@ -21,21 +22,23 @@ public final class JTermSettingsProvider extends DefaultSettingsProvider {
     private final ColorPalette palette;
     private final Font font;
 
-    private static final int DEFAULT_FONT_SIZE = 14;
-
     public JTermSettingsProvider(ThemeColors theme) {
         this(theme, null, 0);
     }
 
     /**
-     * @param fontFamily a specific installed font family, or {@code null}/blank to auto-pick
-     * @param fontSize   point size, or {@code <= 0} to use the default
+     * @param fontFamily a specific installed font family, or {@code null}/blank to use the
+     *                   application default ({@link AppSettings#getDefaultFontFamily()})
+     * @param fontSize   point size, or {@code <= 0} to use the application default
      */
     public JTermSettingsProvider(ThemeColors theme, String fontFamily, int fontSize) {
         this.theme = theme;
         this.palette = new AnsiPalette(theme);
-        int size = fontSize > 0 ? fontSize : DEFAULT_FONT_SIZE;
-        this.font = resolveFont(fontFamily, size);
+        AppSettings settings = AppSettings.get();
+        int size = fontSize > 0 ? fontSize : settings.getDefaultFontSize();
+        String family = (fontFamily != null && !fontFamily.isBlank())
+                ? fontFamily : settings.getDefaultFontFamily();
+        this.font = resolveFont(family, size);
     }
 
     /** Uses the requested family when it's installed; otherwise auto-picks a monospaced font. */
@@ -89,6 +92,18 @@ public final class JTermSettingsProvider extends DefaultSettingsProvider {
     @Override
     public TerminalColor getDefaultBackground() {
         return terminalColor(theme.background());
+    }
+
+    /**
+     * The style applied to cells written with no explicit color (the terminal's "default pen").
+     * JediTerm's stock implementation returns a black-on-white style (ANSI index 0 on index 15),
+     * which paints every default-styled cell white on a dark theme; we override it so default
+     * cells use the theme's own foreground/background, matching {@link #getDefaultForeground()} /
+     * {@link #getDefaultBackground()}.
+     */
+    @Override
+    public TextStyle getDefaultStyle() {
+        return new TextStyle(terminalColor(theme.foreground()), terminalColor(theme.background()));
     }
 
     @Override

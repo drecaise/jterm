@@ -1,44 +1,72 @@
 package com.katmoda.jterm.ui.preferences;
 
 import com.katmoda.jterm.config.AppSettings;
+import com.katmoda.jterm.ui.component.TerminalSettingsForm;
 import com.katmoda.jterm.ui.component.ToggleSwitch;
 
+import javax.swing.BorderFactory;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JTabbedPane;
+import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 
 /**
- * General preferences: small terminal-behaviour toggles persisted in {@link AppSettings}.
- * Both options read live, so applying them affects already-open terminals.
+ * Application preferences, presented as tabs:
+ * <ul>
+ *   <li><b>General</b> — small terminal-behaviour toggles (read live, so they affect already-open
+ *       terminals).</li>
+ *   <li><b>Terminal Settings</b> — the default terminal type, font, font size and charset applied
+ *       to the local terminal and to any saved session that leaves a field unset. These take effect
+ *       for newly opened panes/tabs (running JediTerm widgets bake in their font at creation).</li>
+ * </ul>
+ * All choices are persisted in {@link AppSettings}.
  */
 public final class PreferencesDialog {
 
     private PreferencesDialog() {
     }
 
-    /** Shows the modal preferences form; applies and persists the choices on OK. */
+    /** Shows the modal preferences dialog; applies and persists the choices on OK. */
     public static void show(Component parent) {
         AppSettings settings = AppSettings.get();
+
         ToggleSwitch copyOnSelect = new ToggleSwitch(settings.isCopyOnSelect());
         ToggleSwitch pasteOnRightClick = new ToggleSwitch(settings.isPasteOnRightClick());
-
-        JPanel form = new JPanel(new GridBagLayout());
+        JPanel general = new JPanel(new GridBagLayout());
         int row = 0;
-        addToggleRow(form, row++, "Copy to clipboard on select:", copyOnSelect);
-        addToggleRow(form, row++, "Paste on right click:", pasteOnRightClick);
-        addHint(form, row++, "With this on, right-click pastes; use Ctrl+right-click for the menu.");
+        addToggleRow(general, row++, "Copy to clipboard on select:", copyOnSelect);
+        addToggleRow(general, row++, "Paste on right click:", pasteOnRightClick);
+        addHint(general, row++, "With this on, right-click pastes; use Ctrl+right-click for the menu.");
 
-        int result = JOptionPane.showConfirmDialog(parent, form, "Preferences",
+        TerminalSettingsForm terminalDefaults = new TerminalSettingsForm(false,
+                settings.getDefaultTerminalType(), settings.getDefaultCharset(),
+                settings.getDefaultFontFamily(), settings.getDefaultFontSize());
+        JPanel terminal = new JPanel(new BorderLayout(0, 6));
+        terminal.add(terminalDefaults.component(), BorderLayout.NORTH);
+        JLabel defaultsHint = hint("Defaults for the local terminal and saved sessions that don't"
+                + " override them. Applies to newly opened terminals.");
+        terminal.add(defaultsHint, BorderLayout.SOUTH);
+
+        JTabbedPane tabs = new JTabbedPane();
+        tabs.addTab("General", general);
+        tabs.addTab("Terminal Settings", terminal);
+
+        int result = JOptionPane.showConfirmDialog(parent, tabs, "Preferences",
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
         if (result != JOptionPane.OK_OPTION) {
             return;
         }
         settings.setCopyOnSelect(copyOnSelect.isSelected());
         settings.setPasteOnRightClick(pasteOnRightClick.isSelected());
+        settings.setDefaultTerminalType(terminalDefaults.terminalType());
+        settings.setDefaultCharset(terminalDefaults.charset());
+        settings.setDefaultFontFamily(terminalDefaults.fontFamily());
+        settings.setDefaultFontSize(terminalDefaults.fontSize());
         settings.save();
     }
 
@@ -60,15 +88,21 @@ public final class PreferencesDialog {
 
     /** A full-width, de-emphasised explanatory line spanning both columns. */
     private static void addHint(JPanel form, int row, String text) {
-        JLabel hint = new JLabel(text);
-        hint.setEnabled(false);
-        hint.setFont(hint.getFont().deriveFont(hint.getFont().getSize2D() - 1f));
         GridBagConstraints g = new GridBagConstraints();
         g.gridx = 0;
         g.gridy = row;
         g.gridwidth = 2;
         g.anchor = GridBagConstraints.WEST;
         g.insets = new Insets(0, 4, 4, 4);
-        form.add(hint, g);
+        form.add(hint(text), g);
+    }
+
+    /** A de-emphasised explanatory label. */
+    private static JLabel hint(String text) {
+        JLabel hint = new JLabel(text);
+        hint.setEnabled(false);
+        hint.setFont(hint.getFont().deriveFont(hint.getFont().getSize2D() - 1f));
+        hint.setBorder(BorderFactory.createEmptyBorder(2, 2, 2, 2));
+        return hint;
     }
 }

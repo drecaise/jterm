@@ -1,6 +1,7 @@
 package com.katmoda.jterm.app;
 
 import com.formdev.flatlaf.extras.FlatSVGIcon;
+import com.katmoda.jterm.config.AppSettings;
 import com.katmoda.jterm.icon.IconLibrary;
 import com.katmoda.jterm.keymap.Keymap;
 import com.katmoda.jterm.keymap.TermAction;
@@ -312,7 +313,7 @@ public final class MainWindow {
         new SwingWorker<SshSession, Void>() {
             @Override
             protected SshSession doInBackground() throws Exception {
-                TerminalProfile profile = TerminalProfile.from(cfg.getTerminalType(),
+                TerminalProfile profile = AppSettings.get().resolve(cfg.getTerminalType(),
                         cfg.getTerminalCharset(), cfg.getFontFamily(), cfg.getFontSize());
                 return SshSession.connect(cfg.getHost(), cfg.getPort(), cfg.getUser(),
                         cfg.isAgentForwarding(), password, cfg.getName(), cfg.getIconId(), profile);

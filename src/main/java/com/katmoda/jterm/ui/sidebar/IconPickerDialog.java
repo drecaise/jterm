@@ -11,10 +11,13 @@ import javax.swing.JFileChooser;
 import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.BorderLayout;
 import java.awt.Component;
@@ -23,6 +26,7 @@ import java.awt.Dimension;
 import java.awt.Point;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.util.Locale;
 
 /**
  * Modal icon picker: shows the {@link IconLibrary} choices as a compact, icon-only wrapping
@@ -52,7 +56,24 @@ final class IconPickerDialog {
                 "Choose Icon", Dialog.ModalityType.APPLICATION_MODAL);
 
         DefaultListModel<IconLibrary.Choice> model = new DefaultListModel<>();
-        IconLibrary.get().choices().forEach(model::addElement);
+        JTextField search = new JTextField();
+        search.putClientProperty("JTextField.placeholderText", "Search icons…");
+
+        Runnable repopulate = () -> {
+            String query = search.getText().trim().toLowerCase(Locale.ROOT);
+            model.clear();
+            for (IconLibrary.Choice choice : IconLibrary.get().choices()) {
+                if (query.isEmpty() || choice.displayName().toLowerCase(Locale.ROOT).contains(query)) {
+                    model.addElement(choice);
+                }
+            }
+        };
+        repopulate.run();
+        search.getDocument().addDocumentListener(new DocumentListener() {
+            @Override public void insertUpdate(DocumentEvent e) { repopulate.run(); }
+            @Override public void removeUpdate(DocumentEvent e) { repopulate.run(); }
+            @Override public void changedUpdate(DocumentEvent e) { repopulate.run(); }
+        });
 
         JList<IconLibrary.Choice> list = new JList<>(model);
         list.setLayoutOrientation(JList.HORIZONTAL_WRAP);
@@ -80,8 +101,7 @@ final class IconPickerDialog {
         JButton importBtn = new JButton("Import…");
         importBtn.addActionListener(e -> {
             if (importIcon(dialog)) {
-                model.clear();
-                IconLibrary.get().choices().forEach(model::addElement);
+                repopulate.run();
             }
         });
         JButton clearBtn = new JButton("Use Default");
@@ -99,10 +119,12 @@ final class IconPickerDialog {
 
         dialog.setLayout(new BorderLayout(8, 8));
         ((JPanel) dialog.getContentPane()).setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+        dialog.add(search, BorderLayout.NORTH);
         dialog.add(scroll, BorderLayout.CENTER);
         dialog.add(controls, BorderLayout.SOUTH);
         dialog.pack();
         dialog.setLocationRelativeTo(parent);
+        SwingUtilities.invokeLater(search::requestFocusInWindow);
         dialog.setVisible(true); // blocks until disposed
         return result;
     }

@@ -8,6 +8,7 @@ public final class FolderNode implements SessionNode {
 
     private String name = "Folder";
     private String iconId;
+    private boolean expanded = true;
     private List<SessionNode> children = new ArrayList<>();
 
     public FolderNode() {
@@ -35,6 +36,15 @@ public final class FolderNode implements SessionNode {
     @Override
     public void setIconId(String iconId) {
         this.iconId = iconId;
+    }
+
+    /** Whether this folder is shown expanded in the sidebar tree; persisted across restarts. */
+    public boolean isExpanded() {
+        return expanded;
+    }
+
+    public void setExpanded(boolean expanded) {
+        this.expanded = expanded;
     }
 
     public List<SessionNode> getChildren() {

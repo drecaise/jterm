@@ -1,5 +1,6 @@
 package com.katmoda.jterm.app;
 
+import com.katmoda.jterm.ui.theme.FontResources;
 import com.katmoda.jterm.ui.theme.ThemeManager;
 
 import javax.swing.SwingUtilities;
@@ -17,6 +18,7 @@ public final class Main {
 
     public static void main(String[] args) {
         setLinuxApplicationName(APP_ID);
+        FontResources.register();
         SwingUtilities.invokeLater(() -> {
             ThemeManager.get().install();
             new MainWindow().show();

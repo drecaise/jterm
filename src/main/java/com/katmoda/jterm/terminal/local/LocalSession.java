@@ -1,12 +1,13 @@
 package com.katmoda.jterm.terminal.local;
 
 import com.jediterm.terminal.TtyConnector;
+import com.katmoda.jterm.config.AppSettings;
+import com.katmoda.jterm.terminal.TerminalProfile;
 import com.katmoda.jterm.terminal.TerminalSession;
 import com.pty4j.PtyProcess;
 import com.pty4j.PtyProcessBuilder;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -22,10 +23,12 @@ public final class LocalSession implements TerminalSession {
     private final PtyProcess process;
     private final PtyTtyConnector connector;
     private final String title;
+    private final TerminalProfile profile;
 
-    private LocalSession(PtyProcess process, String title) {
+    private LocalSession(PtyProcess process, String title, TerminalProfile profile) {
         this.process = process;
-        this.connector = new PtyTtyConnector(process, title);
+        this.profile = profile;
+        this.connector = new PtyTtyConnector(process, title, profile.charset());
         this.title = title;
     }
 
@@ -33,8 +36,10 @@ public final class LocalSession implements TerminalSession {
     public static LocalSession start(Path workingDir) throws IOException {
         String dir = (workingDir != null ? workingDir : Path.of(System.getProperty("user.home", "."))).toString();
 
+        TerminalProfile profile = AppSettings.get().defaultProfile();
+
         Map<String, String> env = new HashMap<>(System.getenv());
-        env.put("TERM", "xterm-256color");
+        env.put("TERM", profile.terminalType());
         env.putIfAbsent("TERM_PROGRAM", "jterm");
 
         PtyProcess process = new PtyProcessBuilder(defaultShellCommand())
@@ -45,7 +50,7 @@ public final class LocalSession implements TerminalSession {
                 .start();
 
         String label = (workingDir != null) ? lastSegment(workingDir) : "local";
-        return new LocalSession(process, label);
+        return new LocalSession(process, label, profile);
     }
 
     private static String[] defaultShellCommand() {
@@ -70,6 +75,11 @@ public final class LocalSession implements TerminalSession {
     @Override
     public TtyConnector connector() {
         return connector;
+    }
+
+    @Override
+    public TerminalProfile profile() {
+        return profile;
     }
 
     @Override
@@ -103,10 +113,5 @@ public final class LocalSession implements TerminalSession {
     @Override
     public void close() {
         process.destroy();
-    }
-
-    /** Used by the connector helper. */
-    static java.nio.charset.Charset charset() {
-        return StandardCharsets.UTF_8;
     }
 }
