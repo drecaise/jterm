@@ -15,6 +15,7 @@ import com.katmoda.jterm.ui.component.ToggleSwitch;
 import javax.swing.BorderFactory;
 import javax.swing.Icon;
 import javax.swing.JButton;
+import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JMenu;
@@ -24,20 +25,27 @@ import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
+import javax.swing.JSpinner;
+import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
 import javax.swing.JToolBar;
 import javax.swing.JTree;
+import javax.swing.SpinnerNumberModel;
 import javax.swing.TransferHandler;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
 import java.awt.BorderLayout;
+import java.awt.GraphicsEnvironment;
 import java.awt.GridLayout;
 import java.awt.datatransfer.Transferable;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.nio.charset.Charset;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.BiConsumer;
 
 /**
@@ -326,8 +334,26 @@ public final class SessionSidebar extends JPanel {
         }
     }
 
-    /** Form dialog; mutates {@code cfg} on OK. Returns whether the user confirmed. */
+    /** Terminal types offered in the dialog (the combo is editable for anything not listed). */
+    private static final String[] TERMINAL_TYPES = {
+            "xterm-256color", "xterm", "xterm-color", "vt100", "vt220", "vt320",
+            "ansi", "linux", "screen", "screen-256color", "tmux-256color", "rxvt-unicode"
+    };
+
+    /** Common stream charsets offered in the dialog (filtered to those the JVM supports). */
+    private static final String[] COMMON_CHARSETS = {
+            "UTF-8", "US-ASCII", "ISO-8859-1", "ISO-8859-15", "windows-1252",
+            "GBK", "GB2312", "Big5", "Shift_JIS", "EUC-JP", "EUC-KR", "KOI8-R"
+    };
+
+    private static final String DEFAULT_FONT_LABEL = "(Default)";
+
+    /**
+     * Tabbed form dialog ("Basic settings" + "Terminal Settings"); mutates {@code cfg} on OK.
+     * Returns whether the user confirmed.
+     */
     private boolean showSshDialog(SshSessionConfig cfg, String title) {
+        // ---- Basic settings ----
         JTextField name = new JTextField(cfg.getName());
         JTextField host = new JTextField(cfg.getHost());
         JTextField port = new JTextField(String.valueOf(cfg.getPort()));
@@ -359,27 +385,48 @@ public final class SessionSidebar extends JPanel {
             }
         });
 
-        JPanel form = new JPanel(new GridLayout(0, 2, 6, 6));
-        form.add(new JLabel("Name:"));
-        form.add(name);
-        form.add(new JLabel("Host:"));
-        form.add(host);
-        form.add(new JLabel("Port:"));
-        form.add(port);
-        form.add(new JLabel("User:"));
-        form.add(user);
-        form.add(new JLabel("Icon:"));
-        form.add(iconBtn);
-        form.add(new JLabel("Forward ssh-agent:"));
-        form.add(agent);
-        form.add(new JLabel("Password auth:"));
-        form.add(passwordAuth);
-        form.add(new JLabel("Password:"));
-        form.add(password);
-        form.add(new JLabel("Save password:"));
-        form.add(savePassword);
+        JPanel basic = formPanel();
+        row(basic, "Name:", name);
+        row(basic, "Host:", host);
+        row(basic, "Port:", port);
+        row(basic, "User:", user);
+        row(basic, "Icon:", iconBtn);
+        row(basic, "Forward ssh-agent:", agent);
+        row(basic, "Password auth:", passwordAuth);
+        row(basic, "Password:", password);
+        row(basic, "Save password:", savePassword);
 
-        int result = JOptionPane.showConfirmDialog(this, form, title,
+        // ---- Terminal settings ----
+        JComboBox<String> terminalType = new JComboBox<>(TERMINAL_TYPES);
+        terminalType.setEditable(true);
+        terminalType.setSelectedItem(blankToDefault(cfg.getTerminalType(), "xterm-256color"));
+
+        JComboBox<String> font = new JComboBox<>();
+        font.addItem(DEFAULT_FONT_LABEL);
+        for (String family : GraphicsEnvironment.getLocalGraphicsEnvironment().getAvailableFontFamilyNames()) {
+            font.addItem(family);
+        }
+        font.setSelectedItem((cfg.getFontFamily() == null || cfg.getFontFamily().isBlank())
+                ? DEFAULT_FONT_LABEL : cfg.getFontFamily());
+
+        int initialSize = cfg.getFontSize() > 0 ? cfg.getFontSize() : 14;
+        JSpinner fontSize = new JSpinner(new SpinnerNumberModel(initialSize, 6, 72, 1));
+
+        JComboBox<String> charset = new JComboBox<>(supportedCharsets());
+        charset.setEditable(true);
+        charset.setSelectedItem(blankToDefault(cfg.getTerminalCharset(), "UTF-8"));
+
+        JPanel terminal = formPanel();
+        row(terminal, "Terminal Type:", terminalType);
+        row(terminal, "Font:", font);
+        row(terminal, "Font Size:", fontSize);
+        row(terminal, "Terminal Charset:", charset);
+
+        JTabbedPane tabs = new JTabbedPane();
+        tabs.addTab("Basic settings", basic);
+        tabs.addTab("Terminal Settings", terminal);
+
+        int result = JOptionPane.showConfirmDialog(this, tabs, title,
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
         if (result != JOptionPane.OK_OPTION) {
             return false;
@@ -394,8 +441,39 @@ public final class SessionSidebar extends JPanel {
         } catch (NumberFormatException ex) {
             cfg.setPort(22);
         }
+        cfg.setTerminalType(blankToDefault(comboText(terminalType), "xterm-256color"));
+        Object selectedFont = font.getSelectedItem();
+        cfg.setFontFamily((selectedFont == null || DEFAULT_FONT_LABEL.equals(selectedFont))
+                ? "" : selectedFont.toString());
+        cfg.setFontSize((Integer) fontSize.getValue());
+        cfg.setTerminalCharset(blankToDefault(comboText(charset), "UTF-8"));
         applyPasswordSettings(cfg, passwordAuth.isSelected(), savePassword.isSelected(), password.getPassword());
         return true;
+    }
+
+    private static JPanel formPanel() {
+        return new JPanel(new GridLayout(0, 2, 6, 6));
+    }
+
+    private static void row(JPanel form, String label, JComponent field) {
+        form.add(new JLabel(label));
+        form.add(field);
+    }
+
+    private static String comboText(JComboBox<String> combo) {
+        Object value = combo.getSelectedItem();
+        return value == null ? "" : value.toString().trim();
+    }
+
+    /** The {@link #COMMON_CHARSETS} the running JVM actually supports. */
+    private static String[] supportedCharsets() {
+        List<String> supported = new ArrayList<>();
+        for (String name : COMMON_CHARSETS) {
+            if (Charset.isSupported(name)) {
+                supported.add(name);
+            }
+        }
+        return supported.toArray(new String[0]);
     }
 
     /**

@@ -21,10 +21,39 @@ public final class JTermSettingsProvider extends DefaultSettingsProvider {
     private final ColorPalette palette;
     private final Font font;
 
+    private static final int DEFAULT_FONT_SIZE = 14;
+
     public JTermSettingsProvider(ThemeColors theme) {
+        this(theme, null, 0);
+    }
+
+    /**
+     * @param fontFamily a specific installed font family, or {@code null}/blank to auto-pick
+     * @param fontSize   point size, or {@code <= 0} to use the default
+     */
+    public JTermSettingsProvider(ThemeColors theme, String fontFamily, int fontSize) {
         this.theme = theme;
         this.palette = new AnsiPalette(theme);
-        this.font = resolveMonospacedFont(14);
+        int size = fontSize > 0 ? fontSize : DEFAULT_FONT_SIZE;
+        this.font = resolveFont(fontFamily, size);
+    }
+
+    /** Uses the requested family when it's installed; otherwise auto-picks a monospaced font. */
+    private static Font resolveFont(String fontFamily, int size) {
+        if (fontFamily != null && !fontFamily.isBlank() && isAvailable(fontFamily)) {
+            return new Font(fontFamily, Font.PLAIN, size);
+        }
+        return resolveMonospacedFont(size);
+    }
+
+    private static boolean isAvailable(String family) {
+        for (String name : java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment()
+                .getAvailableFontFamilyNames()) {
+            if (name.equalsIgnoreCase(family)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

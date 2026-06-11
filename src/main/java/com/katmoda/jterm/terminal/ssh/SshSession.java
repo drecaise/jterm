@@ -1,6 +1,7 @@
 package com.katmoda.jterm.terminal.ssh;
 
 import com.jediterm.terminal.TtyConnector;
+import com.katmoda.jterm.terminal.TerminalProfile;
 import com.katmoda.jterm.terminal.TerminalSession;
 import com.katmoda.jterm.terminal.ssh.agent.AgentSupport;
 import com.katmoda.jterm.terminal.ssh.agent.JdkAgentFactory;
@@ -44,15 +45,17 @@ public final class SshSession implements TerminalSession {
     private final SshTtyConnector connector;
     private final String title;
     private final String iconId;
+    private final TerminalProfile profile;
 
     private SshSession(SshClient client, ClientSession session, ChannelShell channel,
-                       String title, String iconId) {
+                       String title, String iconId, TerminalProfile profile) {
         this.client = client;
         this.session = session;
         this.channel = channel;
         this.title = title;
         this.iconId = iconId;
-        this.connector = new SshTtyConnector(channel, title);
+        this.profile = profile;
+        this.connector = new SshTtyConnector(channel, title, profile.charset());
     }
 
     /** Icon library id this session was launched with (may be {@code null} → type default). */
@@ -74,9 +77,11 @@ public final class SshSession implements TerminalSession {
      * @param password        optional password fallback (may be {@code null}/blank)
      * @param displayName     label for the pane title
      * @param iconId          icon library id for the tab (may be {@code null})
+     * @param profile         terminal type, charset and font settings for this session
      */
     public static SshSession connect(String host, int port, String user, boolean agentForwarding,
-                                     String password, String displayName, String iconId) throws IOException {
+                                     String password, String displayName, String iconId,
+                                     TerminalProfile profile) throws IOException {
         SshClient client = SshClient.setUpDefaultClient();
 
         // OpenSSH known_hosts policy: TOFU for unknown hosts, warn on changed keys.
@@ -104,7 +109,7 @@ public final class SshSession implements TerminalSession {
                 session.auth().verify(AUTH_TIMEOUT);
 
                 ChannelShell channel = session.createShellChannel();
-                channel.setPtyType("xterm-256color");
+                channel.setPtyType(profile.terminalType());
                 channel.setPtyColumns(80);
                 channel.setPtyLines(24);
                 channel.setAgentForwarding(agentForwarding);
@@ -114,7 +119,7 @@ public final class SshSession implements TerminalSession {
 
                 String label = displayName != null && !displayName.isBlank()
                         ? displayName : user + "@" + host;
-                return new SshSession(client, session, channel, label, iconId);
+                return new SshSession(client, session, channel, label, iconId, profile);
             } catch (IOException e) {
                 session.close(true);
                 throw e;
@@ -198,6 +203,11 @@ public final class SshSession implements TerminalSession {
     @Override
     public String title() {
         return title;
+    }
+
+    @Override
+    public TerminalProfile profile() {
+        return profile;
     }
 
     @Override

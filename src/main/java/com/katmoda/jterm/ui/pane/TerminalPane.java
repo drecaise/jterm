@@ -47,7 +47,9 @@ public final class TerminalPane extends JPanel {
     public TerminalPane(TerminalSession session, ThemeColors theme, TtyConnector connector) {
         super(new BorderLayout());
         this.session = session;
-        this.widget = new JtermJediTermWidget(new JTermSettingsProvider(theme));
+        var profile = session.profile();
+        this.widget = new JtermJediTermWidget(
+                new JTermSettingsProvider(theme, profile.fontFamily(), profile.fontSize()));
         this.widget.setTtyConnector(connector);
         this.widget.start();
         add(widget, BorderLayout.CENTER);
