@@ -47,9 +47,11 @@ public final class SshSession implements TerminalSession {
     private final String iconId;
     private final TerminalProfile profile;
     private final String highlightListId;
+    private final String tabColorHex;
 
     private SshSession(SshClient client, ClientSession session, ChannelShell channel,
-                       String title, String iconId, TerminalProfile profile, String highlightListId) {
+                       String title, String iconId, TerminalProfile profile, String highlightListId,
+                       String tabColorHex) {
         this.client = client;
         this.session = session;
         this.channel = channel;
@@ -57,12 +59,18 @@ public final class SshSession implements TerminalSession {
         this.iconId = iconId;
         this.profile = profile;
         this.highlightListId = highlightListId;
+        this.tabColorHex = tabColorHex;
         this.connector = new SshTtyConnector(channel, title, profile.charset());
     }
 
     /** Icon library id this session was launched with (may be {@code null} → type default). */
     public String iconId() {
         return iconId;
+    }
+
+    /** Custom tab color as {@code "#RRGGBB"}, or {@code null} for the theme default. */
+    public String tabColorHex() {
+        return tabColorHex;
     }
 
     /**
@@ -81,10 +89,12 @@ public final class SshSession implements TerminalSession {
      * @param iconId          icon library id for the tab (may be {@code null})
      * @param profile         terminal type, charset and font settings for this session
      * @param highlightListId output-highlighting override id (may be {@code null} to inherit)
+     * @param tabColorHex     custom tab color {@code "#RRGGBB"} (may be {@code null} for the default)
      */
     public static SshSession connect(String host, int port, String user, boolean agentForwarding,
                                      String password, String displayName, String iconId,
-                                     TerminalProfile profile, String highlightListId) throws IOException {
+                                     TerminalProfile profile, String highlightListId,
+                                     String tabColorHex) throws IOException {
         SshClient client = SshClient.setUpDefaultClient();
 
         // OpenSSH known_hosts policy: TOFU for unknown hosts, warn on changed keys.
@@ -122,7 +132,8 @@ public final class SshSession implements TerminalSession {
 
                 String label = displayName != null && !displayName.isBlank()
                         ? displayName : user + "@" + host;
-                return new SshSession(client, session, channel, label, iconId, profile, highlightListId);
+                return new SshSession(client, session, channel, label, iconId, profile, highlightListId,
+                        tabColorHex);
             } catch (IOException e) {
                 session.close(true);
                 throw e;

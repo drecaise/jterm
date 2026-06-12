@@ -34,6 +34,9 @@ public final class SshSessionConfig implements SessionNode {
     // "__none__" = explicitly no highlighting, any other value = a HighlightList id.
     private String highlightListId;
 
+    // Custom tab color as "#RRGGBB", or null to use the theme default tab color.
+    private String tabColorHex;
+
     public SshSessionConfig() {
     }
 
@@ -171,5 +174,14 @@ public final class SshSessionConfig implements SessionNode {
     public void setHighlightListId(String highlightListId) {
         this.highlightListId =
                 (highlightListId != null && !highlightListId.isBlank()) ? highlightListId : null;
+    }
+
+    /** Custom tab color as {@code "#RRGGBB"}, or {@code null} for the theme default. */
+    public String getTabColorHex() {
+        return tabColorHex;
+    }
+
+    public void setTabColorHex(String tabColorHex) {
+        this.tabColorHex = (tabColorHex != null && !tabColorHex.isBlank()) ? tabColorHex : null;
     }
 }

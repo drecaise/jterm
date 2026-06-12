@@ -11,15 +11,16 @@ import java.awt.Font;
 /**
  * Supplies JediTerm with colors and font derived from the current {@link ThemeColors}.
  *
- * <p>The terminal's default foreground/background ({@code getDefaultForeground} /
- * {@code getDefaultBackground}) and ANSI palette are all read from the theme captured
- * at construction time. A pane created after a theme switch picks up the new colors;
- * live recoloring of already-running terminals is a later (theming-polish) concern.</p>
+ * <p>Colors are read <i>live</i>: {@code getDefaultForeground}/{@code getDefaultBackground} and the
+ * ANSI palette all reflect the {@link #theme} field, which {@link #setTheme} can swap at runtime.
+ * The terminal panel reads these on every paint, so calling {@code setTheme} + repaint recolors a
+ * running terminal — including already-printed text, because default-pen cells store no explicit
+ * color (see {@link #getDefaultStyle()}) and are resolved against this provider when painted.</p>
  */
 public final class JTermSettingsProvider extends DefaultSettingsProvider {
 
-    private final ThemeColors theme;
-    private final ColorPalette palette;
+    private ThemeColors theme;
+    private ColorPalette palette;
     private final Font font;
 
     public JTermSettingsProvider(ThemeColors theme) {
@@ -79,6 +80,12 @@ public final class JTermSettingsProvider extends DefaultSettingsProvider {
         return new Font(Font.MONOSPACED, Font.PLAIN, size);
     }
 
+    /** Swaps the active theme; the next repaint re-resolves all terminal colors against it. */
+    public void setTheme(ThemeColors theme) {
+        this.theme = theme;
+        this.palette = new AnsiPalette(theme);
+    }
+
     @Override
     public ColorPalette getTerminalColorPalette() {
         return palette;
@@ -96,14 +103,17 @@ public final class JTermSettingsProvider extends DefaultSettingsProvider {
 
     /**
      * The style applied to cells written with no explicit color (the terminal's "default pen").
-     * JediTerm's stock implementation returns a black-on-white style (ANSI index 0 on index 15),
-     * which paints every default-styled cell white on a dark theme; we override it so default
-     * cells use the theme's own foreground/background, matching {@link #getDefaultForeground()} /
-     * {@link #getDefaultBackground()}.
+     * We return {@link TextStyle#EMPTY} (no colors) on purpose: a cell with no foreground/background
+     * is resolved at paint time against {@link #getDefaultForeground()} / {@link #getDefaultBackground()},
+     * so default-pen text follows live theme changes instead of baking in colors at write time.
+     * (JediTerm's stock default is a fixed black-on-white style, which is why we override it.)
+     *
+     * <p>Note: with no colors stored, {@code StyleState.getDefault*} would NPE for inverse-video
+     * cells; {@code ThemeAwareStyleState} supplies non-null theme colors there.</p>
      */
     @Override
     public TextStyle getDefaultStyle() {
-        return new TextStyle(terminalColor(theme.foreground()), terminalColor(theme.background()));
+        return TextStyle.EMPTY;
     }
 
     @Override

@@ -25,6 +25,10 @@ public final class AppSettings {
     private boolean copyOnSelect = false;
     private boolean pasteOnRightClick = false;
 
+    // Whether the dark theme is active. Persisted so the choice survives a restart; defaults to
+    // dark (the app's original default) on a fresh install or a settings file predating this field.
+    private boolean darkTheme = true;
+
     // Default terminal settings applied to the local terminal and to any saved session that
     // leaves a field unset ("inherit"). The font defaults to the bundled MobaFont.
     private String defaultTerminalType = "xterm-256color";
@@ -59,6 +63,15 @@ public final class AppSettings {
 
     public void setPasteOnRightClick(boolean pasteOnRightClick) {
         this.pasteOnRightClick = pasteOnRightClick;
+    }
+
+    /** Whether the dark theme is active (persisted across restarts). */
+    public boolean isDarkTheme() {
+        return darkTheme;
+    }
+
+    public void setDarkTheme(boolean darkTheme) {
+        this.darkTheme = darkTheme;
     }
 
     public String getDefaultTerminalType() {
@@ -131,7 +144,7 @@ public final class AppSettings {
             new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
                     .writeValue(file().toFile(), new Persisted(copyOnSelect, pasteOnRightClick,
                             defaultTerminalType, defaultCharset, defaultFontFamily, defaultFontSize,
-                            globalHighlightListId));
+                            globalHighlightListId, darkTheme));
         } catch (Exception ignored) {
             // Settings are a convenience; a failed write shouldn't break the app.
         }
@@ -158,6 +171,9 @@ public final class AppSettings {
                     settings.defaultFontSize = p.defaultFontSize;
                 }
                 settings.setGlobalHighlightListId(p.globalHighlightListId);
+                if (p.darkTheme != null) {
+                    settings.darkTheme = p.darkTheme;
+                }
             } catch (Exception ignored) {
                 // Fall back to defaults on a malformed file.
             }
@@ -174,6 +190,6 @@ public final class AppSettings {
     private record Persisted(boolean copyOnSelect, boolean pasteOnRightClick,
                              String defaultTerminalType, String defaultCharset,
                              String defaultFontFamily, int defaultFontSize,
-                             String globalHighlightListId) {
+                             String globalHighlightListId, Boolean darkTheme) {
     }
 }

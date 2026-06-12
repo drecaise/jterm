@@ -12,6 +12,7 @@ import com.katmoda.jterm.terminal.SessionFactory;
 import com.katmoda.jterm.terminal.TerminalSession;
 import com.katmoda.jterm.terminal.local.LocalSession;
 import com.katmoda.jterm.ui.pane.TerminalPane;
+import com.katmoda.jterm.ui.theme.ThemeColors;
 import com.katmoda.jterm.ui.theme.ThemeManager;
 
 import javax.swing.BorderFactory;
@@ -189,6 +190,17 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     /** Re-apply theme-derived chrome (active-pane accent border) after a theme switch. */
     public void refreshTheme() {
         updateBorders();
+    }
+
+    /** Recolor every live terminal in this grid for the new theme (no restart). */
+    public void applyTheme(ThemeColors theme) {
+        for (int r = 0; r < MAX; r++) {
+            for (int c = 0; c < MAX; c++) {
+                if (panes[r][c] != null) {
+                    panes[r][c].applyTheme(theme);
+                }
+            }
+        }
     }
 
     /** Terminate every pane's session (called when the owning tab closes). */

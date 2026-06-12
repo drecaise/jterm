@@ -56,8 +56,9 @@ public final class TerminalPane extends JPanel {
 
     private final TerminalSession session;
     private final JtermJediTermWidget widget;
+    private final JTermSettingsProvider settingsProvider;
     private final TtyConnector inputConnector;
-    private final ThemeColors theme;
+    private ThemeColors theme;
 
     private final JPanel broadcastBar;
     private final JCheckBox broadcastCheck;
@@ -76,8 +77,8 @@ public final class TerminalPane extends JPanel {
         this.inputConnector = connector;
         this.theme = theme;
         var profile = session.profile();
-        this.widget = new JtermJediTermWidget(
-                new JTermSettingsProvider(theme, profile.fontFamily(), profile.fontSize()));
+        this.settingsProvider = new JTermSettingsProvider(theme, profile.fontFamily(), profile.fontSize());
+        this.widget = new JtermJediTermWidget(settingsProvider);
         this.widget.setTtyConnector(connector);
         this.widget.start();
         add(widget, BorderLayout.CENTER);
@@ -367,6 +368,18 @@ public final class TerminalPane extends JPanel {
         if (resolved != null) {
             highlightTeardown = HighlightingInstaller.install(widget, CompiledHighlightList.compile(resolved));
         }
+    }
+
+    /**
+     * Recolors this pane's terminal in place after a light/dark switch — no restart needed. The
+     * settings provider's theme is swapped and the panel repainted; default-pen and ANSI-indexed
+     * cells (including existing scrollback) re-resolve against the new theme on paint. Explicit
+     * truecolor output keeps its absolute colors, as intended.
+     */
+    public void applyTheme(ThemeColors newTheme) {
+        this.theme = newTheme;
+        settingsProvider.setTheme(newTheme);
+        widget.recolor();
     }
 
     /** Move keyboard focus into the terminal. */
