@@ -9,6 +9,8 @@ import com.katmoda.jterm.macro.MacroLibrary;
 import com.katmoda.jterm.macro.MacroRunner;
 import com.katmoda.jterm.security.VaultException;
 import com.katmoda.jterm.security.VaultManager;
+import com.katmoda.jterm.dnd.PaneTransferable;
+import com.katmoda.jterm.dnd.TabTransferable;
 import com.katmoda.jterm.session.SessionStore;
 import com.katmoda.jterm.session.SshSessionConfig;
 import com.katmoda.jterm.terminal.SessionFactory;
@@ -46,11 +48,21 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Insets;
+import java.awt.Point;
 import java.awt.Taskbar;
 import java.awt.KeyboardFocusManager;
+import java.awt.dnd.DnDConstants;
+import java.awt.dnd.DragGestureListener;
+import java.awt.dnd.DragSource;
+import java.awt.dnd.DropTarget;
+import java.awt.dnd.DropTargetAdapter;
+import java.awt.dnd.DropTargetDragEvent;
+import java.awt.dnd.DropTargetDropEvent;
+import java.awt.dnd.InvalidDnDOperationException;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.event.MouseListener;
 import java.util.List;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -74,8 +86,9 @@ public final class MainWindow {
     /** Permanent trailing tab that hosts the "+" button, keeping it right after the last tab. */
     private final JPanel plusPlaceholder = new JPanel();
     private JButton plusButton;
-    /** Index of the tab currently being dragged for reorder, or -1 when not dragging. */
-    private int dragTabIndex = -1;
+    /** Tab selected immediately before the current mouse press, captured so a tab drag can keep the
+     *  previously-active grid visible as the drop target instead of switching to the dragged tab. */
+    private int selectedBeforePress = -1;
 
     private int tabCounter = 0;
     /** While true, the global terminal-shortcut dispatcher stands down so the editor can capture keys. */
@@ -140,7 +153,7 @@ public final class MainWindow {
         BiConsumer<JTabbedPane, Integer> closeCallback = (pane, index) -> closeTabAt(index);
         tabs.putClientProperty("JTabbedPane.tabCloseCallback", closeCallback);
         installPlusTab();
-        installTabDragReorder();
+        installTabDnd();
     }
 
     /**
@@ -154,6 +167,38 @@ public final class MainWindow {
         tabs.addTab(null, plusPlaceholder);
         plusButton = buildNewTabButton();
         tabs.setTabComponentAt(tabs.indexOfComponent(plusPlaceholder), plusButton);
+        installNewTabDropTarget(plusButton);
+    }
+
+    /** Dropping a dragged pane on "+" pulls it out of its split into a brand-new tab. */
+    private void installNewTabDropTarget(JButton button) {
+        new DropTarget(button, DnDConstants.ACTION_MOVE, new DropTargetAdapter() {
+            @Override
+            public void dragOver(DropTargetDragEvent dtde) {
+                if (dtde.isDataFlavorSupported(PaneTransferable.PANE_FLAVOR)) {
+                    dtde.acceptDrag(DnDConstants.ACTION_MOVE);
+                } else {
+                    dtde.rejectDrag();
+                }
+            }
+
+            @Override
+            public void drop(DropTargetDropEvent dtde) {
+                try {
+                    if (!dtde.isDataFlavorSupported(PaneTransferable.PANE_FLAVOR)) {
+                        dtde.rejectDrop();
+                        return;
+                    }
+                    dtde.acceptDrop(DnDConstants.ACTION_MOVE);
+                    TerminalPane pane = (TerminalPane) dtde.getTransferable()
+                            .getTransferData(PaneTransferable.PANE_FLAVOR);
+                    movePaneToNewTab(pane);
+                    dtde.dropComplete(true);
+                } catch (Exception e) {
+                    dtde.dropComplete(false);
+                }
+            }
+        });
     }
 
     private JButton buildNewTabButton() {
@@ -206,7 +251,53 @@ public final class MainWindow {
         grid.setOnActiveChanged(() -> decorateTab(grid));
         // When the last pane is closed from the stopped screen, close the tab too.
         grid.setOnEmpty(() -> closeTabForGrid(grid));
+        // Lets this grid adopt a pane dragged in from another tab (detach it from its source first).
+        grid.setMoveCoordinator(this::detachFromOwner);
         return grid;
+    }
+
+    // ---- pane moves between tabs (drag a pane out / a tab into a grid) ----
+
+    /** Pull a pane out of its split into a new tab. No-op if it's the only pane in its tab. */
+    private void movePaneToNewTab(TerminalPane pane) {
+        PaneGrid owner = gridContaining(pane);
+        if (owner == null || owner.paneCount() <= 1) {
+            return;
+        }
+        SessionFactory factory = owner.detachForMove(pane);
+        if (factory == null) {
+            return;
+        }
+        PaneGrid grid = newGrid();
+        insertGrid(grid);
+        grid.adopt(pane, factory);
+        decorateTab(grid);
+    }
+
+    /**
+     * Detach a pane from whichever tab's grid owns it (without closing it), closing that tab if it
+     * empties. Used by a destination grid to take ownership of a pane dragged in from another tab.
+     */
+    private SessionFactory detachFromOwner(TerminalPane pane) {
+        PaneGrid owner = gridContaining(pane);
+        if (owner == null) {
+            return null;
+        }
+        SessionFactory factory = owner.detachForMove(pane);
+        if (owner.paneCount() == 0) {
+            closeTabForGrid(owner);
+        }
+        return factory;
+    }
+
+    /** The tab grid that currently holds {@code pane}, or {@code null}. */
+    private PaneGrid gridContaining(TerminalPane pane) {
+        for (int i = 0; i <= lastRealTabIndex(); i++) {
+            if (tabs.getComponentAt(i) instanceof PaneGrid grid && grid.contains(pane)) {
+                return grid;
+            }
+        }
+        return null;
     }
 
     /** Closes the tab hosting {@code grid}, if it's still present. */
@@ -596,34 +687,95 @@ public final class MainWindow {
         }
     }
 
-    /** Wires drag-to-reorder on the tab strip (press a tab, drag it across its neighbours). */
-    private void installTabDragReorder() {
-        MouseAdapter reorder = new MouseAdapter() {
-            @Override
-            public void mousePressed(MouseEvent e) {
-                int idx = tabs.indexAtLocation(e.getX(), e.getY());
-                dragTabIndex = (idx >= 0 && tabs.getComponentAt(idx) != plusPlaceholder) ? idx : -1;
-            }
+    /**
+     * Wires tab drag-and-drop: a tab can be dragged across the strip to reorder, or (single-pane
+     * tabs only) dropped into another tab's pane/empty cell to move that terminal in. Reorder and
+     * drag-into-grid both start from a tab drag, so this replaces the old {@code MouseAdapter}
+     * reorder — a {@code MouseAdapter} drag and a Swing DnD drag can't share the tab strip.
+     */
+    private void installTabDnd() {
+        // Capture the selection *before* the press selects the pressed tab, so a drag can keep the
+        // previously-active grid on screen as the drop target. Runs before the UI's own listener.
+        captureSelectionBeforeUi();
 
-            @Override
-            public void mouseReleased(MouseEvent e) {
-                dragTabIndex = -1;
+        DragGestureListener onDrag = dge -> {
+            Point origin = dge.getDragOrigin();
+            int idx = tabs.indexAtLocation(origin.x, origin.y);
+            if (idx < 0 || tabs.getComponentAt(idx) == plusPlaceholder
+                    || !(tabs.getComponentAt(idx) instanceof PaneGrid grid)) {
+                return;
             }
-
-            @Override
-            public void mouseDragged(MouseEvent e) {
-                if (dragTabIndex < 0) {
-                    return;
-                }
-                int over = tabs.indexAtLocation(e.getX(), e.getY());
-                if (over >= 0 && over != dragTabIndex && over <= lastRealTabIndex()) {
-                    moveTab(dragTabIndex, over);
-                    dragTabIndex = over;
-                }
+            // Keep the previously-viewed grid visible (the press already switched to the dragged tab).
+            int restore = (selectedBeforePress >= 0 && selectedBeforePress <= lastRealTabIndex())
+                    ? selectedBeforePress : idx;
+            if (tabs.getSelectedIndex() != restore) {
+                tabs.setSelectedIndex(restore);
+            }
+            try {
+                dge.startDrag(null, new TabTransferable(grid));
+            } catch (InvalidDnDOperationException ignored) {
+                // A drag is already in flight.
             }
         };
-        tabs.addMouseListener(reorder);
-        tabs.addMouseMotionListener(reorder);
+        DragSource.getDefaultDragSource()
+                .createDefaultDragGestureRecognizer(tabs, DnDConstants.ACTION_MOVE, onDrag);
+
+        // Reorder: a tab dropped on the strip (drops over panes/cells are handled by their own,
+        // deeper drop targets, so they never reach here).
+        new DropTarget(tabs, DnDConstants.ACTION_MOVE, new DropTargetAdapter() {
+            @Override
+            public void dragOver(DropTargetDragEvent dtde) {
+                if (dtde.isDataFlavorSupported(TabTransferable.TAB_FLAVOR)) {
+                    dtde.acceptDrag(DnDConstants.ACTION_MOVE);
+                } else {
+                    dtde.rejectDrag();
+                }
+            }
+
+            @Override
+            public void drop(DropTargetDropEvent dtde) {
+                try {
+                    if (!dtde.isDataFlavorSupported(TabTransferable.TAB_FLAVOR)) {
+                        dtde.rejectDrop();
+                        return;
+                    }
+                    dtde.acceptDrop(DnDConstants.ACTION_MOVE);
+                    PaneGrid grid = (PaneGrid) dtde.getTransferable()
+                            .getTransferData(TabTransferable.TAB_FLAVOR);
+                    int from = tabs.indexOfComponent(grid);
+                    int to = tabs.indexAtLocation(dtde.getLocation().x, dtde.getLocation().y);
+                    if (to < 0 || to > lastRealTabIndex()) {
+                        to = lastRealTabIndex();
+                    }
+                    if (from >= 0) {
+                        moveTab(from, to);
+                    }
+                    dtde.dropComplete(true);
+                } catch (Exception e) {
+                    dtde.dropComplete(false);
+                }
+            }
+        });
+    }
+
+    /** Records the selected tab on each press, ahead of the UI's selection, into
+     *  {@link #selectedBeforePress}. */
+    private void captureSelectionBeforeUi() {
+        MouseListener capture = new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+                selectedBeforePress = tabs.getSelectedIndex();
+            }
+        };
+        // Re-order listeners so ours fires before the UI's selection handler (added at UI install).
+        MouseListener[] existing = tabs.getMouseListeners();
+        for (MouseListener ml : existing) {
+            tabs.removeMouseListener(ml);
+        }
+        tabs.addMouseListener(capture);
+        for (MouseListener ml : existing) {
+            tabs.addMouseListener(ml);
+        }
     }
 
     // ---- menu ----

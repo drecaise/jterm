@@ -5,6 +5,7 @@ import com.jediterm.terminal.TtyConnector;
 import com.jediterm.terminal.model.SelectionUtil;
 import com.katmoda.jterm.config.AppSettings;
 import com.katmoda.jterm.dnd.DropRegion;
+import com.katmoda.jterm.dnd.PaneTransferable;
 import com.katmoda.jterm.highlight.CompiledHighlightList;
 import com.katmoda.jterm.highlight.HighlightList;
 import com.katmoda.jterm.highlight.HighlightListResolver;
@@ -36,6 +37,10 @@ import java.awt.Component;
 import java.awt.Font;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
+import java.awt.dnd.DnDConstants;
+import java.awt.dnd.DragGestureListener;
+import java.awt.dnd.DragSource;
+import java.awt.dnd.InvalidDnDOperationException;
 import java.awt.event.ActionEvent;
 import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
@@ -109,6 +114,7 @@ public final class TerminalPane extends JPanel {
         this.bottomArea = new JPanel(new BorderLayout());
         this.bottomArea.add(broadcastBar, BorderLayout.SOUTH);
         add(bottomArea, BorderLayout.SOUTH);
+        installPaneDragSource();
         // Keep the title (e.g. a local shell's CWD) up to date while the pane is live.
         this.titleTimer = new Timer(800, e -> refreshTitle());
         this.titleTimer.setRepeats(true);
@@ -301,7 +307,36 @@ public final class TerminalPane extends JPanel {
         }
     }
 
+    // ---- drag source (move this pane) ----
+
+    /**
+     * Makes the title bar (icon + name) a drag handle that carries this live pane. Dropping it on
+     * the "+" pulls it into a new tab; on another pane/empty cell it rearranges or moves in. The
+     * terminal widget itself is not a drag source, so text selection is unaffected, and the
+     * broadcast checkbox keeps its own click handling.
+     */
+    private void installPaneDragSource() {
+        DragGestureListener listener = dge -> {
+            try {
+                dge.startDrag(null, new PaneTransferable(this));
+            } catch (InvalidDnDOperationException ignored) {
+                // Another drag is already in flight; ignore this gesture.
+            }
+        };
+        DragSource ds = DragSource.getDefaultDragSource();
+        ds.createDefaultDragGestureRecognizer(broadcastBar, DnDConstants.ACTION_MOVE, listener);
+        ds.createDefaultDragGestureRecognizer(titleLabel, DnDConstants.ACTION_MOVE, listener);
+    }
+
     // ---- drag-and-drop hint ----
+
+    /** Full-border highlight shown while a dragged pane hovers this one (swap / move target). */
+    public void showMoveHint() {
+        if (savedBorder == null) {
+            savedBorder = getBorder();
+        }
+        setBorder(BorderFactory.createLineBorder(accentColor(), 3));
+    }
 
     /** Highlight the edge where a dropped session would open (right=column, bottom=row). */
     public void showDropHint(DropRegion region) {
