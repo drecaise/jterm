@@ -224,7 +224,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         for (int r = 0; r < rows; r++) {
             for (int c = 0; c < cols; c++) {
                 if (panes[r][c] != null) {
-                    panes[r][c].setBroadcastBarVisible(broadcastActive);
+                    panes[r][c].setBroadcastMode(broadcastActive);
                 }
             }
         }
@@ -276,9 +276,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         factories[r][c] = factory;
         activeRow = r;
         activeCol = c;
-        if (broadcastActive) {
-            pane.setBroadcastBarVisible(true);
-        }
+        pane.setBroadcastMode(broadcastActive);
     }
 
     private void openLocalAt(int r, int c) {
