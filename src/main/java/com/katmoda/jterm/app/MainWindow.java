@@ -1,6 +1,5 @@
 package com.katmoda.jterm.app;
 
-import com.formdev.flatlaf.extras.FlatSVGIcon;
 import com.katmoda.jterm.config.AppSettings;
 import com.katmoda.jterm.icon.IconLibrary;
 import com.katmoda.jterm.keymap.Keymap;
@@ -28,6 +27,7 @@ import com.katmoda.jterm.ui.preferences.ShortcutsDialog;
 import com.katmoda.jterm.ui.security.MasterPasswordDialog;
 import com.katmoda.jterm.ui.sidebar.OpenMode;
 import com.katmoda.jterm.ui.sidebar.SessionSidebar;
+import com.katmoda.jterm.ui.SessionIcon;
 import com.katmoda.jterm.ui.theme.ThemeManager;
 
 import javax.swing.Icon;
@@ -73,8 +73,6 @@ public final class MainWindow {
 
     /** Permanent trailing tab that hosts the "+" button, keeping it right after the last tab. */
     private final JPanel plusPlaceholder = new JPanel();
-    private final FlatSVGIcon terminalIconLight = new FlatSVGIcon("icons/terminal-light.svg", 16, 16);
-    private final FlatSVGIcon terminalIconDark = new FlatSVGIcon("icons/terminal-dark.svg", 16, 16);
     private JButton plusButton;
     /** Index of the tab currently being dragged for reorder, or -1 when not dragging. */
     private int dragTabIndex = -1;
@@ -291,15 +289,13 @@ public final class MainWindow {
             return; // leave the current label (e.g. an SSH tab that's still connecting)
         }
         TerminalSession session = pane.session();
+        tabs.setIconAt(idx, SessionIcon.forSession(session, 16));
         if (session instanceof SshSession ssh) {
-            tabs.setIconAt(idx, iconFor(ssh.iconId()));
             tabs.setTitleAt(idx, ssh.title());
             setTabColor(idx, ssh.tabColorHex());
         } else {
             LocalSession local = (session instanceof LocalSession ls) ? ls : null;
             boolean customLocal = local != null && local.iconId() != null;
-            Icon icon = customLocal ? IconLibrary.get().icon(local.iconId(), 16) : terminalTabIcon();
-            tabs.setIconAt(idx, icon);
             // A WSL distro (a custom-icon local session) carries its own name; a plain shell uses
             // the tab's generic base title ("Terminal N"). Deriving both from the active pane keeps
             // the title tracking the focused split the same way the icon already does.
@@ -334,11 +330,6 @@ public final class MainWindow {
     private Icon iconFor(String iconId) {
         String id = (iconId != null && !iconId.isBlank()) ? iconId : "builtin/server";
         return IconLibrary.get().icon(id, 16);
-    }
-
-    /** The local-terminal tab icon, picked to contrast with the current theme's tab strip. */
-    private Icon terminalTabIcon() {
-        return ThemeManager.get().isDark() ? terminalIconLight : terminalIconDark;
     }
 
     // ---- session opening ----

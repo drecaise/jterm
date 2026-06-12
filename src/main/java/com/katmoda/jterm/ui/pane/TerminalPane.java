@@ -10,6 +10,7 @@ import com.katmoda.jterm.highlight.HighlightList;
 import com.katmoda.jterm.highlight.HighlightListResolver;
 import com.katmoda.jterm.highlight.HighlightingInstaller;
 import com.katmoda.jterm.terminal.TerminalSession;
+import com.katmoda.jterm.ui.SessionIcon;
 import com.katmoda.jterm.ui.theme.JTermSettingsProvider;
 import com.katmoda.jterm.ui.theme.ThemeColors;
 
@@ -60,6 +61,7 @@ public final class TerminalPane extends JPanel {
     private final TtyConnector inputConnector;
     private ThemeColors theme;
 
+    private final JPanel bottomArea;
     private final JPanel broadcastBar;
     private final JCheckBox broadcastCheck;
     private final JLabel titleLabel;
@@ -88,20 +90,29 @@ public final class TerminalPane extends JPanel {
 
         this.broadcastCheck = new JCheckBox((String) null, true);
         this.broadcastCheck.setToolTipText("Include this pane in broadcast input");
+        // The checkbox only makes sense while broadcasting; the bar itself is always shown.
+        this.broadcastCheck.setVisible(false);
         // Toggling participation re-decorates the grid (highlight enabled panes, dim excluded ones).
         this.broadcastCheck.addActionListener(e -> {
             if (onBroadcastToggle != null) {
                 onBroadcastToggle.run();
             }
         });
-        this.titleLabel = new JLabel();
+        this.titleLabel = new JLabel(session.title(), SessionIcon.forSession(session, 16), SwingConstants.LEADING);
+        this.titleLabel.setIconTextGap(6);
         this.broadcastBar = new JPanel(new BorderLayout(6, 0));
         this.broadcastBar.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
         this.broadcastBar.add(broadcastCheck, BorderLayout.WEST);
         this.broadcastBar.add(titleLabel, BorderLayout.CENTER);
-        // While the bar is visible, keep the title (e.g. a local shell's CWD) up to date.
+        // The bar sits permanently at the bottom; the session-stopped panel (when shown) stacks
+        // above it in the same container so the two never fight over BorderLayout.SOUTH.
+        this.bottomArea = new JPanel(new BorderLayout());
+        this.bottomArea.add(broadcastBar, BorderLayout.SOUTH);
+        add(bottomArea, BorderLayout.SOUTH);
+        // Keep the title (e.g. a local shell's CWD) up to date while the pane is live.
         this.titleTimer = new Timer(800, e -> refreshTitle());
         this.titleTimer.setRepeats(true);
+        this.titleTimer.start();
 
         widget.addListener(w -> {
             if (onSessionEnd != null) {
@@ -172,7 +183,7 @@ public final class TerminalPane extends JPanel {
         stopped = true;
         titleTimer.stop();
         JPanel panel = buildStoppedPanel(onExit, onRestart);
-        add(panel, BorderLayout.SOUTH);
+        bottomArea.add(panel, BorderLayout.CENTER);
         revalidate();
         repaint();
         SwingUtilities.invokeLater(panel::requestFocusInWindow);
@@ -275,18 +286,11 @@ public final class TerminalPane extends JPanel {
         return broadcastCheck.isSelected();
     }
 
-    /** Show/hide the broadcast title bar, refreshing the title from the live session. */
-    public void setBroadcastBarVisible(boolean visible) {
-        if (visible) {
-            titleLabel.setText(session.title());
-            add(broadcastBar, BorderLayout.SOUTH);
-            titleTimer.start();
-        } else {
-            titleTimer.stop();
-            remove(broadcastBar);
-        }
-        revalidate();
-        repaint();
+    /** Show/hide the per-pane participation checkbox (the title bar itself is always visible). */
+    public void setBroadcastMode(boolean broadcast) {
+        broadcastCheck.setVisible(broadcast);
+        broadcastBar.revalidate();
+        broadcastBar.repaint();
     }
 
     /** Polls the live session title (e.g. a local shell's current directory) into the bar. */
@@ -391,6 +395,8 @@ public final class TerminalPane extends JPanel {
     public void applyTheme(ThemeColors newTheme) {
         this.theme = newTheme;
         settingsProvider.setTheme(newTheme);
+        // The plain-shell glyph is theme-contrasting, so re-resolve it on a light/dark switch.
+        titleLabel.setIcon(SessionIcon.forSession(session, 16));
         widget.recolor();
     }
 
