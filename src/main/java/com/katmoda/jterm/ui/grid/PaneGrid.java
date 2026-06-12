@@ -228,6 +228,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
                 }
             }
         }
+        updateBorders();
         revalidate();
         repaint();
     }
@@ -235,6 +236,11 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     @Override
     public void broadcast(TtyConnector source, byte[] data) {
         if (!broadcastActive) {
+            return;
+        }
+        // An excluded (unchecked) source pane keeps its own input local — don't fan it out.
+        TerminalPane sourcePane = paneForConnector(source);
+        if (sourcePane != null && !sourcePane.isBroadcastChecked()) {
             return;
         }
         for (int r = 0; r < rows; r++) {
@@ -308,6 +314,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         TerminalPane pane = new TerminalPane(session, ThemeManager.get().current(), wrapped);
         pane.setOnFocus(() -> setActiveByPane(pane));
         pane.setOnSessionEnd(() -> handleSessionEnd(pane));
+        pane.setOnBroadcastToggle(this::updateBorders);
         installDnd(pane);
         return pane;
     }
@@ -442,6 +449,19 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         }
     }
 
+    /** The pane whose real (unwrapped) connector is {@code connector}, or {@code null}. */
+    private TerminalPane paneForConnector(TtyConnector connector) {
+        for (int r = 0; r < rows; r++) {
+            for (int c = 0; c < cols; c++) {
+                TerminalPane pane = panes[r][c];
+                if (pane != null && pane.realConnector() == connector) {
+                    return pane;
+                }
+            }
+        }
+        return null;
+    }
+
     private int[] locate(TerminalPane pane) {
         for (int r = 0; r < rows; r++) {
             for (int c = 0; c < cols; c++) {
@@ -521,17 +541,25 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     }
 
     private void updateBorders() {
-        Color accent = accentColor();
-        Border active = BorderFactory.createLineBorder(accent, CONTENT_BORDER);
-        Border inactive = BorderFactory.createEmptyBorder(
+        Border activeBorder = BorderFactory.createLineBorder(accentColor(), CONTENT_BORDER);
+        Border broadcastBorder = BorderFactory.createLineBorder(broadcastEnabledColor(), CONTENT_BORDER);
+        Border plain = BorderFactory.createEmptyBorder(
                 CONTENT_BORDER, CONTENT_BORDER, CONTENT_BORDER, CONTENT_BORDER);
         for (int r = 0; r < rows; r++) {
             for (int c = 0; c < cols; c++) {
                 TerminalPane pane = panes[r][c];
-                if (pane != null) {
-                    boolean isActive = (r == activeRow && c == activeCol);
-                    pane.setBorder(isActive ? active : inactive);
+                if (pane == null) {
+                    continue;
                 }
+                Border border;
+                if (broadcastActive) {
+                    // Every participating pane is highlighted; excluded panes drop the highlight.
+                    border = pane.isBroadcastChecked() ? broadcastBorder : plain;
+                } else {
+                    boolean isActive = (r == activeRow && c == activeCol);
+                    border = isActive ? activeBorder : plain;
+                }
+                pane.setBorder(border);
             }
         }
         if (onActiveChanged != null) {
@@ -572,5 +600,23 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     private static Color accentColor() {
         Color c = UIManager.getColor("Component.focusColor");
         return c != null ? c : new Color(0x4A90D9);
+    }
+
+    /**
+     * Border color for broadcast-enabled panes. In dark theme the focus accent is lifted toward
+     * white so the highlight reads clearly across every participating pane; in light theme the
+     * plain accent already stands out, so it's used as-is.
+     */
+    private static Color broadcastEnabledColor() {
+        Color base = accentColor();
+        return ThemeManager.get().isDark() ? brighten(base, 0.35) : base;
+    }
+
+    /** Lighten {@code c} toward white by {@code amount} (0 = unchanged, 1 = white). */
+    private static Color brighten(Color c, double amount) {
+        return new Color(
+                (int) Math.round(c.getRed() + (255 - c.getRed()) * amount),
+                (int) Math.round(c.getGreen() + (255 - c.getGreen()) * amount),
+                (int) Math.round(c.getBlue() + (255 - c.getBlue()) * amount));
     }
 }
