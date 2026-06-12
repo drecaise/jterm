@@ -400,7 +400,8 @@ public final class MainWindow {
                 TerminalProfile profile = AppSettings.get().resolve(cfg.getTerminalType(),
                         cfg.getTerminalCharset(), cfg.getFontFamily(), cfg.getFontSize());
                 return SshSession.connect(cfg.getHost(), cfg.getPort(), cfg.getUser(),
-                        cfg.isAgentForwarding(), password, cfg.getName(), cfg.getIconId(), profile);
+                        cfg.isAgentForwarding(), password, cfg.getName(), cfg.getIconId(), profile,
+                        cfg.getHighlightListId());
             }
 
             @Override

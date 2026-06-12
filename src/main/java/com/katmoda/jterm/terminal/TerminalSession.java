@@ -20,6 +20,15 @@ public interface TerminalSession {
         return TerminalProfile.DEFAULT;
     }
 
+    /**
+     * This session's output-highlighting override id, or {@code null} to inherit the global default.
+     * See {@code com.katmoda.jterm.highlight.HighlightListResolver}. Local sessions inherit; SSH
+     * sessions carry their saved override.
+     */
+    default String highlightListOverrideId() {
+        return null;
+    }
+
     /** Whether the underlying process/channel is still running. */
     boolean isAlive();
 

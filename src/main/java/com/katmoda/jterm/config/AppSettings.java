@@ -3,6 +3,7 @@ package com.katmoda.jterm.config;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.katmoda.jterm.highlight.HighlightLibrary;
 import com.katmoda.jterm.terminal.TerminalProfile;
 import com.katmoda.jterm.ui.theme.FontResources;
 
@@ -30,6 +31,12 @@ public final class AppSettings {
     private String defaultCharset = "UTF-8";
     private String defaultFontFamily = FontResources.DEFAULT_TERMINAL_FONT_FAMILY;
     private int defaultFontSize = 14;
+
+    // Id of the globally-active highlight list (in HighlightLibrary); null means "(None)". Saved
+    // sessions inherit this unless they set their own override. Fresh installs (no settings.json)
+    // default to the seeded "Standard" list so error/warn/ok coloring works out of the box; upgrading
+    // users whose settings.json predates this field keep "(None)" (loaded as null below).
+    private String globalHighlightListId = HighlightLibrary.DEFAULT_LIST_ID;
 
     public AppSettings() {
     }
@@ -86,6 +93,17 @@ public final class AppSettings {
         this.defaultFontSize = defaultFontSize;
     }
 
+    /** Id of the globally-active highlight list, or {@code null} for "(None)". */
+    public String getGlobalHighlightListId() {
+        return globalHighlightListId;
+    }
+
+    public void setGlobalHighlightListId(String globalHighlightListId) {
+        this.globalHighlightListId =
+                (globalHighlightListId != null && !globalHighlightListId.isBlank())
+                        ? globalHighlightListId : null;
+    }
+
     /** The application-wide default terminal profile (used by the local terminal). */
     public TerminalProfile defaultProfile() {
         return TerminalProfile.from(defaultTerminalType, defaultCharset, defaultFontFamily, defaultFontSize);
@@ -112,7 +130,8 @@ public final class AppSettings {
         try {
             new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
                     .writeValue(file().toFile(), new Persisted(copyOnSelect, pasteOnRightClick,
-                            defaultTerminalType, defaultCharset, defaultFontFamily, defaultFontSize));
+                            defaultTerminalType, defaultCharset, defaultFontFamily, defaultFontSize,
+                            globalHighlightListId));
         } catch (Exception ignored) {
             // Settings are a convenience; a failed write shouldn't break the app.
         }
@@ -138,6 +157,7 @@ public final class AppSettings {
                 if (p.defaultFontSize > 0) {
                     settings.defaultFontSize = p.defaultFontSize;
                 }
+                settings.setGlobalHighlightListId(p.globalHighlightListId);
             } catch (Exception ignored) {
                 // Fall back to defaults on a malformed file.
             }
@@ -153,6 +173,7 @@ public final class AppSettings {
     @JsonIgnoreProperties(ignoreUnknown = true)
     private record Persisted(boolean copyOnSelect, boolean pasteOnRightClick,
                              String defaultTerminalType, String defaultCharset,
-                             String defaultFontFamily, int defaultFontSize) {
+                             String defaultFontFamily, int defaultFontSize,
+                             String globalHighlightListId) {
     }
 }

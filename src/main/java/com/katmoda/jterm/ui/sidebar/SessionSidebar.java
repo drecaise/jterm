@@ -6,6 +6,7 @@ import com.formdev.flatlaf.extras.FlatSVGIcon;
 import com.katmoda.jterm.dnd.LocalTransferable;
 import com.katmoda.jterm.dnd.SessionTransferable;
 import com.katmoda.jterm.icon.IconLibrary;
+import com.katmoda.jterm.highlight.HighlightLibrary;
 import com.katmoda.jterm.macro.Macro;
 import com.katmoda.jterm.macro.MacroLibrary;
 import com.katmoda.jterm.session.FolderNode;
@@ -19,6 +20,7 @@ import com.katmoda.jterm.security.CredentialVault;
 import com.katmoda.jterm.security.VaultException;
 import com.katmoda.jterm.security.VaultManager;
 import com.katmoda.jterm.ui.security.MasterPasswordDialog;
+import com.katmoda.jterm.ui.component.HighlightListCombo;
 import com.katmoda.jterm.ui.component.TerminalSettingsForm;
 import com.katmoda.jterm.ui.component.ToggleSwitch;
 
@@ -40,10 +42,13 @@ import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
+import javax.swing.SwingUtilities;
 import javax.swing.JToolBar;
 import javax.swing.JTree;
 import javax.swing.SwingWorker;
 import javax.swing.TransferHandler;
+import javax.swing.event.AncestorEvent;
+import javax.swing.event.AncestorListener;
 import javax.swing.event.TreeExpansionEvent;
 import javax.swing.event.TreeExpansionListener;
 import javax.swing.tree.DefaultMutableTreeNode;
@@ -845,6 +850,8 @@ public final class SessionSidebar extends JPanel {
         copy.setTerminalCharset(src.getTerminalCharset());
         copy.setFontFamily(src.getFontFamily());
         copy.setFontSize(src.getFontSize());
+        copy.setMacroId(src.getMacroId());
+        copy.setHighlightListId(src.getHighlightListId());
         return copy;
     }
 
@@ -895,6 +902,7 @@ public final class SessionSidebar extends JPanel {
     /** Shared name + icon dialog for creating and editing folders. Mutates {@code folder} on OK. */
     private boolean showFolderDialog(FolderNode folder, String title) {
         JTextField name = new JTextField(folder.getName());
+        focusOnShow(name, false);
         String[] iconId = {folder.getIconId()};
         Icon fallback = IconLibrary.get().icon("builtin/folder", 16);
         JButton iconBtn = new JButton();
@@ -953,6 +961,7 @@ public final class SessionSidebar extends JPanel {
     private FolderNode showSshDialog(SshSessionConfig cfg, String title, FolderNode initialFolder) {
         // ---- Basic settings ----
         JTextField name = new JTextField(cfg.getName());
+        focusOnShow(name, true);
         JTextField host = new JTextField(cfg.getHost());
         JTextField port = new JTextField(String.valueOf(cfg.getPort()));
         JTextField user = new JTextField(cfg.getUser());
@@ -993,6 +1002,8 @@ public final class SessionSidebar extends JPanel {
         }
 
         JComboBox<MacroOption> macroCombo = buildMacroCombo(cfg.getMacroId());
+        JComboBox<HighlightListCombo.Option> highlightCombo = HighlightListCombo.perSession(
+                cfg.getHighlightListId(), HighlightLibrary.get().lists());
 
         JPanel basic = formPanel();
         row(basic, "Name:", name);
@@ -1006,6 +1017,7 @@ public final class SessionSidebar extends JPanel {
         row(basic, "Password:", password);
         row(basic, "Save password:", savePassword);
         row(basic, "Run macro on connect:", macroCombo);
+        row(basic, "Output highlighting:", highlightCombo);
 
         // ---- Terminal settings ---- (blank fields inherit the application defaults)
         TerminalSettingsForm terminalSettings = new TerminalSettingsForm(true,
@@ -1036,6 +1048,7 @@ public final class SessionSidebar extends JPanel {
         cfg.setTerminalCharset(terminalSettings.charset());
         MacroOption macro = (MacroOption) macroCombo.getSelectedItem();
         cfg.setMacroId(macro != null ? macro.id() : null);
+        cfg.setHighlightListId(HighlightListCombo.selectedId(highlightCombo));
         applyPasswordSettings(cfg, passwordAuth.isSelected(), savePassword.isSelected(), password.getPassword());
 
         FolderOption chosen = (FolderOption) folderCombo.getSelectedItem();
@@ -1073,6 +1086,31 @@ public final class SessionSidebar extends JPanel {
     private static void row(JPanel form, String label, JComponent field) {
         form.add(new JLabel(label));
         form.add(field);
+    }
+
+    /**
+     * Focuses {@code field} when its dialog first appears (JOptionPane otherwise lands focus on the
+     * OK button), placing the caret at the end ({@code caretAtEnd}) or the start of the text.
+     */
+    private static void focusOnShow(JTextField field, boolean caretAtEnd) {
+        field.addAncestorListener(new AncestorListener() {
+            @Override
+            public void ancestorAdded(AncestorEvent event) {
+                field.removeAncestorListener(this);
+                SwingUtilities.invokeLater(() -> {
+                    field.requestFocusInWindow();
+                    field.setCaretPosition(caretAtEnd ? field.getText().length() : 0);
+                });
+            }
+
+            @Override
+            public void ancestorRemoved(AncestorEvent event) {
+            }
+
+            @Override
+            public void ancestorMoved(AncestorEvent event) {
+            }
+        });
     }
 
     /**
