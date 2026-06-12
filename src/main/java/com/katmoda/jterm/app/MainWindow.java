@@ -296,12 +296,17 @@ public final class MainWindow {
             tabs.setTitleAt(idx, ssh.title());
             setTabColor(idx, ssh.tabColorHex());
         } else {
-            Icon icon = (session instanceof LocalSession local && local.iconId() != null)
-                    ? IconLibrary.get().icon(local.iconId(), 16)
-                    : terminalTabIcon();
+            LocalSession local = (session instanceof LocalSession ls) ? ls : null;
+            boolean customLocal = local != null && local.iconId() != null;
+            Icon icon = customLocal ? IconLibrary.get().icon(local.iconId(), 16) : terminalTabIcon();
             tabs.setIconAt(idx, icon);
+            // A WSL distro (a custom-icon local session) carries its own name; a plain shell uses
+            // the tab's generic base title ("Terminal N"). Deriving both from the active pane keeps
+            // the title tracking the focused split the same way the icon already does.
             Object base = grid.getClientProperty("baseTitle");
-            tabs.setTitleAt(idx, base != null ? base.toString() : session.title());
+            String title = customLocal ? session.title()
+                    : (base != null ? base.toString() : session.title());
+            tabs.setTitleAt(idx, title);
             setTabColor(idx, null);
         }
     }
@@ -381,13 +386,7 @@ public final class MainWindow {
         }
         SessionFactory factory = wslFactory(distro);
         switch (mode) {
-            case ACTIVE -> {
-                // Replacing the active pane's content: re-title the tab to the distro, like a fresh
-                // WSL tab does. decorateTab prefers the grid's baseTitle over session.title() for
-                // local sessions, so without this the tab keeps its old "Terminal N" name.
-                grid.putClientProperty("baseTitle", distro);
-                grid.placeSessionInActive(session, factory);
-            }
+            case ACTIVE -> grid.placeSessionInActive(session, factory);
             case SPLIT_COLUMN -> grid.splitColumnAndOpen(session, factory);
             case SPLIT_ROW -> grid.splitRowAndOpen(session, factory);
             default -> { }
@@ -402,7 +401,8 @@ public final class MainWindow {
         }
         PaneGrid grid = newGrid();
         insertGrid(grid);
-        grid.putClientProperty("baseTitle", distro); // a WSL session is local, so decorateTab uses this
+        // The tab keeps its generic "Terminal N" base title (for any plain shell split into it);
+        // decorateTab names the WSL pane itself from the session (the distro).
         grid.initEmpty();
         grid.placeSessionInActive(session, wslFactory(distro));
     }
