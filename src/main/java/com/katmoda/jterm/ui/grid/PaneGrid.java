@@ -187,6 +187,24 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         focusActive();
     }
 
+    /**
+     * Fill a specific empty cell from a drop, focusing it. If the cell is no longer an empty,
+     * in-bounds cell (it was filled or the grid collapsed while an SSH drop connected), the session
+     * opens in the active cell instead, so a dropped session is never silently lost.
+     */
+    public void placeSessionInCell(int row, int col, TerminalSession session, SessionFactory factory) {
+        if (session == null) {
+            return;
+        }
+        if (row >= 0 && row < rows && col >= 0 && col < cols && panes[row][col] == null) {
+            placeAt(row, col, session, factory);
+            relayout();
+            focusActive();
+        } else {
+            placeSessionInActive(session, factory);
+        }
+    }
+
     /** Re-apply theme-derived chrome (active-pane accent border) after a theme switch. */
     public void refreshTheme() {
         updateBorders();
@@ -344,7 +362,8 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
                         SshSessionConfig cfg = (SshSessionConfig) dtde.getTransferable()
                                 .getTransferData(SessionTransferable.SESSION_FLAVOR);
                         if (dropHandler != null) {
-                            dropHandler.onDrop(pane, region, cfg);
+                            dropHandler.connect(cfg, (session, factory) ->
+                                    splitFromPaneAndOpen(pane, region, session, factory));
                         }
                         dtde.dropComplete(true);
                     } else if (dtde.isDataFlavorSupported(LocalTransferable.LOCAL_FLAVOR)) {
@@ -592,7 +611,60 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
                 }
             }
         });
+        installEmptyCellDnd(panel, r, c);
         return panel;
+    }
+
+    /** Make an empty cell a drop target that fills itself (no split) with the dropped session. */
+    private void installEmptyCellDnd(JPanel cell, int r, int c) {
+        Border idle = cell.getBorder();
+        Border hover = BorderFactory.createLineBorder(accentColor(), CONTENT_BORDER);
+        new DropTarget(cell, DnDConstants.ACTION_COPY, new DropTargetAdapter() {
+            @Override
+            public void dragOver(DropTargetDragEvent dtde) {
+                if (isAcceptable(dtde)) {
+                    dtde.acceptDrag(DnDConstants.ACTION_COPY);
+                    cell.setBorder(hover);
+                } else {
+                    dtde.rejectDrag();
+                }
+            }
+
+            @Override
+            public void dragExit(DropTargetEvent dte) {
+                cell.setBorder(idle);
+            }
+
+            @Override
+            public void drop(DropTargetDropEvent dtde) {
+                cell.setBorder(idle);
+                try {
+                    if (dtde.isDataFlavorSupported(SessionTransferable.SESSION_FLAVOR)) {
+                        dtde.acceptDrop(DnDConstants.ACTION_COPY);
+                        SshSessionConfig cfg = (SshSessionConfig) dtde.getTransferable()
+                                .getTransferData(SessionTransferable.SESSION_FLAVOR);
+                        if (dropHandler != null) {
+                            dropHandler.connect(cfg, (session, factory) ->
+                                    placeSessionInCell(r, c, session, factory));
+                        }
+                        dtde.dropComplete(true);
+                    } else if (dtde.isDataFlavorSupported(LocalTransferable.LOCAL_FLAVOR)) {
+                        dtde.acceptDrop(DnDConstants.ACTION_COPY);
+                        placeSessionInCell(r, c, safeLocalSession(), localFactory());
+                        dtde.dropComplete(true);
+                    } else {
+                        dtde.rejectDrop();
+                    }
+                } catch (Exception e) {
+                    dtde.dropComplete(false);
+                }
+            }
+
+            private boolean isAcceptable(DropTargetDragEvent dtde) {
+                return dtde.isDataFlavorSupported(SessionTransferable.SESSION_FLAVOR)
+                        || dtde.isDataFlavorSupported(LocalTransferable.LOCAL_FLAVOR);
+            }
+        });
     }
 
     private static Color accentColor() {

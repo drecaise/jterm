@@ -199,10 +199,10 @@ public final class MainWindow {
 
     private PaneGrid newGrid() {
         PaneGrid grid = new PaneGrid();
-        // A session dropped on a pane connects off-EDT, then splits + opens at that pane.
-        grid.setDropHandler((target, region, cfg) ->
-                connectAsync(cfg, session ->
-                        grid.splitFromPaneAndOpen(target, region, session, sshFactory(cfg))));
+        // A dropped SSH session connects off-EDT; the grid then places it (split a pane or fill an
+        // empty cell). The factory is paired with the session so a restart can reconnect it.
+        grid.setDropHandler((cfg, placer) ->
+                connectAsync(cfg, session -> placer.accept(session, sshFactory(cfg))));
         grid.setOnActiveChanged(() -> decorateTab(grid));
         // When the last pane is closed from the stopped screen, close the tab too.
         grid.setOnEmpty(() -> closeTabForGrid(grid));
