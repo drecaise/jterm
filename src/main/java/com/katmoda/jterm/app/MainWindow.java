@@ -381,7 +381,13 @@ public final class MainWindow {
         }
         SessionFactory factory = wslFactory(distro);
         switch (mode) {
-            case ACTIVE -> grid.placeSessionInActive(session, factory);
+            case ACTIVE -> {
+                // Replacing the active pane's content: re-title the tab to the distro, like a fresh
+                // WSL tab does. decorateTab prefers the grid's baseTitle over session.title() for
+                // local sessions, so without this the tab keeps its old "Terminal N" name.
+                grid.putClientProperty("baseTitle", distro);
+                grid.placeSessionInActive(session, factory);
+            }
             case SPLIT_COLUMN -> grid.splitColumnAndOpen(session, factory);
             case SPLIT_ROW -> grid.splitRowAndOpen(session, factory);
             default -> { }
