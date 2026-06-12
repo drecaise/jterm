@@ -2,11 +2,13 @@ package com.katmoda.jterm.ui.theme;
 
 import com.formdev.flatlaf.FlatDarkLaf;
 import com.formdev.flatlaf.FlatLightLaf;
+import com.katmoda.jterm.config.AppSettings;
 
 import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
+import javax.swing.plaf.ColorUIResource;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Insets;
@@ -39,6 +41,8 @@ public final class ThemeManager {
 
     /** Installs the LaF for the current theme. Call once before building UI (before any frame). */
     public void install() {
+        // Restore the persisted light/dark choice before any UI is built.
+        current = AppSettings.get().isDarkTheme() ? ThemeColors.DARK : ThemeColors.LIGHT;
         // FlatLaf-drawn title bar so we control the window icon + title (GNOME shows neither
         // natively). Keep the menu bar below the title bar rather than embedded in it.
         System.setProperty("flatlaf.useWindowDecorations", "true");
@@ -62,6 +66,8 @@ public final class ThemeManager {
             return;
         }
         current = next;
+        AppSettings.get().setDarkTheme(dark);
+        AppSettings.get().save();
         applyLaf();
         for (Consumer<ThemeColors> l : listeners) {
             l.accept(current);
@@ -91,11 +97,11 @@ public final class ThemeManager {
             // Larger title-bar icon (default 16); trim vertical margins so the bar height holds.
             UIManager.put("TitlePane.iconSize", new Dimension(22, 22));
             UIManager.put("TitlePane.iconMargins", new Insets(2, 8, 2, 8));
-            // Darker tab strip so the (lighter) selected card tab stands out.
-            Color tabStrip = UIManager.getColor("TabbedPane.background");
-            if (tabStrip == null) {
-                tabStrip = UIManager.getColor("Panel.background");
-            }
+            // Darker tab strip so the (lighter) selected card tab stands out. Derive it from
+            // Panel.background (which setup() resets to the active theme each time) rather than
+            // TabbedPane.background — the latter is the key we override here, so reading it back
+            // would feed our own persistent override in and the strip would never follow the theme.
+            Color tabStrip = UIManager.getColor("Panel.background");
             if (tabStrip != null) {
                 UIManager.put("TabbedPane.background", darken(tabStrip, 0.88));
             }
@@ -108,12 +114,17 @@ public final class ThemeManager {
         }
     }
 
-    /** Multiply RGB by {@code factor} (&lt;1 darkens), preserving alpha. */
+    /**
+     * Multiply RGB by {@code factor} (&lt;1 darkens), preserving alpha. Returns a
+     * {@link ColorUIResource}: Swing only re-installs a component's color on a LaF change when the
+     * current value is a {@code UIResource}, so a plain {@code Color} here would make the tab strip
+     * stick on its first theme and never follow later toggles.
+     */
     private static Color darken(Color c, double factor) {
-        return new Color(
+        return new ColorUIResource(new Color(
                 (int) Math.round(c.getRed() * factor),
                 (int) Math.round(c.getGreen() * factor),
                 (int) Math.round(c.getBlue() * factor),
-                c.getAlpha());
+                c.getAlpha()));
     }
 }

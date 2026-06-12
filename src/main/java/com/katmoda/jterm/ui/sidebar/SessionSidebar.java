@@ -28,6 +28,7 @@ import javax.swing.BorderFactory;
 import javax.swing.DropMode;
 import javax.swing.Icon;
 import javax.swing.JButton;
+import javax.swing.JColorChooser;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
@@ -56,6 +57,8 @@ import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
 import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.FlowLayout;
 import java.awt.GridLayout;
 import java.awt.datatransfer.Transferable;
 import java.awt.event.ActionListener;
@@ -183,7 +186,11 @@ public final class SessionSidebar extends JPanel {
 
             @Override
             public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 2 && !e.isPopupTrigger()) {
+                // Only open on a double-click that lands on a node's content area. Clicking a
+                // folder's expand/collapse handle (or empty space) has no path here, so it must
+                // not fall through to opening the still-selected session.
+                if (e.getClickCount() == 2 && !e.isPopupTrigger()
+                        && tree.getPathForLocation(e.getX(), e.getY()) != null) {
                     openSelected();
                 }
             }
@@ -852,6 +859,7 @@ public final class SessionSidebar extends JPanel {
         copy.setFontSize(src.getFontSize());
         copy.setMacroId(src.getMacroId());
         copy.setHighlightListId(src.getHighlightListId());
+        copy.setTabColorHex(src.getTabColorHex());
         return copy;
     }
 
@@ -1005,6 +1013,27 @@ public final class SessionSidebar extends JPanel {
         JComboBox<HighlightListCombo.Option> highlightCombo = HighlightListCombo.perSession(
                 cfg.getHighlightListId(), HighlightLibrary.get().lists());
 
+        // Custom tab color: a swatch button to pick, plus Clear to fall back to the theme default.
+        Color[] tabColor = {decodeColorOrNull(cfg.getTabColorHex())};
+        JButton tabColorBtn = new JButton();
+        updateTabColorButton(tabColorBtn, tabColor[0]);
+        tabColorBtn.addActionListener(a -> {
+            Color picked = JColorChooser.showDialog(this, "Tab Color",
+                    tabColor[0] != null ? tabColor[0] : Color.GRAY);
+            if (picked != null) {
+                tabColor[0] = picked;
+                updateTabColorButton(tabColorBtn, picked);
+            }
+        });
+        JButton tabColorClear = new JButton("Clear");
+        tabColorClear.addActionListener(a -> {
+            tabColor[0] = null;
+            updateTabColorButton(tabColorBtn, null);
+        });
+        JPanel tabColorPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        tabColorPanel.add(tabColorBtn);
+        tabColorPanel.add(tabColorClear);
+
         JPanel basic = formPanel();
         row(basic, "Name:", name);
         row(basic, "Folder:", folderCombo);
@@ -1018,6 +1047,7 @@ public final class SessionSidebar extends JPanel {
         row(basic, "Save password:", savePassword);
         row(basic, "Run macro on connect:", macroCombo);
         row(basic, "Output highlighting:", highlightCombo);
+        row(basic, "Tab color:", tabColorPanel);
 
         // ---- Terminal settings ---- (blank fields inherit the application defaults)
         TerminalSettingsForm terminalSettings = new TerminalSettingsForm(true,
@@ -1049,6 +1079,7 @@ public final class SessionSidebar extends JPanel {
         MacroOption macro = (MacroOption) macroCombo.getSelectedItem();
         cfg.setMacroId(macro != null ? macro.id() : null);
         cfg.setHighlightListId(HighlightListCombo.selectedId(highlightCombo));
+        cfg.setTabColorHex(tabColor[0] != null ? String.format("#%06X", tabColor[0].getRGB() & 0xFFFFFF) : null);
         applyPasswordSettings(cfg, passwordAuth.isSelected(), savePassword.isSelected(), password.getPassword());
 
         FolderOption chosen = (FolderOption) folderCombo.getSelectedItem();
@@ -1077,6 +1108,32 @@ public final class SessionSidebar extends JPanel {
             }
         }
         return combo;
+    }
+
+    /** Shows the chosen tab color as the button's background, or "Default" when none is set. */
+    private static void updateTabColorButton(JButton button, Color color) {
+        if (color != null) {
+            button.setText("      ");
+            button.setBackground(color);
+            button.setOpaque(true);
+            button.setToolTipText("Click to change the tab color");
+        } else {
+            button.setText("Default");
+            button.setBackground(null);
+            button.setOpaque(false);
+            button.setToolTipText("Click to choose a tab color");
+        }
+    }
+
+    private static Color decodeColorOrNull(String hex) {
+        if (hex == null || hex.isBlank()) {
+            return null;
+        }
+        try {
+            return Color.decode(hex);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private static JPanel formPanel() {

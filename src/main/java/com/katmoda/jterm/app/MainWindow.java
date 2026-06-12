@@ -42,11 +42,15 @@ import javax.swing.JTabbedPane;
 import javax.swing.KeyStroke;
 import javax.swing.SwingWorker;
 import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Insets;
 import java.awt.Taskbar;
 import java.awt.KeyboardFocusManager;
 import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.util.List;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -72,6 +76,8 @@ public final class MainWindow {
     private final FlatSVGIcon terminalIconLight = new FlatSVGIcon("icons/terminal-light.svg", 16, 16);
     private final FlatSVGIcon terminalIconDark = new FlatSVGIcon("icons/terminal-dark.svg", 16, 16);
     private JButton plusButton;
+    /** Index of the tab currently being dragged for reorder, or -1 when not dragging. */
+    private int dragTabIndex = -1;
 
     private int tabCounter = 0;
     /** While true, the global terminal-shortcut dispatcher stands down so the editor can capture keys. */
@@ -104,6 +110,7 @@ public final class MainWindow {
             for (int i = 0; i < tabs.getTabCount(); i++) {
                 if (tabs.getComponentAt(i) instanceof PaneGrid grid) {
                     grid.refreshTheme();
+                    grid.applyTheme(theme);
                 }
             }
         });
@@ -135,6 +142,7 @@ public final class MainWindow {
         BiConsumer<JTabbedPane, Integer> closeCallback = (pane, index) -> closeTabAt(index);
         tabs.putClientProperty("JTabbedPane.tabCloseCallback", closeCallback);
         installPlusTab();
+        installTabDragReorder();
     }
 
     /**
@@ -186,6 +194,7 @@ public final class MainWindow {
         // Immediate feedback before the (off-EDT) connection completes.
         tabs.setTitleAt(at, cfg.getName());
         tabs.setIconAt(at, iconFor(cfg.getIconId()));
+        setTabColor(at, cfg.getTabColorHex());
         grid.initEmpty();
         connectAsync(cfg, session -> grid.placeSessionInActive(session, sshFactory(cfg)));
     }
@@ -285,6 +294,7 @@ public final class MainWindow {
         if (session instanceof SshSession ssh) {
             tabs.setIconAt(idx, iconFor(ssh.iconId()));
             tabs.setTitleAt(idx, ssh.title());
+            setTabColor(idx, ssh.tabColorHex());
         } else {
             Icon icon = (session instanceof LocalSession local && local.iconId() != null)
                     ? IconLibrary.get().icon(local.iconId(), 16)
@@ -292,7 +302,28 @@ public final class MainWindow {
             tabs.setIconAt(idx, icon);
             Object base = grid.getClientProperty("baseTitle");
             tabs.setTitleAt(idx, base != null ? base.toString() : session.title());
+            setTabColor(idx, null);
         }
+    }
+
+    /**
+     * Applies a custom tab background (or clears it to the theme default when {@code hex} is null).
+     * A custom color is a plain {@code Color}, so it intentionally persists across theme toggles;
+     * the default is restored by passing {@code null}, which lets the tab follow the theme again.
+     */
+    private void setTabColor(int idx, String hex) {
+        if (idx < 0 || idx >= tabs.getTabCount()) {
+            return;
+        }
+        Color color = null;
+        if (hex != null && !hex.isBlank()) {
+            try {
+                color = Color.decode(hex);
+            } catch (NumberFormatException ignored) {
+                // Malformed color → fall back to the default.
+            }
+        }
+        tabs.setBackgroundAt(idx, color);
     }
 
     private Icon iconFor(String iconId) {
@@ -401,7 +432,7 @@ public final class MainWindow {
                         cfg.getTerminalCharset(), cfg.getFontFamily(), cfg.getFontSize());
                 return SshSession.connect(cfg.getHost(), cfg.getPort(), cfg.getUser(),
                         cfg.isAgentForwarding(), password, cfg.getName(), cfg.getIconId(), profile,
-                        cfg.getHighlightListId());
+                        cfg.getHighlightListId(), cfg.getTabColorHex());
             }
 
             @Override
@@ -515,7 +546,87 @@ public final class MainWindow {
                     sidebar.moveSelectedDown();
                 }
             }
+            case MOVE_TAB_LEFT -> moveSelectedTab(-1);
+            case MOVE_TAB_RIGHT -> moveSelectedTab(1);
         }
+    }
+
+    // ---- tab reordering (keyboard + drag) ----
+
+    /** Moves the active tab one slot left ({@code -1}) or right ({@code +1}), clamped to real tabs. */
+    private void moveSelectedTab(int delta) {
+        int from = tabs.getSelectedIndex();
+        if (from < 0 || tabs.getComponentAt(from) == plusPlaceholder) {
+            return;
+        }
+        int to = from + delta;
+        if (to < 0 || to > lastRealTabIndex()) {
+            return;
+        }
+        moveTab(from, to);
+    }
+
+    /** Highest index that holds a real (movable) tab — everything before the "+" placeholder. */
+    private int lastRealTabIndex() {
+        int plus = plusIndex();
+        return (plus >= 0 ? plus : tabs.getTabCount()) - 1;
+    }
+
+    /**
+     * Reorders a tab from {@code from} to {@code to}, preserving its title, icon, tooltip, custom
+     * tab color and selection. The "+" placeholder is never moved past. JTabbedPane has no native
+     * move, so the tab is removed and re-inserted.
+     */
+    private void moveTab(int from, int to) {
+        to = Math.max(0, Math.min(to, lastRealTabIndex()));
+        if (from == to || from < 0 || tabs.getComponentAt(from) == plusPlaceholder) {
+            return;
+        }
+        Component comp = tabs.getComponentAt(from);
+        String title = tabs.getTitleAt(from);
+        Icon icon = tabs.getIconAt(from);
+        String tip = tabs.getToolTipTextAt(from);
+        boolean wasSelected = tabs.getSelectedIndex() == from;
+        tabs.removeTabAt(from);
+        tabs.insertTab(title, icon, comp, tip, to);
+        // Re-derive icon/title/custom color from the live session so a moved default-colored tab
+        // keeps following the theme (rather than pinning whatever color it had at this index).
+        if (comp instanceof PaneGrid grid) {
+            decorateTab(grid);
+        }
+        if (wasSelected) {
+            tabs.setSelectedIndex(to);
+        }
+    }
+
+    /** Wires drag-to-reorder on the tab strip (press a tab, drag it across its neighbours). */
+    private void installTabDragReorder() {
+        MouseAdapter reorder = new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+                int idx = tabs.indexAtLocation(e.getX(), e.getY());
+                dragTabIndex = (idx >= 0 && tabs.getComponentAt(idx) != plusPlaceholder) ? idx : -1;
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                dragTabIndex = -1;
+            }
+
+            @Override
+            public void mouseDragged(MouseEvent e) {
+                if (dragTabIndex < 0) {
+                    return;
+                }
+                int over = tabs.indexAtLocation(e.getX(), e.getY());
+                if (over >= 0 && over != dragTabIndex && over <= lastRealTabIndex()) {
+                    moveTab(dragTabIndex, over);
+                    dragTabIndex = over;
+                }
+            }
+        };
+        tabs.addMouseListener(reorder);
+        tabs.addMouseMotionListener(reorder);
     }
 
     // ---- menu ----
@@ -526,6 +637,8 @@ public final class MainWindow {
         JMenu file = new JMenu("File");
         file.add(menuItem("New Tab", TermAction.NEW_TAB));
         file.add(menuItem("Close Tab", TermAction.CLOSE_TAB));
+        file.add(menuItem("Move Tab Left", TermAction.MOVE_TAB_LEFT));
+        file.add(menuItem("Move Tab Right", TermAction.MOVE_TAB_RIGHT));
         file.addSeparator();
         JMenuItem quit = new JMenuItem("Quit");
         quit.addActionListener(e -> frame.dispose());
