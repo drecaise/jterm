@@ -17,7 +17,7 @@ import java.nio.charset.StandardCharsets;
 public final class BroadcastingTtyConnector implements TtyConnector {
 
     private final TtyConnector real;
-    private final BroadcastBus bus;
+    private BroadcastBus bus;
 
     public BroadcastingTtyConnector(TtyConnector real, BroadcastBus bus) {
         this.real = real;
@@ -27,6 +27,15 @@ public final class BroadcastingTtyConnector implements TtyConnector {
     /** The wrapped connector, used as the broadcast source identity. */
     public TtyConnector real() {
         return real;
+    }
+
+    /**
+     * Repoint this connector at a different bus. Used when a pane is moved to another grid (drag a
+     * pane out to a new tab, or a tab into a split): the pane must broadcast within its new grid, not
+     * the one it was created in.
+     */
+    public void setBus(BroadcastBus bus) {
+        this.bus = bus;
     }
 
     @Override

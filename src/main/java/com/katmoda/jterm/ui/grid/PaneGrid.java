@@ -5,6 +5,8 @@ import com.katmoda.jterm.broadcast.BroadcastBus;
 import com.katmoda.jterm.broadcast.BroadcastingTtyConnector;
 import com.katmoda.jterm.dnd.DropRegion;
 import com.katmoda.jterm.dnd.LocalTransferable;
+import com.katmoda.jterm.dnd.PaneMoveCoordinator;
+import com.katmoda.jterm.dnd.PaneTransferable;
 import com.katmoda.jterm.dnd.SessionDropHandler;
 import com.katmoda.jterm.dnd.SessionTransferable;
 import com.katmoda.jterm.session.SshSessionConfig;
@@ -58,6 +60,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     private int activeCol = 0;
     private boolean broadcastActive = false;
     private SessionDropHandler dropHandler;
+    private PaneMoveCoordinator moveCoordinator;
     private Runnable onActiveChanged;
     private Runnable onEmpty;
 
@@ -67,6 +70,11 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
 
     public void setDropHandler(SessionDropHandler dropHandler) {
         this.dropHandler = dropHandler;
+    }
+
+    /** Provides cross-tab pane detachment so this grid can adopt a pane dropped from another tab. */
+    public void setMoveCoordinator(PaneMoveCoordinator moveCoordinator) {
+        this.moveCoordinator = moveCoordinator;
     }
 
     /** Fired whenever the active pane or its content changes, so the owning tab can re-decorate. */
@@ -205,6 +213,127 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         }
     }
 
+    // ---- pane move (drag a pane/tab into this grid) ----
+
+    /** Whether this grid currently holds {@code pane}. */
+    public boolean contains(TerminalPane pane) {
+        return locate(pane) != null;
+    }
+
+    /** Number of live panes in this grid. */
+    public int paneCount() {
+        int n = 0;
+        for (int r = 0; r < rows; r++) {
+            for (int c = 0; c < cols; c++) {
+                if (panes[r][c] != null) {
+                    n++;
+                }
+            }
+        }
+        return n;
+    }
+
+    /** This grid's only pane, or {@code null} if it holds zero or more than one. */
+    public TerminalPane solePane() {
+        return paneCount() == 1 ? firstPane() : null;
+    }
+
+    private TerminalPane firstPane() {
+        for (int r = 0; r < rows; r++) {
+            for (int c = 0; c < cols; c++) {
+                if (panes[r][c] != null) {
+                    return panes[r][c];
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Swap two panes' positions within this grid; the dragged pane {@code a} becomes active. */
+    public void swapPanes(TerminalPane a, TerminalPane b) {
+        int[] pa = locate(a);
+        int[] pb = locate(b);
+        if (pa == null || pb == null || a == b) {
+            return;
+        }
+        panes[pa[0]][pa[1]] = b;
+        panes[pb[0]][pb[1]] = a;
+        SessionFactory fa = factories[pa[0]][pa[1]];
+        factories[pa[0]][pa[1]] = factories[pb[0]][pb[1]];
+        factories[pb[0]][pb[1]] = fa;
+        activeRow = pb[0];
+        activeCol = pb[1];
+        relayout();
+        focusActive();
+    }
+
+    /** Move a pane already in this grid into an empty in-bounds cell, collapsing what it vacates. */
+    public void movePaneToEmptyCell(TerminalPane pane, int r, int c) {
+        int[] pos = locate(pane);
+        if (pos == null || r < 0 || r >= rows || c < 0 || c >= cols || panes[r][c] != null) {
+            return;
+        }
+        panes[r][c] = pane;
+        factories[r][c] = factories[pos[0]][pos[1]];
+        panes[pos[0]][pos[1]] = null;
+        factories[pos[0]][pos[1]] = null;
+        activeRow = r;
+        activeCol = c;
+        collapseTrailingEmpty();
+        relayout();
+        focusActive();
+    }
+
+    /**
+     * Remove a pane from this grid <em>without</em> closing its session, returning its restart
+     * factory so an adopting grid can keep restart working. The grid collapses around the gap; the
+     * caller (e.g. the move coordinator) decides whether an emptied tab should close.
+     */
+    public SessionFactory detachForMove(TerminalPane pane) {
+        int[] pos = locate(pane);
+        if (pos == null) {
+            return null;
+        }
+        SessionFactory factory = factories[pos[0]][pos[1]];
+        panes[pos[0]][pos[1]] = null;
+        factories[pos[0]][pos[1]] = null;
+        collapseTrailingEmpty();
+        relayout();
+        moveActiveToExistingPane();
+        focusActive();
+        return factory;
+    }
+
+    /** Adopt an existing pane into this (fresh, single-cell) grid at (0,0). */
+    public void adopt(TerminalPane pane, SessionFactory factory) {
+        placeExistingPaneAt(0, 0, pane, factory);
+        relayout();
+        focusActive();
+    }
+
+    /** Adopt an existing pane as a split relative to {@code target} (column/row by drop region). */
+    public void adoptAsSplit(TerminalPane target, DropRegion region,
+                             TerminalPane pane, SessionFactory factory) {
+        int[] pos = locate(target);
+        if (pos != null) {
+            activeRow = pos[0];
+            activeCol = pos[1];
+        }
+        if (region == DropRegion.COLUMN && cols < MAX) {
+            int newCol = cols;
+            cols++;
+            placeExistingPaneAt(activeRow, newCol, pane, factory);
+        } else if (region == DropRegion.ROW && rows < MAX) {
+            int newRow = rows;
+            rows++;
+            placeExistingPaneAt(newRow, activeCol, pane, factory);
+        } else {
+            replaceActiveWithPane(pane, factory);
+        }
+        relayout();
+        focusActive();
+    }
+
     /** Re-apply theme-derived chrome (active-pane accent border) after a theme switch. */
     public void refreshTheme() {
         updateBorders();
@@ -289,12 +418,25 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     }
 
     private void placeAt(int r, int c, TerminalSession session, SessionFactory factory) {
-        TerminalPane pane = makePane(session);
+        placeExistingPaneAt(r, c, createPane(session), factory);
+    }
+
+    /** Store an already-built pane (new or adopted from another grid) at a cell and bind it here. */
+    private void placeExistingPaneAt(int r, int c, TerminalPane pane, SessionFactory factory) {
         panes[r][c] = pane;
         factories[r][c] = factory;
         activeRow = r;
         activeCol = c;
-        pane.setBroadcastMode(broadcastActive);
+        registerPane(pane);
+    }
+
+    /** Replace the active cell's content with an existing pane (used when a split is full). */
+    private void replaceActiveWithPane(TerminalPane pane, SessionFactory factory) {
+        TerminalPane existing = panes[activeRow][activeCol];
+        if (existing != null) {
+            existing.close();
+        }
+        placeExistingPaneAt(activeRow, activeCol, pane, factory);
     }
 
     private void openLocalAt(int r, int c) {
@@ -325,21 +467,36 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         }
     }
 
-    private TerminalPane makePane(TerminalSession session) {
+    /** Build a pane wrapping a fresh session; not yet bound to this grid (see {@link #registerPane}). */
+    private TerminalPane createPane(TerminalSession session) {
         TtyConnector wrapped = new BroadcastingTtyConnector(session.connector(), this);
-        TerminalPane pane = new TerminalPane(session, ThemeManager.get().current(), wrapped);
+        return new TerminalPane(session, ThemeManager.get().current(), wrapped);
+    }
+
+    /**
+     * Bind a pane — new or adopted from another grid — to this grid: focus/session-end/broadcast
+     * callbacks, drop target, broadcast bus, and current broadcast mode. Re-binding is idempotent, so
+     * this safely re-homes a moved pane (its {@code DropTarget} is replaced, its bus repointed here).
+     */
+    private void registerPane(TerminalPane pane) {
         pane.setOnFocus(() -> setActiveByPane(pane));
         pane.setOnSessionEnd(() -> handleSessionEnd(pane));
         pane.setOnBroadcastToggle(this::updateBorders);
+        if (pane.inputConnector() instanceof BroadcastingTtyConnector b) {
+            b.setBus(this);
+        }
         installDnd(pane);
-        return pane;
+        pane.setBroadcastMode(broadcastActive);
     }
 
     private void installDnd(TerminalPane pane) {
-        new DropTarget(pane, DnDConstants.ACTION_COPY, new DropTargetAdapter() {
+        new DropTarget(pane, DnDConstants.ACTION_COPY_OR_MOVE, new DropTargetAdapter() {
             @Override
             public void dragOver(DropTargetDragEvent dtde) {
-                if (isAcceptable(dtde)) {
+                if (dtde.isDataFlavorSupported(PaneTransferable.PANE_FLAVOR)) {
+                    dtde.acceptDrag(DnDConstants.ACTION_MOVE);
+                    pane.showMoveHint();
+                } else if (isSessionDrag(dtde)) {
                     dtde.acceptDrag(DnDConstants.ACTION_COPY);
                     pane.showDropHint(DropRegion.forPosition(dtde.getLocation().y, pane.getHeight()));
                 } else {
@@ -357,7 +514,13 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
                 pane.clearDropHint();
                 DropRegion region = DropRegion.forPosition(dtde.getLocation().y, pane.getHeight());
                 try {
-                    if (dtde.isDataFlavorSupported(SessionTransferable.SESSION_FLAVOR)) {
+                    if (dtde.isDataFlavorSupported(PaneTransferable.PANE_FLAVOR)) {
+                        dtde.acceptDrop(DnDConstants.ACTION_MOVE);
+                        TerminalPane dragged = (TerminalPane) dtde.getTransferable()
+                                .getTransferData(PaneTransferable.PANE_FLAVOR);
+                        dropPaneOnPane(dragged, pane, region);
+                        dtde.dropComplete(true);
+                    } else if (dtde.isDataFlavorSupported(SessionTransferable.SESSION_FLAVOR)) {
                         dtde.acceptDrop(DnDConstants.ACTION_COPY);
                         SshSessionConfig cfg = (SshSessionConfig) dtde.getTransferable()
                                 .getTransferData(SessionTransferable.SESSION_FLAVOR);
@@ -380,12 +543,60 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
                     dtde.dropComplete(false);
                 }
             }
-
-            private boolean isAcceptable(DropTargetDragEvent dtde) {
-                return dtde.isDataFlavorSupported(SessionTransferable.SESSION_FLAVOR)
-                        || dtde.isDataFlavorSupported(LocalTransferable.LOCAL_FLAVOR);
-            }
         });
+    }
+
+    private static boolean isSessionDrag(DropTargetDragEvent dtde) {
+        return dtde.isDataFlavorSupported(SessionTransferable.SESSION_FLAVOR)
+                || dtde.isDataFlavorSupported(LocalTransferable.LOCAL_FLAVOR);
+    }
+
+    /**
+     * A pane was dropped on {@code target}. If it already lives in this grid, rearrange (swap);
+     * otherwise it came from another tab — detach it from its source grid and bring it in as a split.
+     */
+    private void dropPaneOnPane(TerminalPane dragged, TerminalPane target, DropRegion region) {
+        if (dragged == null) {
+            return;
+        }
+        if (contains(dragged)) {
+            if (dragged != target) {
+                swapPanes(dragged, target);
+            }
+        } else if (moveCoordinator != null) {
+            SessionFactory factory = moveCoordinator.detachFromOwner(dragged);
+            if (factory != null) {
+                adoptAsSplit(target, region, dragged, factory);
+            }
+        }
+    }
+
+    /**
+     * A pane was dropped on an empty cell. Same-grid → move it there; from another tab → detach and
+     * fill the cell (falling back to the active cell if the cell is no longer available).
+     */
+    private void dropPaneOnEmptyCell(TerminalPane dragged, int r, int c) {
+        if (dragged == null) {
+            return;
+        }
+        if (contains(dragged)) {
+            movePaneToEmptyCell(dragged, r, c);
+            return;
+        }
+        if (moveCoordinator == null) {
+            return;
+        }
+        SessionFactory factory = moveCoordinator.detachFromOwner(dragged);
+        if (factory == null) {
+            return;
+        }
+        if (r >= 0 && r < rows && c >= 0 && c < cols && panes[r][c] == null) {
+            placeExistingPaneAt(r, c, dragged, factory);
+        } else {
+            replaceActiveWithPane(dragged, factory);
+        }
+        relayout();
+        focusActive();
     }
 
     /**
@@ -615,14 +826,17 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         return panel;
     }
 
-    /** Make an empty cell a drop target that fills itself (no split) with the dropped session. */
+    /** Make an empty cell a drop target that fills itself (no split) with the dropped session/pane. */
     private void installEmptyCellDnd(JPanel cell, int r, int c) {
         Border idle = cell.getBorder();
         Border hover = BorderFactory.createLineBorder(accentColor(), CONTENT_BORDER);
-        new DropTarget(cell, DnDConstants.ACTION_COPY, new DropTargetAdapter() {
+        new DropTarget(cell, DnDConstants.ACTION_COPY_OR_MOVE, new DropTargetAdapter() {
             @Override
             public void dragOver(DropTargetDragEvent dtde) {
-                if (isAcceptable(dtde)) {
+                if (dtde.isDataFlavorSupported(PaneTransferable.PANE_FLAVOR)) {
+                    dtde.acceptDrag(DnDConstants.ACTION_MOVE);
+                    cell.setBorder(hover);
+                } else if (isSessionDrag(dtde)) {
                     dtde.acceptDrag(DnDConstants.ACTION_COPY);
                     cell.setBorder(hover);
                 } else {
@@ -639,7 +853,13 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
             public void drop(DropTargetDropEvent dtde) {
                 cell.setBorder(idle);
                 try {
-                    if (dtde.isDataFlavorSupported(SessionTransferable.SESSION_FLAVOR)) {
+                    if (dtde.isDataFlavorSupported(PaneTransferable.PANE_FLAVOR)) {
+                        dtde.acceptDrop(DnDConstants.ACTION_MOVE);
+                        TerminalPane dragged = (TerminalPane) dtde.getTransferable()
+                                .getTransferData(PaneTransferable.PANE_FLAVOR);
+                        dropPaneOnEmptyCell(dragged, r, c);
+                        dtde.dropComplete(true);
+                    } else if (dtde.isDataFlavorSupported(SessionTransferable.SESSION_FLAVOR)) {
                         dtde.acceptDrop(DnDConstants.ACTION_COPY);
                         SshSessionConfig cfg = (SshSessionConfig) dtde.getTransferable()
                                 .getTransferData(SessionTransferable.SESSION_FLAVOR);
@@ -658,11 +878,6 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
                 } catch (Exception e) {
                     dtde.dropComplete(false);
                 }
-            }
-
-            private boolean isAcceptable(DropTargetDragEvent dtde) {
-                return dtde.isDataFlavorSupported(SessionTransferable.SESSION_FLAVOR)
-                        || dtde.isDataFlavorSupported(LocalTransferable.LOCAL_FLAVOR);
             }
         });
     }
