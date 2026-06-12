@@ -67,6 +67,7 @@ public final class TerminalPane extends JPanel {
 
     private Runnable onFocus;
     private Runnable onSessionEnd;
+    private Runnable onBroadcastToggle;
     private Runnable highlightTeardown;
     private Border savedBorder;
     private boolean stopped;
@@ -87,6 +88,12 @@ public final class TerminalPane extends JPanel {
 
         this.broadcastCheck = new JCheckBox((String) null, true);
         this.broadcastCheck.setToolTipText("Include this pane in broadcast input");
+        // Toggling participation re-decorates the grid (highlight enabled panes, dim excluded ones).
+        this.broadcastCheck.addActionListener(e -> {
+            if (onBroadcastToggle != null) {
+                onBroadcastToggle.run();
+            }
+        });
         this.titleLabel = new JLabel();
         this.broadcastBar = new JPanel(new BorderLayout(6, 0));
         this.broadcastBar.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
@@ -138,6 +145,11 @@ public final class TerminalPane extends JPanel {
 
     public void setOnSessionEnd(Runnable onSessionEnd) {
         this.onSessionEnd = onSessionEnd;
+    }
+
+    /** Fired when this pane's broadcast checkbox is toggled, so the grid can re-decorate borders. */
+    public void setOnBroadcastToggle(Runnable onBroadcastToggle) {
+        this.onBroadcastToggle = onBroadcastToggle;
     }
 
     // ---- session-stopped screen ----
