@@ -46,15 +46,17 @@ public final class SshSession implements TerminalSession {
     private final String title;
     private final String iconId;
     private final TerminalProfile profile;
+    private final String highlightListId;
 
     private SshSession(SshClient client, ClientSession session, ChannelShell channel,
-                       String title, String iconId, TerminalProfile profile) {
+                       String title, String iconId, TerminalProfile profile, String highlightListId) {
         this.client = client;
         this.session = session;
         this.channel = channel;
         this.title = title;
         this.iconId = iconId;
         this.profile = profile;
+        this.highlightListId = highlightListId;
         this.connector = new SshTtyConnector(channel, title, profile.charset());
     }
 
@@ -78,10 +80,11 @@ public final class SshSession implements TerminalSession {
      * @param displayName     label for the pane title
      * @param iconId          icon library id for the tab (may be {@code null})
      * @param profile         terminal type, charset and font settings for this session
+     * @param highlightListId output-highlighting override id (may be {@code null} to inherit)
      */
     public static SshSession connect(String host, int port, String user, boolean agentForwarding,
                                      String password, String displayName, String iconId,
-                                     TerminalProfile profile) throws IOException {
+                                     TerminalProfile profile, String highlightListId) throws IOException {
         SshClient client = SshClient.setUpDefaultClient();
 
         // OpenSSH known_hosts policy: TOFU for unknown hosts, warn on changed keys.
@@ -119,7 +122,7 @@ public final class SshSession implements TerminalSession {
 
                 String label = displayName != null && !displayName.isBlank()
                         ? displayName : user + "@" + host;
-                return new SshSession(client, session, channel, label, iconId, profile);
+                return new SshSession(client, session, channel, label, iconId, profile, highlightListId);
             } catch (IOException e) {
                 session.close(true);
                 throw e;
@@ -208,6 +211,11 @@ public final class SshSession implements TerminalSession {
     @Override
     public TerminalProfile profile() {
         return profile;
+    }
+
+    @Override
+    public String highlightListOverrideId() {
+        return highlightListId;
     }
 
     @Override

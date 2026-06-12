@@ -28,6 +28,22 @@ final class JtermTerminalPanel extends TerminalPanel {
         this.pasteActionName = settingsProvider.getPasteActionPresentation().getName();
     }
 
+    /**
+     * Restricts drag-to-select to the left mouse button. JediTerm extends the selection on any
+     * {@code MOUSE_DRAGGED}, so a right- (or middle-) button drag would select text; swallowing
+     * those drags before they reach JediTerm's motion listener prevents it. Mouse-aware remote
+     * programs still receive the event so their own drag handling keeps working.
+     */
+    @Override
+    protected void processMouseMotionEvent(MouseEvent e) {
+        if (e.getID() == MouseEvent.MOUSE_DRAGGED
+                && !SwingUtilities.isLeftMouseButton(e)
+                && !isRemoteMouseAction(e)) {
+            return;
+        }
+        super.processMouseMotionEvent(e);
+    }
+
     @Override
     protected void processMouseEvent(MouseEvent e) {
         if (isPlainPasteClick(e)) {

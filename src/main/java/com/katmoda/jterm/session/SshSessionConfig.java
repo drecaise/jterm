@@ -30,6 +30,10 @@ public final class SshSessionConfig implements SessionNode {
     // null means "run nothing". A stale id (macro deleted) is simply ignored at connect time.
     private String macroId;
 
+    // Output-highlighting override (see HighlightListResolver): null = inherit the global default,
+    // "__none__" = explicitly no highlighting, any other value = a HighlightList id.
+    private String highlightListId;
+
     public SshSessionConfig() {
     }
 
@@ -153,5 +157,19 @@ public final class SshSessionConfig implements SessionNode {
 
     public void setMacroId(String macroId) {
         this.macroId = (macroId != null && !macroId.isBlank()) ? macroId : null;
+    }
+
+    /**
+     * Output-highlighting override id, or {@code null} to inherit the global default. The sentinel
+     * {@code "__none__"} means highlighting is explicitly off for this session
+     * (see {@link com.katmoda.jterm.highlight.HighlightListResolver}).
+     */
+    public String getHighlightListId() {
+        return highlightListId;
+    }
+
+    public void setHighlightListId(String highlightListId) {
+        this.highlightListId =
+                (highlightListId != null && !highlightListId.isBlank()) ? highlightListId : null;
     }
 }

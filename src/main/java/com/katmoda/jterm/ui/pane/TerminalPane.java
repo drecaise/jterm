@@ -1,9 +1,14 @@
 package com.katmoda.jterm.ui.pane;
 
+import com.jediterm.core.compatibility.Point;
 import com.jediterm.terminal.TtyConnector;
 import com.jediterm.terminal.model.SelectionUtil;
 import com.katmoda.jterm.config.AppSettings;
 import com.katmoda.jterm.dnd.DropRegion;
+import com.katmoda.jterm.highlight.CompiledHighlightList;
+import com.katmoda.jterm.highlight.HighlightList;
+import com.katmoda.jterm.highlight.HighlightListResolver;
+import com.katmoda.jterm.highlight.HighlightingInstaller;
 import com.katmoda.jterm.terminal.TerminalSession;
 import com.katmoda.jterm.ui.theme.JTermSettingsProvider;
 import com.katmoda.jterm.ui.theme.ThemeColors;
@@ -61,6 +66,7 @@ public final class TerminalPane extends JPanel {
 
     private Runnable onFocus;
     private Runnable onSessionEnd;
+    private Runnable highlightTeardown;
     private Border savedBorder;
     private boolean stopped;
 
@@ -76,6 +82,7 @@ public final class TerminalPane extends JPanel {
         this.widget.start();
         add(widget, BorderLayout.CENTER);
         installCopyOnSelect();
+        installHighlighting();
 
         this.broadcastCheck = new JCheckBox((String) null, true);
         this.broadcastCheck.setToolTipText("Include this pane in broadcast input");
@@ -318,7 +325,15 @@ public final class TerminalPane extends JPanel {
             if (selection == null || selection.getEnd() == null || !AppSettings.get().isCopyOnSelect()) {
                 return;
             }
-            String text = SelectionUtil.getSelectionText(selection, widget.getTerminalTextBuffer());
+            // Use pointsForRun (as JediTerm's own copy does) rather than the raw start/end: it sorts
+            // the points and makes the end column inclusive. The plain getSelectionText(selection,…)
+            // overload passes the exclusive end as-is, dropping the last selected character.
+            var buffer = widget.getTerminalTextBuffer();
+            kotlin.Pair<Point, Point> run = selection.pointsForRun(buffer.getWidth());
+            if (run.getFirst() == null || run.getSecond() == null) {
+                return;
+            }
+            String text = SelectionUtil.getSelectionText(run.getFirst(), run.getSecond(), buffer);
             if (text != null && !text.isEmpty()) {
                 setClipboard(text, true);
             }
@@ -342,6 +357,18 @@ public final class TerminalPane extends JPanel {
         }
     }
 
+    /**
+     * Installs regex output-highlighting for this pane's resolved active list. The list is resolved
+     * (session override → global default → none) and frozen at construction, so later edits to the
+     * library only affect newly opened panes.
+     */
+    private void installHighlighting() {
+        HighlightList resolved = HighlightListResolver.resolve(session.highlightListOverrideId());
+        if (resolved != null) {
+            highlightTeardown = HighlightingInstaller.install(widget, CompiledHighlightList.compile(resolved));
+        }
+    }
+
     /** Move keyboard focus into the terminal. */
     public void focusTerminal() {
         widget.getTerminalPanel().requestFocusInWindow();
@@ -350,6 +377,10 @@ public final class TerminalPane extends JPanel {
     /** Terminate the terminal and its back-end session. */
     public void close() {
         titleTimer.stop();
+        if (highlightTeardown != null) {
+            highlightTeardown.run();
+            highlightTeardown = null;
+        }
         try {
             widget.close();
         } catch (Exception ignored) {

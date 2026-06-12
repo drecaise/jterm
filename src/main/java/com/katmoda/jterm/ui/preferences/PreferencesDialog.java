@@ -1,16 +1,20 @@
 package com.katmoda.jterm.ui.preferences;
 
 import com.katmoda.jterm.config.AppSettings;
+import com.katmoda.jterm.ui.component.HighlightListCombo;
+import com.katmoda.jterm.ui.component.HighlightListsForm;
 import com.katmoda.jterm.ui.component.TerminalSettingsForm;
 import com.katmoda.jterm.ui.component.ToggleSwitch;
 
 import javax.swing.BorderFactory;
+import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JTabbedPane;
 import java.awt.BorderLayout;
 import java.awt.Component;
+import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
@@ -52,9 +56,27 @@ public final class PreferencesDialog {
                 + " override them. Applies to newly opened terminals.");
         terminal.add(defaultsHint, BorderLayout.SOUTH);
 
+        // Highlighting: a global-default selector above the named-list editor.
+        HighlightListsForm highlightForm = new HighlightListsForm();
+        JComboBox<HighlightListCombo.Option> highlightDefault =
+                HighlightListCombo.global(settings.getGlobalHighlightListId(), highlightForm.currentLists());
+        // Keep the default selector's items in sync as lists are added/renamed/removed.
+        highlightForm.setOnListsChanged(() -> HighlightListCombo.rebuildGlobal(highlightDefault,
+                HighlightListCombo.selectedId(highlightDefault), highlightForm.currentLists()));
+        JPanel highlightTop = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        highlightTop.add(new JLabel("Active list (global default):"));
+        highlightTop.add(highlightDefault);
+        JPanel highlighting = new JPanel(new BorderLayout(0, 8));
+        highlighting.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+        highlighting.add(highlightTop, BorderLayout.NORTH);
+        highlighting.add(highlightForm.component(), BorderLayout.CENTER);
+        highlighting.add(hint("Colors matching text in new output. Sessions can override this."
+                + " Applies to newly opened terminals."), BorderLayout.SOUTH);
+
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("General", general);
         tabs.addTab("Terminal Settings", terminal);
+        tabs.addTab("Highlighting", highlighting);
 
         int result = JOptionPane.showConfirmDialog(parent, tabs, "Preferences",
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
@@ -67,6 +89,8 @@ public final class PreferencesDialog {
         settings.setDefaultCharset(terminalDefaults.charset());
         settings.setDefaultFontFamily(terminalDefaults.fontFamily());
         settings.setDefaultFontSize(terminalDefaults.fontSize());
+        highlightForm.commit();
+        settings.setGlobalHighlightListId(HighlightListCombo.selectedId(highlightDefault));
         settings.save();
     }
 
