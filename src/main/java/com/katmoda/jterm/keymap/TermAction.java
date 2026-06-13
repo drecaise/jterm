@@ -13,6 +13,7 @@ public enum TermAction {
     CLOSE_PANE("close-pane", "Close Pane", "control UP"),
     OPEN_LOCAL("open-local", "Open Local Shell", "control shift T"),
     OPEN_SFTP("open-sftp", "Open SFTP Browser", "control F"),
+    OPEN_TUNNELS("open-tunnels", "Tunneling…", "control shift L"),
     TOGGLE_BROADCAST("toggle-broadcast", "Toggle Broadcast", "control shift B"),
     TOGGLE_THEME("toggle-theme", "Toggle Light/Dark", "control shift D"),
     MOVE_SESSION_UP("move-session-up", "Move Session Up", "control shift UP"),

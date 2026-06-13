@@ -12,14 +12,19 @@ import com.katmoda.jterm.security.VaultManager;
 import com.katmoda.jterm.dnd.PaneTransferable;
 import com.katmoda.jterm.dnd.TabTransferable;
 import com.katmoda.jterm.session.JumpHostConfig;
+import com.katmoda.jterm.session.SessionNode;
 import com.katmoda.jterm.session.SessionStore;
 import com.katmoda.jterm.session.SshSessionConfig;
+import com.katmoda.jterm.session.FolderNode;
+import com.katmoda.jterm.session.TunnelConfig;
+import com.katmoda.jterm.session.TunnelStore;
 import com.katmoda.jterm.terminal.SessionFactory;
 import com.katmoda.jterm.terminal.local.LocalSession;
 import com.katmoda.jterm.terminal.TerminalProfile;
 import com.katmoda.jterm.terminal.TerminalSession;
 import com.katmoda.jterm.terminal.ssh.SshConnect;
 import com.katmoda.jterm.terminal.ssh.SshSession;
+import com.katmoda.jterm.terminal.ssh.TunnelManager;
 import com.katmoda.jterm.terminal.ssh.agent.AgentSupport;
 import com.katmoda.jterm.ui.AgentKeysDialog;
 import com.katmoda.jterm.ui.ErrorDialog;
@@ -28,6 +33,7 @@ import com.katmoda.jterm.ui.grid.PaneGrid;
 import com.katmoda.jterm.ui.macro.MacroManagerDialog;
 import com.katmoda.jterm.ui.pane.TerminalPane;
 import com.katmoda.jterm.ui.sftp.SftpLauncher;
+import com.katmoda.jterm.ui.tunnel.TunnelManagerDialog;
 import com.katmoda.jterm.ui.preferences.PreferencesDialog;
 import com.katmoda.jterm.ui.preferences.ShortcutsDialog;
 import com.katmoda.jterm.ui.security.MasterPasswordDialog;
@@ -69,6 +75,8 @@ import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BiConsumer;
@@ -116,6 +124,13 @@ public final class MainWindow {
         frame.setLayout(new BorderLayout());
         frame.add(split, BorderLayout.CENTER);
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        // Tear down any running tunnels cleanly before the process exits.
+        frame.addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                TunnelManager.get().stopAll();
+            }
+        });
         frame.setSize(new Dimension(1100, 720));
         frame.setLocationRelativeTo(null);
         applyAppIcon();
@@ -139,6 +154,9 @@ public final class MainWindow {
         tabs.addChangeListener(e -> guardPlusSelection());
 
         frame.setVisible(true);
+
+        // Bring up any tunnels the user marked auto-start (resolves credentials as needed).
+        startAutoStartTunnels();
     }
 
     private void applyAppIcon() {
@@ -693,6 +711,92 @@ public final class MainWindow {
         };
     }
 
+    // ---- tunneling ----
+
+    /** Opens the SSH tunnel manager, wiring start/stop back through this window's SSH connect path. */
+    private void openTunnelManager() {
+        TunnelManagerDialog.show(frame, sessionStore,
+                this::startTunnel,
+                id -> TunnelManager.get().stop(id));
+    }
+
+    /**
+     * Starts {@code tunnel} by opening a dedicated SSH connection (no shell) to its referenced
+     * session and attaching the forward. Credentials are resolved on the EDT (may prompt/unlock the
+     * vault), then the blocking connect runs off it; {@code onDone} (may be {@code null}) runs on
+     * the EDT once the attempt finishes, succeed or fail.
+     */
+    private void startTunnel(TunnelConfig tunnel, Runnable onDone) {
+        SshSessionConfig cfg = findSshSession(tunnel.getSshSessionId());
+        if (cfg == null) {
+            JOptionPane.showMessageDialog(frame,
+                    "The SSH session for tunnel \"" + tunnel.getName() + "\" no longer exists.",
+                    "Tunneling", JOptionPane.WARNING_MESSAGE);
+            if (onDone != null) {
+                onDone.run();
+            }
+            return;
+        }
+        String password = resolvePassword(cfg);
+        List<SshConnect.HostHop> jumpHosts = resolveJumpHosts(cfg);
+        SshConnect.PassphraseProvider passphrases = keyPassphraseProvider();
+        new SwingWorker<SshConnect.Connected, Void>() {
+            @Override
+            protected SshConnect.Connected doInBackground() throws Exception {
+                return SshConnect.open(jumpHosts,
+                        new SshConnect.HostHop(cfg.getHost(), cfg.getPort(), cfg.getUser(),
+                                password, cfg.getKeyPath()),
+                        passphrases);
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    TunnelManager.get().start(tunnel, get());
+                } catch (Exception e) {
+                    Throwable cause = e.getCause() != null ? e.getCause() : e;
+                    ErrorDialog.show(frame, "Tunneling",
+                            "Failed to start tunnel \"" + tunnel.getName() + "\":", cause);
+                }
+                if (onDone != null) {
+                    onDone.run();
+                }
+            }
+        }.execute();
+    }
+
+    /** Starts every tunnel flagged auto-start (best-effort, on launch). */
+    private void startAutoStartTunnels() {
+        for (TunnelConfig t : TunnelStore.get().tunnels()) {
+            if (t.isAutoStart()) {
+                startTunnel(t, null);
+            }
+        }
+    }
+
+    /** Finds a saved SSH session by id anywhere in the sidebar tree, or {@code null}. */
+    private SshSessionConfig findSshSession(String id) {
+        if (id == null) {
+            return null;
+        }
+        return findSshSession(sessionStore.root(), id);
+    }
+
+    private static SshSessionConfig findSshSession(FolderNode folder, String id) {
+        for (SessionNode node : folder.getChildren()) {
+            if (node instanceof SshSessionConfig ssh && id.equals(ssh.getId())) {
+                return ssh;
+            }
+            if (node instanceof FolderNode child) {
+                SshSessionConfig found = findSshSession(child, id);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
     // ---- shortcuts ----
 
     private void installShortcutDispatcher() {
@@ -739,6 +843,7 @@ public final class MainWindow {
             }
             case OPEN_LOCAL -> openLocalInCurrent();
             case OPEN_SFTP -> openSftpForActivePane();
+            case OPEN_TUNNELS -> openTunnelManager();
             case TOGGLE_THEME -> ThemeManager.get().toggle();
             case TOGGLE_BROADCAST -> {
                 if (grid != null) {
@@ -922,6 +1027,7 @@ public final class MainWindow {
 
         JMenu ssh = new JMenu("SSH");
         ssh.add(menuItem("Open SFTP Browser", TermAction.OPEN_SFTP));
+        ssh.add(menuItem("Tunneling…", TermAction.OPEN_TUNNELS));
         ssh.addSeparator();
         JMenuItem agentKeys = new JMenuItem("Show Agent Keys…");
         agentKeys.addActionListener(e -> showAgentKeys());
