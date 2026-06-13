@@ -25,10 +25,11 @@ import java.util.List;
  * {@link #MAX_HOSTS} bastion hops (added/removed on demand) that the connection tunnels through
  * before reaching the target. Hops connect in display order ({@code hop 1} first).
  *
- * <p>Each hop edits host/port/user plus an optional password (with save-to-vault), mirroring the
- * main host's auth fields; ssh-agent and on-disk keys apply to every hop automatically and so are
- * not configured here. The form preserves each existing hop's id so a saved password survives an
- * edit, and mints a fresh id for newly added hops.</p>
+ * <p>Each hop edits host/port/user plus an optional key file and password, mirroring the main
+ * host's auth fields; ssh-agent and the default on-disk keys apply to every hop automatically. A
+ * typed password is saved to the vault on OK; a blank one falls back to the connect-time prompt.
+ * The form preserves each existing hop's id so a saved password survives an edit, and mints a
+ * fresh id for newly added hops.</p>
  */
 public final class JumpHostsForm {
 
@@ -104,7 +105,7 @@ public final class JumpHostsForm {
                 jh.setPort(22);
             }
             jh.setPasswordAuth(r.passwordAuth.isSelected());
-            jh.setSavePassword(r.savePassword.isSelected());
+            jh.setKeyPath(r.keyFile.path());
             out.add(new Result(jh, r.password.getPassword()));
         }
         return out;
@@ -142,9 +143,9 @@ public final class JumpHostsForm {
         private final JTextField host = new JTextField();
         private final JTextField port = new JTextField();
         private final JTextField user = new JTextField();
+        private final KeyFileField keyFile;
         private final ToggleSwitch passwordAuth;
         private final JPasswordField password = new JPasswordField();
-        private final ToggleSwitch savePassword;
         private final JPanel panel;
 
         Row(JumpHostConfig jh) {
@@ -152,16 +153,12 @@ public final class JumpHostsForm {
             host.setText(jh.getHost());
             port.setText(String.valueOf(jh.getPort()));
             user.setText(jh.getUser());
+            keyFile = new KeyFileField(jh.getKeyPath());
             passwordAuth = new ToggleSwitch(jh.isPasswordAuth());
-            savePassword = new ToggleSwitch(jh.isSavePassword());
             password.putClientProperty("JTextField.placeholderText",
-                    jh.isSavePassword() ? "(leave blank to keep saved)" : "");
+                    jh.isSavePassword() ? "(leave blank to keep saved)" : "(prompt on connect)");
 
-            Runnable syncEnabled = () -> {
-                boolean on = passwordAuth.isSelected();
-                password.setEnabled(on);
-                savePassword.setEnabled(on);
-            };
+            Runnable syncEnabled = () -> password.setEnabled(passwordAuth.isSelected());
             passwordAuth.addActionListener(a -> syncEnabled.run());
             syncEnabled.run();
 
@@ -169,9 +166,9 @@ public final class JumpHostsForm {
             row(form, "Host:", host);
             row(form, "Port:", port);
             row(form, "User:", user);
+            row(form, "Key file:", keyFile.component());
             row(form, "Password auth:", passwordAuth);
             row(form, "Password:", password);
-            row(form, "Save password:", savePassword);
 
             JButton remove = new JButton("Remove");
             remove.addActionListener(a -> removeRow(this));

@@ -46,6 +46,7 @@ import javax.swing.JPanel;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 import javax.swing.KeyStroke;
+import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -487,7 +488,8 @@ public final class MainWindow {
     private void openSftpForConfig(SshSessionConfig cfg) {
         String password = resolvePassword(cfg);
         String label = (cfg.getUser() != null ? cfg.getUser() + "@" : "") + cfg.getHost();
-        SftpLauncher.openFresh(cfg.getHost(), cfg.getPort(), cfg.getUser(), password, label,
+        SftpLauncher.openFresh(cfg.getHost(), cfg.getPort(), cfg.getUser(), password,
+                cfg.getKeyPath(), keyPassphraseProvider(), label,
                 this::placeSftp,
                 cause -> ErrorDialog.show(frame, "SFTP", "SFTP connection failed:", cause));
     }
@@ -572,14 +574,16 @@ public final class MainWindow {
         // target and every jump host are resolved up front so the background connect needs no UI.
         String password = resolvePassword(cfg);
         List<SshConnect.HostHop> jumpHosts = resolveJumpHosts(cfg);
+        SshConnect.PassphraseProvider passphrases = keyPassphraseProvider();
         new SwingWorker<SshSession, Void>() {
             @Override
             protected SshSession doInBackground() throws Exception {
                 TerminalProfile profile = AppSettings.get().resolve(cfg.getTerminalType(),
                         cfg.getTerminalCharset(), cfg.getFontFamily(), cfg.getFontSize());
                 return SshSession.connect(cfg.getHost(), cfg.getPort(), cfg.getUser(),
-                        cfg.isAgentForwarding(), password, jumpHosts, cfg.getName(), cfg.getIconId(),
-                        profile, cfg.getHighlightListId(), cfg.getTabColorHex());
+                        cfg.isAgentForwarding(), password, cfg.getKeyPath(), jumpHosts, passphrases,
+                        cfg.getName(), cfg.getIconId(), profile, cfg.getHighlightListId(),
+                        cfg.getTabColorHex());
             }
 
             @Override
@@ -654,9 +658,38 @@ public final class MainWindow {
             }
             String label = jh.getUser() + "@" + jh.getHost();
             String pw = resolvePassword(jh.getId(), jh.isPasswordAuth(), jh.isSavePassword(), label);
-            hops.add(new SshConnect.HostHop(jh.getHost(), jh.getPort(), jh.getUser(), pw));
+            hops.add(new SshConnect.HostHop(jh.getHost(), jh.getPort(), jh.getUser(), pw,
+                    jh.getKeyPath()));
         }
         return hops;
+    }
+
+    /**
+     * A passphrase provider for encrypted key files: prompts on the EDT (the SSH connect runs off
+     * it) and returns {@code null} when cancelled, so the key is skipped and other auth applies.
+     */
+    private SshConnect.PassphraseProvider keyPassphraseProvider() {
+        return keyPath -> {
+            String fileName = new java.io.File(keyPath).getName();
+            char[][] holder = new char[1][];
+            Runnable prompt = () -> holder[0] = MasterPasswordDialog.promptKeyPassphrase(frame, fileName);
+            if (SwingUtilities.isEventDispatchThread()) {
+                prompt.run();
+            } else {
+                try {
+                    SwingUtilities.invokeAndWait(prompt);
+                } catch (Exception e) {
+                    return null;
+                }
+            }
+            char[] entered = holder[0];
+            if (entered == null) {
+                return null;
+            }
+            String passphrase = new String(entered);
+            java.util.Arrays.fill(entered, '\0');
+            return passphrase;
+        };
     }
 
     // ---- shortcuts ----

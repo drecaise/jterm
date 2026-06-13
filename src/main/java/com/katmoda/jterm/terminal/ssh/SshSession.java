@@ -82,7 +82,9 @@ public final class SshSession implements TerminalSession {
      * @param user            login user
      * @param agentForwarding whether to forward the local ssh-agent
      * @param password        optional password fallback (may be {@code null}/blank)
+     * @param keyPath         optional private key file to authenticate with (may be {@code null}/blank)
      * @param jumpHosts       jump hosts to tunnel through, in connection order (may be empty)
+     * @param passphrases     supplies passphrases for any encrypted key files (may be {@code null})
      * @param displayName     label for the pane title
      * @param iconId          icon library id for the tab (may be {@code null})
      * @param profile         terminal type, charset and font settings for this session
@@ -90,13 +92,16 @@ public final class SshSession implements TerminalSession {
      * @param tabColorHex     custom tab color {@code "#RRGGBB"} (may be {@code null} for the default)
      */
     public static SshSession connect(String host, int port, String user, boolean agentForwarding,
-                                     String password, List<SshConnect.HostHop> jumpHosts,
+                                     String password, String keyPath,
+                                     List<SshConnect.HostHop> jumpHosts,
+                                     SshConnect.PassphraseProvider passphrases,
                                      String displayName, String iconId,
                                      TerminalProfile profile, String highlightListId,
                                      String tabColorHex) throws IOException {
         SshConnect.Connected connection = SshConnect.open(
                 jumpHosts != null ? jumpHosts : List.of(),
-                new SshConnect.HostHop(host, port, user, password));
+                new SshConnect.HostHop(host, port, user, password, keyPath),
+                passphrases != null ? passphrases : SshConnect.PassphraseProvider.NONE);
         try {
             ChannelShell channel = connection.session().createShellChannel();
             channel.setPtyType(profile.terminalType());

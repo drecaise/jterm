@@ -6,12 +6,14 @@ import org.apache.sshd.agent.SshAgent;
 import org.apache.sshd.client.SshClient;
 import org.apache.sshd.client.keyverifier.RejectAllServerKeyVerifier;
 import org.apache.sshd.client.session.ClientSession;
+import org.apache.sshd.common.config.keys.FilePasswordProvider;
 import org.apache.sshd.common.keyprovider.FileKeyPairProvider;
 import org.apache.sshd.common.util.net.SshdSocketAddress;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.KeyPair;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -35,8 +37,24 @@ public final class SshConnect {
     private SshConnect() {
     }
 
-    /** One host in a connection chain: a jump host or the final target. */
-    public record HostHop(String host, int port, String user, String password) {
+    /**
+     * One host in a connection chain: a jump host or the final target. {@code keyPath} is an
+     * optional private key file to authenticate with (in addition to the shared agent/default
+     * identities); {@code password} is an optional password fallback. Either may be blank/null.
+     */
+    public record HostHop(String host, int port, String user, String password, String keyPath) {
+    }
+
+    /**
+     * Supplies the passphrase for an encrypted key file on demand (returns {@code null} to skip
+     * the key). Invoked off the EDT during connect, only when a key is actually encrypted.
+     */
+    @FunctionalInterface
+    public interface PassphraseProvider {
+        String passphraseFor(String keyPath);
+
+        /** A provider that never supplies a passphrase (encrypted keys are simply skipped). */
+        PassphraseProvider NONE = keyPath -> null;
     }
 
     /**
@@ -76,6 +94,15 @@ public final class SshConnect {
      * connecting through it.</p>
      */
     public static Connected open(List<HostHop> jumpHosts, HostHop target) throws IOException {
+        return open(jumpHosts, target, PassphraseProvider.NONE);
+    }
+
+    /**
+     * As {@link #open(List, HostHop)}, but {@code passphrases} is consulted for the passphrase of
+     * any encrypted per-hop key file ({@link HostHop#keyPath()}).
+     */
+    public static Connected open(List<HostHop> jumpHosts, HostHop target,
+                                 PassphraseProvider passphrases) throws IOException {
         SshClient client = SshClient.setUpDefaultClient();
 
         // OpenSSH known_hosts policy: TOFU for unknown hosts, warn on changed keys. The verifier
@@ -99,10 +126,10 @@ public final class SshConnect {
         try {
             ClientSession via = null;
             for (HostHop hop : jumpHosts) {
-                via = connectHop(client, verifier, via, hop);
+                via = connectHop(client, verifier, via, hop, passphrases);
                 upstream.add(via);
             }
-            ClientSession targetSession = connectHop(client, verifier, via, target);
+            ClientSession targetSession = connectHop(client, verifier, via, target, passphrases);
             return new Connected(client, targetSession, upstream);
         } catch (IOException e) {
             for (int i = upstream.size() - 1; i >= 0; i--) {
@@ -122,7 +149,7 @@ public final class SshConnect {
      */
     public static Connected open(String host, int port, String user, String password)
             throws IOException {
-        return open(List.of(), new HostHop(host, port, user, password));
+        return open(List.of(), new HostHop(host, port, user, password, null));
     }
 
     /**
@@ -132,7 +159,8 @@ public final class SshConnect {
      * known_hosts handling uses the true name even when connecting via 127.0.0.1.
      */
     private static ClientSession connectHop(SshClient client, JtermKnownHostsVerifier verifier,
-                                            ClientSession via, HostHop hop) throws IOException {
+                                            ClientSession via, HostHop hop,
+                                            PassphraseProvider passphrases) throws IOException {
         int port = hop.port() <= 0 ? 22 : hop.port();
         String connectHost = hop.host();
         int connectPort = port;
@@ -148,6 +176,7 @@ public final class SshConnect {
                     .verify(CONNECT_TIMEOUT)
                     .getSession();
             try {
+                addKeyIdentity(session, hop.keyPath(), passphrases);
                 if (hop.password() != null && !hop.password().isEmpty()) {
                     session.addPasswordIdentity(hop.password());
                 }
@@ -160,6 +189,50 @@ public final class SshConnect {
         } finally {
             verifier.clearIntendedHost();
         }
+    }
+
+    /**
+     * Registers the hop's configured private key file (if any) as a session identity. A blank
+     * path is ignored. A leading {@code ~/} is expanded to the user's home directory. If the key
+     * can't be read or decrypted (bad path, wrong/declined passphrase) it is skipped rather than
+     * failing the connection, so agent/password auth can still apply.
+     */
+    private static void addKeyIdentity(ClientSession session, String keyPath,
+                                       PassphraseProvider passphrases) {
+        if (keyPath == null || keyPath.isBlank()) {
+            return;
+        }
+        Path path = expandHome(keyPath.trim());
+        FileKeyPairProvider provider = new FileKeyPairProvider(path);
+        provider.setPasswordFinder(passphraseFinder(keyPath, passphrases));
+        try {
+            for (KeyPair kp : provider.loadKeys(session)) {
+                session.addPublicKeyIdentity(kp);
+            }
+        } catch (Exception ignored) {
+            // Unreadable/undecryptable key: fall through to agent/password auth.
+        }
+    }
+
+    /**
+     * Adapts a {@link PassphraseProvider} to MINA's {@link FilePasswordProvider}: prompts once
+     * (retry index 0); returning {@code null} on a retry stops MINA looping on a wrong passphrase.
+     */
+    private static FilePasswordProvider passphraseFinder(String keyPath,
+                                                         PassphraseProvider passphrases) {
+        PassphraseProvider p = passphrases != null ? passphrases : PassphraseProvider.NONE;
+        return (sessionContext, resource, retryIndex) ->
+                retryIndex == 0 ? p.passphraseFor(keyPath) : null;
+    }
+
+    private static Path expandHome(String path) {
+        if (path.equals("~")) {
+            return Path.of(System.getProperty("user.home", "."));
+        }
+        if (path.startsWith("~/") || path.startsWith("~\\")) {
+            return Path.of(System.getProperty("user.home", "."), path.substring(2));
+        }
+        return Path.of(path);
     }
 
     /**

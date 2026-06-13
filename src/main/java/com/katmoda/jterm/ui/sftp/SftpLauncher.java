@@ -8,6 +8,7 @@ import org.apache.sshd.sftp.client.SftpClient;
 import org.apache.sshd.sftp.client.SftpClientFactory;
 
 import javax.swing.SwingWorker;
+import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.function.Consumer;
 
@@ -43,11 +44,13 @@ public final class SftpLauncher {
     }
 
     /** Open SFTP over a fresh, dedicated SSH connection (owned and closed by the pane). */
-    public static void openFresh(String host, int port, String user, String password,
-                                 String hostLabel, Consumer<GridContent> onReady,
-                                 Consumer<Throwable> onError) {
+    public static void openFresh(String host, int port, String user, String password, String keyPath,
+                                 SshConnect.PassphraseProvider passphrases, String hostLabel,
+                                 Consumer<GridContent> onReady, Consumer<Throwable> onError) {
         open(() -> {
-            SshConnect.Connected conn = SshConnect.open(host, port, user, password);
+            SshConnect.Connected conn = SshConnect.open(List.of(),
+                    new SshConnect.HostHop(host, port, user, password, keyPath),
+                    passphrases != null ? passphrases : SshConnect.PassphraseProvider.NONE);
             try {
                 SftpClient client = SftpClientFactory.instance().createSftpClient(conn.session());
                 return new Built(client, conn::close);

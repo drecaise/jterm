@@ -23,6 +23,7 @@ import com.katmoda.jterm.security.VaultManager;
 import com.katmoda.jterm.ui.security.MasterPasswordDialog;
 import com.katmoda.jterm.ui.component.HighlightListCombo;
 import com.katmoda.jterm.ui.component.JumpHostsForm;
+import com.katmoda.jterm.ui.component.KeyFileField;
 import com.katmoda.jterm.ui.component.TerminalSettingsForm;
 import com.katmoda.jterm.ui.component.ToggleSwitch;
 
@@ -863,6 +864,7 @@ public final class SessionSidebar extends JPanel {
         copy.setAgentForwarding(src.isAgentForwarding());
         copy.setPasswordAuth(src.isPasswordAuth());
         copy.setSavePassword(src.isSavePassword());
+        copy.setKeyPath(src.getKeyPath());
         copy.setTerminalType(src.getTerminalType());
         copy.setTerminalCharset(src.getTerminalCharset());
         copy.setFontFamily(src.getFontFamily());
@@ -878,6 +880,7 @@ public final class SessionSidebar extends JPanel {
             hop.setUser(srcHop.getUser());
             hop.setPasswordAuth(srcHop.isPasswordAuth());
             hop.setSavePassword(srcHop.isSavePassword());
+            hop.setKeyPath(srcHop.getKeyPath());
             hops.add(hop);
         }
         copy.setJumpHosts(hops);
@@ -999,15 +1002,12 @@ public final class SessionSidebar extends JPanel {
         ToggleSwitch passwordAuth = new ToggleSwitch(cfg.isPasswordAuth());
         JPasswordField password = new JPasswordField();
         password.putClientProperty("JTextField.placeholderText",
-                cfg.isSavePassword() ? "(leave blank to keep saved)" : "");
-        ToggleSwitch savePassword = new ToggleSwitch(cfg.isSavePassword());
-        Runnable syncPasswordEnabled = () -> {
-            boolean on = passwordAuth.isSelected();
-            password.setEnabled(on);
-            savePassword.setEnabled(on);
-        };
+                cfg.isSavePassword() ? "(leave blank to keep saved)" : "(prompt on connect)");
+        Runnable syncPasswordEnabled = () -> password.setEnabled(passwordAuth.isSelected());
         passwordAuth.addActionListener(a -> syncPasswordEnabled.run());
         syncPasswordEnabled.run();
+
+        KeyFileField keyFile = new KeyFileField(cfg.getKeyPath());
 
         String[] iconId = {cfg.getIconId()};
         Icon fallback = IconLibrary.get().icon("builtin/server", 16);
@@ -1063,9 +1063,9 @@ public final class SessionSidebar extends JPanel {
         row(basic, "User:", user);
         row(basic, "Icon:", iconBtn);
         row(basic, "Forward ssh-agent:", agent);
+        row(basic, "Key file:", keyFile.component());
         row(basic, "Password auth:", passwordAuth);
         row(basic, "Password:", password);
-        row(basic, "Save password:", savePassword);
         row(basic, "Run macro on connect:", macroCombo);
         row(basic, "Output highlighting:", highlightCombo);
         row(basic, "Tab color:", tabColorPanel);
@@ -1105,7 +1105,8 @@ public final class SessionSidebar extends JPanel {
         cfg.setMacroId(macro != null ? macro.id() : null);
         cfg.setHighlightListId(HighlightListCombo.selectedId(highlightCombo));
         cfg.setTabColorHex(tabColor[0] != null ? String.format("#%06X", tabColor[0].getRGB() & 0xFFFFFF) : null);
-        applyPasswordSettings(cfg, passwordAuth.isSelected(), savePassword.isSelected(), password.getPassword());
+        cfg.setKeyPath(keyFile.path());
+        applyPasswordSettings(cfg, passwordAuth.isSelected(), password.getPassword());
         applyJumpHosts(cfg, jumpHostsForm.results());
 
         FolderOption chosen = (FolderOption) folderCombo.getSelectedItem();
@@ -1197,43 +1198,45 @@ public final class SessionSidebar extends JPanel {
     }
 
     /**
-     * Persists the password-auth choice and reconciles the encrypted vault: stores a newly
-     * entered password, or clears any saved one when saving is turned off.
+     * Persists the password-auth choice and reconciles the encrypted vault: a typed password is
+     * saved to the vault, a blank field keeps any existing saved password, and turning password
+     * auth off clears it.
      */
-    private void applyPasswordSettings(SshSessionConfig cfg, boolean passwordAuth,
-                                       boolean savePassword, char[] entered) {
+    private void applyPasswordSettings(SshSessionConfig cfg, boolean passwordAuth, char[] entered) {
         cfg.setPasswordAuth(passwordAuth);
-        cfg.setSavePassword(applyVaultPassword(cfg.getId(), passwordAuth, savePassword, entered));
+        cfg.setSavePassword(applyVaultPassword(cfg.getId(), passwordAuth, entered));
     }
 
     /**
-     * Reconciles the encrypted vault for one host (the main session or a jump host): stores a
-     * newly entered password, keeps an existing saved one when the field is left blank, or clears
-     * any saved password when saving is off. Clears {@code entered} and returns the effective
-     * save flag (downgraded to false if the master-password setup was cancelled or the save failed).
+     * Reconciles the encrypted vault for one host (the main session or a jump host). With password
+     * auth on, a newly typed password is stored (a blank field keeps whatever is already saved —
+     * the user falls back to the connect-time prompt when nothing is saved); with password auth
+     * off any saved password is cleared. Clears {@code entered} and returns whether a saved
+     * password now exists (false if the master-password setup was cancelled or the save failed).
      */
-    private boolean applyVaultPassword(String id, boolean passwordAuth, boolean savePassword,
-                                       char[] entered) {
-        boolean save = passwordAuth && savePassword;
+    private boolean applyVaultPassword(String id, boolean passwordAuth, char[] entered) {
         VaultManager vaults = VaultManager.get();
-        if (save && entered.length > 0) {
+        boolean saved;
+        if (passwordAuth && entered.length > 0) {
+            saved = false;
             if (vaults.ensureUnlocked(this)) {
                 try {
                     vaults.vault().setPassword(id, entered);
+                    saved = true;
                 } catch (VaultException e) {
                     JOptionPane.showMessageDialog(this,
                             "Could not save the password:\n" + e.getMessage(),
                             "jterm", JOptionPane.ERROR_MESSAGE);
-                    save = false;
                 }
-            } else {
-                save = false; // user cancelled master-password setup
             }
-        } else if (!save) {
+        } else if (passwordAuth) {
+            saved = vaults.vault().hasPassword(id); // blank field: keep any existing saved password
+        } else {
             vaults.vault().removePassword(id);
+            saved = false;
         }
         java.util.Arrays.fill(entered, '\0');
-        return save;
+        return saved;
     }
 
     /**
@@ -1245,8 +1248,7 @@ public final class SessionSidebar extends JPanel {
         List<JumpHostConfig> hops = new ArrayList<>();
         for (JumpHostsForm.Result result : results) {
             JumpHostConfig jh = result.config();
-            jh.setSavePassword(applyVaultPassword(jh.getId(), jh.isPasswordAuth(),
-                    jh.isSavePassword(), result.password()));
+            jh.setSavePassword(applyVaultPassword(jh.getId(), jh.isPasswordAuth(), result.password()));
             hops.add(jh);
             keptIds.add(jh.getId());
         }
