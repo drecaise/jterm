@@ -10,6 +10,7 @@ import com.katmoda.jterm.highlight.HighlightLibrary;
 import com.katmoda.jterm.macro.Macro;
 import com.katmoda.jterm.macro.MacroLibrary;
 import com.katmoda.jterm.session.FolderNode;
+import com.katmoda.jterm.session.JumpHostConfig;
 import com.katmoda.jterm.session.SessionExport;
 import com.katmoda.jterm.session.SessionNode;
 import com.katmoda.jterm.session.SessionStore;
@@ -21,6 +22,7 @@ import com.katmoda.jterm.security.VaultException;
 import com.katmoda.jterm.security.VaultManager;
 import com.katmoda.jterm.ui.security.MasterPasswordDialog;
 import com.katmoda.jterm.ui.component.HighlightListCombo;
+import com.katmoda.jterm.ui.component.JumpHostsForm;
 import com.katmoda.jterm.ui.component.TerminalSettingsForm;
 import com.katmoda.jterm.ui.component.ToggleSwitch;
 
@@ -75,6 +77,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 /**
  * Left sidebar: a recursive tree of saved folders/SSH sessions plus a fixed,
@@ -95,6 +98,7 @@ public final class SessionSidebar extends JPanel {
     private final BiConsumer<SshSessionConfig, OpenMode> onOpenSsh;
     private final Runnable onOpenLocal;
     private final BiConsumer<String, OpenMode> onOpenWsl;
+    private final Consumer<SshSessionConfig> onOpenSftp;
 
     /**
      * The pinned, non-editable "WSL" folder of runtime-detected WSL2 distributions, or
@@ -109,12 +113,14 @@ public final class SessionSidebar extends JPanel {
     public SessionSidebar(SessionStore store,
                           BiConsumer<SshSessionConfig, OpenMode> onOpenSsh,
                           Runnable onOpenLocal,
-                          BiConsumer<String, OpenMode> onOpenWsl) {
+                          BiConsumer<String, OpenMode> onOpenWsl,
+                          Consumer<SshSessionConfig> onOpenSftp) {
         super(new BorderLayout());
         this.store = store;
         this.onOpenSsh = onOpenSsh;
         this.onOpenLocal = onOpenLocal;
         this.onOpenWsl = onOpenWsl;
+        this.onOpenSftp = onOpenSftp;
         this.wslFolder = isWindows() ? new FolderNode("WSL") : null;
 
         this.model = new DefaultTreeModel(buildRoot());
@@ -746,6 +752,9 @@ public final class SessionSidebar extends JPanel {
             split.add(right);
             split.add(below);
 
+            JMenuItem sftp = new JMenuItem("Open SFTP Browser");
+            sftp.addActionListener(a -> onOpenSftp.accept(ssh));
+
             JMenuItem edit = new JMenuItem("Edit…");
             edit.addActionListener(a -> editSsh(ssh));
             JMenuItem duplicate = new JMenuItem("Duplicate");
@@ -755,6 +764,7 @@ public final class SessionSidebar extends JPanel {
             menu.add(open);
             menu.add(openActive);
             menu.add(split);
+            menu.add(sftp);
             menu.addSeparator();
             menu.add(edit);
             menu.add(duplicate);
@@ -860,6 +870,17 @@ public final class SessionSidebar extends JPanel {
         copy.setMacroId(src.getMacroId());
         copy.setHighlightListId(src.getHighlightListId());
         copy.setTabColorHex(src.getTabColorHex());
+        List<JumpHostConfig> hops = new ArrayList<>();
+        for (JumpHostConfig srcHop : src.getJumpHosts()) {
+            JumpHostConfig hop = new JumpHostConfig(); // fresh id → its own (empty) vault entry
+            hop.setHost(srcHop.getHost());
+            hop.setPort(srcHop.getPort());
+            hop.setUser(srcHop.getUser());
+            hop.setPasswordAuth(srcHop.isPasswordAuth());
+            hop.setSavePassword(srcHop.isSavePassword());
+            hops.add(hop);
+        }
+        copy.setJumpHosts(hops);
         return copy;
     }
 
@@ -1053,9 +1074,13 @@ public final class SessionSidebar extends JPanel {
         TerminalSettingsForm terminalSettings = new TerminalSettingsForm(true,
                 cfg.getTerminalType(), cfg.getTerminalCharset(), cfg.getFontFamily(), cfg.getFontSize());
 
+        // ---- Jump hosts ---- (up to 4 chained bastions; empty means a direct connection)
+        JumpHostsForm jumpHostsForm = new JumpHostsForm(cfg.getJumpHosts());
+
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Basic settings", basic);
         tabs.addTab("Terminal Settings", terminalSettings.component());
+        tabs.addTab("Jump Hosts", jumpHostsForm.component());
 
         int result = JOptionPane.showConfirmDialog(this, tabs, title,
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
@@ -1081,6 +1106,7 @@ public final class SessionSidebar extends JPanel {
         cfg.setHighlightListId(HighlightListCombo.selectedId(highlightCombo));
         cfg.setTabColorHex(tabColor[0] != null ? String.format("#%06X", tabColor[0].getRGB() & 0xFFFFFF) : null);
         applyPasswordSettings(cfg, passwordAuth.isSelected(), savePassword.isSelected(), password.getPassword());
+        applyJumpHosts(cfg, jumpHostsForm.results());
 
         FolderOption chosen = (FolderOption) folderCombo.getSelectedItem();
         return chosen != null ? chosen.folder() : initialFolder;
@@ -1177,27 +1203,60 @@ public final class SessionSidebar extends JPanel {
     private void applyPasswordSettings(SshSessionConfig cfg, boolean passwordAuth,
                                        boolean savePassword, char[] entered) {
         cfg.setPasswordAuth(passwordAuth);
-        boolean save = passwordAuth && savePassword;
-        cfg.setSavePassword(save);
+        cfg.setSavePassword(applyVaultPassword(cfg.getId(), passwordAuth, savePassword, entered));
+    }
 
+    /**
+     * Reconciles the encrypted vault for one host (the main session or a jump host): stores a
+     * newly entered password, keeps an existing saved one when the field is left blank, or clears
+     * any saved password when saving is off. Clears {@code entered} and returns the effective
+     * save flag (downgraded to false if the master-password setup was cancelled or the save failed).
+     */
+    private boolean applyVaultPassword(String id, boolean passwordAuth, boolean savePassword,
+                                       char[] entered) {
+        boolean save = passwordAuth && savePassword;
         VaultManager vaults = VaultManager.get();
         if (save && entered.length > 0) {
             if (vaults.ensureUnlocked(this)) {
                 try {
-                    vaults.vault().setPassword(cfg.getId(), entered);
+                    vaults.vault().setPassword(id, entered);
                 } catch (VaultException e) {
                     JOptionPane.showMessageDialog(this,
                             "Could not save the password:\n" + e.getMessage(),
                             "jterm", JOptionPane.ERROR_MESSAGE);
-                    cfg.setSavePassword(false);
+                    save = false;
                 }
             } else {
-                cfg.setSavePassword(false); // user cancelled master-password setup
+                save = false; // user cancelled master-password setup
             }
         } else if (!save) {
-            vaults.vault().removePassword(cfg.getId());
+            vaults.vault().removePassword(id);
         }
         java.util.Arrays.fill(entered, '\0');
+        return save;
+    }
+
+    /**
+     * Replaces the session's jump-host list with the dialog's edited hops, persisting each hop's
+     * vault password and clearing the vault entry of any hop that was removed.
+     */
+    private void applyJumpHosts(SshSessionConfig cfg, List<JumpHostsForm.Result> results) {
+        java.util.Set<String> keptIds = new java.util.HashSet<>();
+        List<JumpHostConfig> hops = new ArrayList<>();
+        for (JumpHostsForm.Result result : results) {
+            JumpHostConfig jh = result.config();
+            jh.setSavePassword(applyVaultPassword(jh.getId(), jh.isPasswordAuth(),
+                    jh.isSavePassword(), result.password()));
+            hops.add(jh);
+            keptIds.add(jh.getId());
+        }
+        // Drop saved passwords for hops that were removed from this session.
+        for (JumpHostConfig old : cfg.getJumpHosts()) {
+            if (!keptIds.contains(old.getId())) {
+                VaultManager.get().vault().removePassword(old.getId());
+            }
+        }
+        cfg.setJumpHosts(hops);
     }
 
     private static String blankToDefault(String s, String def) {

@@ -1,5 +1,7 @@
 package com.katmoda.jterm.session;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -36,6 +38,9 @@ public final class SshSessionConfig implements SessionNode {
 
     // Custom tab color as "#RRGGBB", or null to use the theme default tab color.
     private String tabColorHex;
+
+    // Jump (bastion) hosts to tunnel through, in connection order; empty = connect directly.
+    private List<JumpHostConfig> jumpHosts = new ArrayList<>();
 
     public SshSessionConfig() {
     }
@@ -183,5 +188,14 @@ public final class SshSessionConfig implements SessionNode {
 
     public void setTabColorHex(String tabColorHex) {
         this.tabColorHex = (tabColorHex != null && !tabColorHex.isBlank()) ? tabColorHex : null;
+    }
+
+    /** Jump hosts to tunnel through, in connection order; empty means a direct connection. */
+    public List<JumpHostConfig> getJumpHosts() {
+        return jumpHosts;
+    }
+
+    public void setJumpHosts(List<JumpHostConfig> jumpHosts) {
+        this.jumpHosts = (jumpHosts != null) ? jumpHosts : new ArrayList<>();
     }
 }

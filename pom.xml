@@ -74,6 +74,14 @@
             <version>${sshd.version}</version>
         </dependency>
 
+        <!-- SFTP subsystem client (for the file browser). Loaded lazily — these classes are only
+             referenced from the on-demand SFTP UI, so the JVM doesn't load them until first use. -->
+        <dependency>
+            <groupId>org.apache.sshd</groupId>
+            <artifactId>sshd-sftp</artifactId>
+            <version>${sshd.version}</version>
+        </dependency>
+
         <!-- Ed25519 support for MINA SSHD: without it the client won't negotiate ssh-ed25519
              host keys (common on modern servers) nor use ed25519 user/agent keys. -->
         <dependency>

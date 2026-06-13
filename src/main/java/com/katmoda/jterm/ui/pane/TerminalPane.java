@@ -12,6 +12,7 @@ import com.katmoda.jterm.highlight.HighlightListResolver;
 import com.katmoda.jterm.highlight.HighlightingInstaller;
 import com.katmoda.jterm.terminal.TerminalSession;
 import com.katmoda.jterm.ui.SessionIcon;
+import com.katmoda.jterm.ui.grid.GridContent;
 import com.katmoda.jterm.ui.theme.JTermSettingsProvider;
 import com.katmoda.jterm.ui.theme.ThemeColors;
 
@@ -58,7 +59,7 @@ import java.nio.file.Files;
  * wrapper around the session's real connector). When broadcast mode is active the pane
  * shows a bottom title bar with a checkbox controlling whether it participates.</p>
  */
-public final class TerminalPane extends JPanel {
+public final class TerminalPane extends JPanel implements GridContent {
 
     private final TerminalSession session;
     private final JtermJediTermWidget widget;
@@ -438,6 +439,33 @@ public final class TerminalPane extends JPanel {
     /** Move keyboard focus into the terminal. */
     public void focusTerminal() {
         widget.getTerminalPanel().requestFocusInWindow();
+    }
+
+    // ---- GridContent ----
+
+    @Override
+    public JComponent ui() {
+        return this;
+    }
+
+    @Override
+    public void closeContent() {
+        close();
+    }
+
+    @Override
+    public void focusContent() {
+        focusTerminal();
+    }
+
+    @Override
+    public void setOnContentEnded(Runnable onEnded) {
+        setOnSessionEnd(onEnded);
+    }
+
+    @Override
+    public String displayTitle() {
+        return title();
     }
 
     /** Terminate the terminal and its back-end session. */
