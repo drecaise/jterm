@@ -19,6 +19,10 @@ public final class JumpHostConfig {
     private boolean passwordAuth = false;
     private boolean savePassword = false;
 
+    // Path to a private key file to authenticate this hop with; empty means none
+    // ({@code ~/} expanded). Mirrors the main host's key-file option.
+    private String keyPath = "";
+
     public JumpHostConfig() {
     }
 
@@ -69,5 +73,14 @@ public final class JumpHostConfig {
 
     public void setSavePassword(boolean savePassword) {
         this.savePassword = savePassword;
+    }
+
+    /** Path to a private key file for this hop, or empty for none ({@code ~/} expanded). */
+    public String getKeyPath() {
+        return keyPath;
+    }
+
+    public void setKeyPath(String keyPath) {
+        this.keyPath = (keyPath != null) ? keyPath.trim() : "";
     }
 }

@@ -74,6 +74,21 @@ public final class MasterPasswordDialog {
         return value.length == 0 ? null : value;
     }
 
+    /** Connect-time prompt for the passphrase of an encrypted key file; null if cancelled/blank. */
+    public static char[] promptKeyPassphrase(Component parent, String keyFileName) {
+        JPasswordField pw = new JPasswordField(20);
+        JPanel form = new JPanel(new GridLayout(0, 1, 0, 4));
+        form.add(new JLabel("Passphrase for key \"" + keyFileName + "\":"));
+        form.add(pw);
+        int result = JOptionPane.showConfirmDialog(parent, form, "Key Passphrase",
+                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (result != JOptionPane.OK_OPTION) {
+            return null;
+        }
+        char[] value = pw.getPassword();
+        return value.length == 0 ? null : value;
+    }
+
     /** Connect-time prompt for a (non-saved) session password. */
     public static char[] promptSessionPassword(Component parent, String sessionName) {
         JPasswordField pw = new JPasswordField(20);

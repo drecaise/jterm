@@ -21,6 +21,10 @@ public final class SshSessionConfig implements SessionNode {
     private boolean passwordAuth = false;
     private boolean savePassword = false;
 
+    // Path to a private key file to authenticate with (in addition to ssh-agent + default
+    // on-disk keys); empty means none. Supports a leading {@code ~/} for the home directory.
+    private String keyPath = "";
+
     // Terminal settings. Empty/zero means "use the application default" (configured in
     // Preferences ▸ Terminal Settings); new sessions inherit all of them by default.
     private String terminalType = "";
@@ -120,6 +124,15 @@ public final class SshSessionConfig implements SessionNode {
 
     public void setSavePassword(boolean savePassword) {
         this.savePassword = savePassword;
+    }
+
+    /** Path to a private key file to authenticate with, or empty for none ({@code ~/} expanded). */
+    public String getKeyPath() {
+        return keyPath;
+    }
+
+    public void setKeyPath(String keyPath) {
+        this.keyPath = (keyPath != null) ? keyPath.trim() : "";
     }
 
     /** Remote terminal type sent as the pty type (e.g. {@code xterm-256color}, {@code vt100}). */
