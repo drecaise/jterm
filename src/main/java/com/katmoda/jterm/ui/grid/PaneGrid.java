@@ -175,15 +175,20 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     }
 
     /**
-     * Place pre-built content (e.g. the SFTP browser) in the best available split: a new column if
-     * there's room, else a new row, else the first empty in-bounds cell. Returns {@code false} when
-     * the grid is full (3×3 with no empties) so the caller can open a new tab instead.
+     * Place pre-built content (e.g. the SFTP browser) in the best available split: the empty
+     * in-bounds cell nearest the active pane if there is one, else a new column, else a new row.
+     * Reusing an empty cell is preferred over enlarging the grid so a visible blank pane gets filled
+     * instead of pushing the layout wider/taller. Returns {@code false} when the grid is full (3×3
+     * with no empties) so the caller can open a new tab instead.
      */
     public boolean openContentInBestSplit(GridContent content) {
         if (content == null) {
             return true;
         }
-        if (cols < MAX) {
+        int[] empty = nearestEmptyCell();
+        if (empty != null) {
+            placeExistingPaneAt(empty[0], empty[1], content, null);
+        } else if (cols < MAX) {
             int newCol = cols;
             cols++;
             placeExistingPaneAt(activeRow, newCol, content, null);
@@ -192,11 +197,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
             rows++;
             placeExistingPaneAt(newRow, activeCol, content, null);
         } else {
-            int[] empty = firstEmptyCell();
-            if (empty == null) {
-                return false;
-            }
-            placeExistingPaneAt(empty[0], empty[1], content, null);
+            return false;
         }
         relayout();
         focusActive();
@@ -776,6 +777,29 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
             }
         }
         return null;
+    }
+
+    /**
+     * The empty in-bounds cell closest to the active pane by Manhattan distance, or {@code null} if
+     * none. Ties favour the same row, then the same column, then top-left — so an empty pane beside
+     * or above the active one wins over a more distant hole.
+     */
+    private int[] nearestEmptyCell() {
+        int[] best = null;
+        int bestDist = Integer.MAX_VALUE;
+        for (int r = 0; r < rows; r++) {
+            for (int c = 0; c < cols; c++) {
+                if (panes[r][c] != null) {
+                    continue;
+                }
+                int dist = Math.abs(r - activeRow) + Math.abs(c - activeCol);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    best = new int[]{r, c};
+                }
+            }
+        }
+        return best;
     }
 
     private void collapseTrailingEmpty() {
