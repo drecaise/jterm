@@ -42,6 +42,7 @@ import javax.swing.JFrame;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
@@ -936,12 +937,27 @@ public final class MainWindow {
         prefsDialog.addActionListener(e -> PreferencesDialog.show(frame));
         preferences.add(prefsDialog);
 
+        JMenu help = new JMenu("Help");
+        JMenuItem about = new JMenuItem("About " + AppInfo.name() + "…");
+        about.addActionListener(e -> showAboutDialog());
+        help.add(about);
+
         bar.add(file);
         bar.add(terminal);
         bar.add(ssh);
         bar.add(buildMacrosMenu());
         bar.add(preferences);
+        bar.add(help);
         return bar;
+    }
+
+    /** Modal "About" dialog: application name, build version, and author. */
+    private void showAboutDialog() {
+        String message = "<html><b>" + AppInfo.name() + "</b><br>"
+                + "Version " + AppInfo.version() + "<br><br>"
+                + "Author: " + AppInfo.author() + "</html>";
+        JOptionPane.showMessageDialog(
+                frame, message, "About " + AppInfo.name(), JOptionPane.INFORMATION_MESSAGE);
     }
 
     /**
