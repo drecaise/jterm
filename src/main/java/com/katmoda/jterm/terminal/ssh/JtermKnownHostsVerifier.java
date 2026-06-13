@@ -8,6 +8,7 @@ import org.apache.sshd.common.config.keys.KeyUtils;
 
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
+import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.file.Path;
 import java.security.PublicKey;
@@ -28,9 +29,30 @@ import java.security.PublicKey;
  */
 public final class JtermKnownHostsVerifier extends KnownHostsServerKeyVerifier {
 
+    // When connecting a jump-host hop through a local 127.0.0.1 port-forward, the address MINA
+    // reports is localhost; this override lets us check/prompt/record known_hosts under the hop's
+    // real name instead. Null for direct connections. Set/cleared around each sequential connect.
+    private volatile SocketAddress intendedHost;
+
     public JtermKnownHostsVerifier(ServerKeyVerifier delegate, Path knownHostsFile) {
         super(delegate, knownHostsFile);
         setModifiedServerKeyAcceptor(this);
+    }
+
+    /** Point known_hosts verification at {@code host}:{@code port} for the next connect. */
+    public void setIntendedHost(String host, int port) {
+        this.intendedHost = InetSocketAddress.createUnresolved(host, port);
+    }
+
+    /** Resume verifying against the address MINA actually connected to. */
+    public void clearIntendedHost() {
+        this.intendedHost = null;
+    }
+
+    @Override
+    public boolean verifyServerKey(ClientSession session, SocketAddress remote, PublicKey serverKey) {
+        SocketAddress override = intendedHost;
+        return super.verifyServerKey(session, override != null ? override : remote, serverKey);
     }
 
     @Override

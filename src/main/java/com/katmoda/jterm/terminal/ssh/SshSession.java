@@ -3,20 +3,11 @@ package com.katmoda.jterm.terminal.ssh;
 import com.jediterm.terminal.TtyConnector;
 import com.katmoda.jterm.terminal.TerminalProfile;
 import com.katmoda.jterm.terminal.TerminalSession;
-import com.katmoda.jterm.terminal.ssh.agent.AgentSupport;
-import com.katmoda.jterm.terminal.ssh.agent.JdkAgentFactory;
-import org.apache.sshd.agent.SshAgent;
-import org.apache.sshd.client.SshClient;
 import org.apache.sshd.client.channel.ChannelShell;
-import org.apache.sshd.client.keyverifier.RejectAllServerKeyVerifier;
 import org.apache.sshd.client.session.ClientSession;
-import org.apache.sshd.common.keyprovider.FileKeyPairProvider;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -34,13 +25,11 @@ import java.util.Map;
 public final class SshSession implements TerminalSession {
 
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(20);
-    private static final Duration AUTH_TIMEOUT = Duration.ofSeconds(30);
 
     /** UTF-8 character type requested when the client conveys no UTF-8 locale (e.g. on Windows). */
     private static final String DEFAULT_UTF8_LOCALE = "C.UTF-8";
 
-    private final SshClient client;
-    private final ClientSession session;
+    private final SshConnect.Connected connection;
     private final ChannelShell channel;
     private final SshTtyConnector connector;
     private final String title;
@@ -49,11 +38,10 @@ public final class SshSession implements TerminalSession {
     private final String highlightListId;
     private final String tabColorHex;
 
-    private SshSession(SshClient client, ClientSession session, ChannelShell channel,
+    private SshSession(SshConnect.Connected connection, ChannelShell channel,
                        String title, String iconId, TerminalProfile profile, String highlightListId,
                        String tabColorHex) {
-        this.client = client;
-        this.session = session;
+        this.connection = connection;
         this.channel = channel;
         this.title = title;
         this.iconId = iconId;
@@ -61,6 +49,15 @@ public final class SshSession implements TerminalSession {
         this.highlightListId = highlightListId;
         this.tabColorHex = tabColorHex;
         this.connector = new SshTtyConnector(channel, title, profile.charset());
+    }
+
+    /**
+     * The live, authenticated SSH session backing this shell. Reused by the SFTP browser to open
+     * an SFTP subsystem channel on the same connection (no re-auth). Stays open until
+     * {@link #close()} tears the whole connection down, so the SFTP channel must not close it.
+     */
+    public ClientSession clientSession() {
+        return connection.session();
     }
 
     /** Icon library id this session was launched with (may be {@code null} → type default). */
@@ -85,6 +82,7 @@ public final class SshSession implements TerminalSession {
      * @param user            login user
      * @param agentForwarding whether to forward the local ssh-agent
      * @param password        optional password fallback (may be {@code null}/blank)
+     * @param jumpHosts       jump hosts to tunnel through, in connection order (may be empty)
      * @param displayName     label for the pane title
      * @param iconId          icon library id for the tab (may be {@code null})
      * @param profile         terminal type, charset and font settings for this session
@@ -92,71 +90,31 @@ public final class SshSession implements TerminalSession {
      * @param tabColorHex     custom tab color {@code "#RRGGBB"} (may be {@code null} for the default)
      */
     public static SshSession connect(String host, int port, String user, boolean agentForwarding,
-                                     String password, String displayName, String iconId,
+                                     String password, List<SshConnect.HostHop> jumpHosts,
+                                     String displayName, String iconId,
                                      TerminalProfile profile, String highlightListId,
                                      String tabColorHex) throws IOException {
-        SshClient client = SshClient.setUpDefaultClient();
-
-        // OpenSSH known_hosts policy: TOFU for unknown hosts, warn on changed keys.
-        client.setServerKeyVerifier(
-                new JtermKnownHostsVerifier(RejectAllServerKeyVerifier.INSTANCE, knownHostsFile()));
-
-        // ssh-agent over a JDK Unix socket (no APR); also enables agent forwarding.
-        installAgent(client);
-
-        // Default on-disk identities (agent covers passphrase-protected keys).
-        List<Path> keys = defaultIdentityFiles();
-        if (!keys.isEmpty()) {
-            client.setKeyIdentityProvider(new FileKeyPairProvider(keys.toArray(new Path[0])));
-        }
-
-        client.start();
+        SshConnect.Connected connection = SshConnect.open(
+                jumpHosts != null ? jumpHosts : List.of(),
+                new SshConnect.HostHop(host, port, user, password));
         try {
-            ClientSession session = client.connect(user, host, port <= 0 ? 22 : port)
-                    .verify(CONNECT_TIMEOUT)
-                    .getSession();
-            try {
-                if (password != null && !password.isEmpty()) {
-                    session.addPasswordIdentity(password);
-                }
-                session.auth().verify(AUTH_TIMEOUT);
+            ChannelShell channel = connection.session().createShellChannel();
+            channel.setPtyType(profile.terminalType());
+            channel.setPtyColumns(80);
+            channel.setPtyLines(24);
+            channel.setAgentForwarding(agentForwarding);
+            channel.setRedirectErrorStream(true);
+            applyLocale(channel);
+            channel.open().verify(CONNECT_TIMEOUT);
 
-                ChannelShell channel = session.createShellChannel();
-                channel.setPtyType(profile.terminalType());
-                channel.setPtyColumns(80);
-                channel.setPtyLines(24);
-                channel.setAgentForwarding(agentForwarding);
-                channel.setRedirectErrorStream(true);
-                applyLocale(channel);
-                channel.open().verify(CONNECT_TIMEOUT);
-
-                String label = displayName != null && !displayName.isBlank()
-                        ? displayName : user + "@" + host;
-                return new SshSession(client, session, channel, label, iconId, profile, highlightListId,
-                        tabColorHex);
-            } catch (IOException e) {
-                session.close(true);
-                throw e;
-            }
+            String label = displayName != null && !displayName.isBlank()
+                    ? displayName : user + "@" + host;
+            return new SshSession(connection, channel, label, iconId, profile, highlightListId,
+                    tabColorHex);
         } catch (IOException e) {
-            client.stop();
+            connection.close();
             throw e;
         }
-    }
-
-    /**
-     * Wires the local ssh-agent (JDK Unix socket on Linux/macOS, named pipe on Windows).
-     * MINA reads the endpoint from the client property {@code SSH_AUTH_SOCK} (not the process
-     * env), so we set it explicitly; if no agent is available we skip it (key/password auth
-     * still apply).
-     */
-    private static void installAgent(SshClient client) {
-        String endpoint = AgentSupport.resolveEndpoint();
-        if (endpoint == null || endpoint.isBlank()) {
-            return;
-        }
-        client.getProperties().put(SshAgent.SSH_AUTHSOCKET_ENV_NAME, endpoint);
-        client.setAgentFactory(new JdkAgentFactory());
     }
 
     /**
@@ -188,27 +146,6 @@ public final class SshSession implements TerminalSession {
                 && localeValue.toUpperCase(Locale.ROOT).replace("-", "").contains("UTF8");
     }
 
-    private static Path knownHostsFile() {
-        Path ssh = Path.of(System.getProperty("user.home", "."), ".ssh");
-        try {
-            Files.createDirectories(ssh);
-        } catch (Exception ignored) {
-        }
-        return ssh.resolve("known_hosts");
-    }
-
-    private static List<Path> defaultIdentityFiles() {
-        Path ssh = Path.of(System.getProperty("user.home", "."), ".ssh");
-        List<Path> found = new ArrayList<>();
-        for (String name : new String[]{"id_ed25519", "id_ecdsa", "id_rsa"}) {
-            Path p = ssh.resolve(name);
-            if (Files.isRegularFile(p)) {
-                found.add(p);
-            }
-        }
-        return found;
-    }
-
     @Override
     public TtyConnector connector() {
         return connector;
@@ -231,7 +168,7 @@ public final class SshSession implements TerminalSession {
 
     @Override
     public boolean isAlive() {
-        return channel.isOpen() && session.isOpen();
+        return channel.isOpen() && connection.session().isOpen();
     }
 
     @Override
@@ -240,10 +177,6 @@ public final class SshSession implements TerminalSession {
             channel.close(false);
         } catch (Exception ignored) {
         }
-        try {
-            session.close(false);
-        } catch (Exception ignored) {
-        }
-        client.stop();
+        connection.close();
     }
 }

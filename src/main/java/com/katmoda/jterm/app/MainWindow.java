@@ -11,19 +11,23 @@ import com.katmoda.jterm.security.VaultException;
 import com.katmoda.jterm.security.VaultManager;
 import com.katmoda.jterm.dnd.PaneTransferable;
 import com.katmoda.jterm.dnd.TabTransferable;
+import com.katmoda.jterm.session.JumpHostConfig;
 import com.katmoda.jterm.session.SessionStore;
 import com.katmoda.jterm.session.SshSessionConfig;
 import com.katmoda.jterm.terminal.SessionFactory;
 import com.katmoda.jterm.terminal.local.LocalSession;
 import com.katmoda.jterm.terminal.TerminalProfile;
 import com.katmoda.jterm.terminal.TerminalSession;
+import com.katmoda.jterm.terminal.ssh.SshConnect;
 import com.katmoda.jterm.terminal.ssh.SshSession;
 import com.katmoda.jterm.terminal.ssh.agent.AgentSupport;
 import com.katmoda.jterm.ui.AgentKeysDialog;
 import com.katmoda.jterm.ui.ErrorDialog;
+import com.katmoda.jterm.ui.grid.GridContent;
 import com.katmoda.jterm.ui.grid.PaneGrid;
 import com.katmoda.jterm.ui.macro.MacroManagerDialog;
 import com.katmoda.jterm.ui.pane.TerminalPane;
+import com.katmoda.jterm.ui.sftp.SftpLauncher;
 import com.katmoda.jterm.ui.preferences.PreferencesDialog;
 import com.katmoda.jterm.ui.preferences.ShortcutsDialog;
 import com.katmoda.jterm.ui.security.MasterPasswordDialog;
@@ -63,6 +67,7 @@ import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -97,7 +102,7 @@ public final class MainWindow {
 
     public void show() {
         sidebar = new SessionSidebar(sessionStore, this::openSshSession,
-                this::openLocalInCurrent, this::openWslSession);
+                this::openLocalInCurrent, this::openWslSession, this::openSftpForConfig);
 
         configureTabs();
 
@@ -375,9 +380,16 @@ public final class MainWindow {
         if (idx < 0) {
             return;
         }
-        TerminalPane pane = grid.activePane();
-        if (pane == null) {
+        GridContent content = grid.activeContent();
+        if (content == null) {
             return; // leave the current label (e.g. an SSH tab that's still connecting)
+        }
+        if (!(content instanceof TerminalPane pane)) {
+            // A non-terminal cell (the SFTP browser): generic folder icon + its own label.
+            tabs.setIconAt(idx, IconLibrary.get().icon("builtin/folder", 16));
+            tabs.setTitleAt(idx, content.displayTitle());
+            setTabColor(idx, null);
+            return;
         }
         TerminalSession session = pane.session();
         tabs.setIconAt(idx, SessionIcon.forSession(session, 16));
@@ -452,6 +464,51 @@ public final class MainWindow {
         });
     }
 
+    // ---- SFTP browser ----
+
+    /**
+     * Ctrl+F / SSH menu: open an SFTP browser on the active pane's live SSH connection (reusing its
+     * authenticated session — no re-auth). No-op unless the active pane is an SSH terminal.
+     */
+    private void openSftpForActivePane() {
+        PaneGrid grid = currentGrid();
+        if (grid == null || !(grid.activePane() instanceof TerminalPane pane)
+                || !(pane.session() instanceof SshSession ssh)) {
+            return;
+        }
+        SftpLauncher.openOnLiveSession(ssh, this::placeSftp,
+                cause -> ErrorDialog.show(frame, "SFTP", "Could not open SFTP:", cause));
+    }
+
+    /**
+     * Sidebar context menu: open an SFTP browser for a saved SSH session over a fresh, dedicated
+     * connection (the session may not be open), reusing the normal password/vault resolution.
+     */
+    private void openSftpForConfig(SshSessionConfig cfg) {
+        String password = resolvePassword(cfg);
+        String label = (cfg.getUser() != null ? cfg.getUser() + "@" : "") + cfg.getHost();
+        SftpLauncher.openFresh(cfg.getHost(), cfg.getPort(), cfg.getUser(), password, label,
+                this::placeSftp,
+                cause -> ErrorDialog.show(frame, "SFTP", "SFTP connection failed:", cause));
+    }
+
+    /**
+     * Places a freshly built SFTP browser: a split of the current grid (new column, else row, else
+     * an empty cell), or a new tab when the grid is full.
+     */
+    private void placeSftp(GridContent content) {
+        PaneGrid grid = currentGrid();
+        if (grid != null && grid.openContentInBestSplit(content)) {
+            decorateTab(grid);
+            return;
+        }
+        PaneGrid fresh = newGrid();
+        insertGrid(fresh);
+        fresh.initEmpty();
+        fresh.placeContentInActive(content);
+        decorateTab(fresh);
+    }
+
     /** Opens a detected WSL2 distribution (synchronously — it's a local pty, no network connect). */
     private void openWslSession(String distro, OpenMode mode) {
         if (mode == OpenMode.NEW_TAB) {
@@ -511,16 +568,18 @@ public final class MainWindow {
 
     /** Connect an SSH session off the EDT, then hand the live session to {@code onConnected} on the EDT. */
     private void connectAsync(SshSessionConfig cfg, Consumer<SshSession> onConnected) {
-        // Resolve any password on the EDT first — it may unlock the vault or prompt.
+        // Resolve any passwords on the EDT first — they may unlock the vault or prompt. The
+        // target and every jump host are resolved up front so the background connect needs no UI.
         String password = resolvePassword(cfg);
+        List<SshConnect.HostHop> jumpHosts = resolveJumpHosts(cfg);
         new SwingWorker<SshSession, Void>() {
             @Override
             protected SshSession doInBackground() throws Exception {
                 TerminalProfile profile = AppSettings.get().resolve(cfg.getTerminalType(),
                         cfg.getTerminalCharset(), cfg.getFontFamily(), cfg.getFontSize());
                 return SshSession.connect(cfg.getHost(), cfg.getPort(), cfg.getUser(),
-                        cfg.isAgentForwarding(), password, cfg.getName(), cfg.getIconId(), profile,
-                        cfg.getHighlightListId(), cfg.getTabColorHex());
+                        cfg.isAgentForwarding(), password, jumpHosts, cfg.getName(), cfg.getIconId(),
+                        profile, cfg.getHighlightListId(), cfg.getTabColorHex());
             }
 
             @Override
@@ -550,27 +609,54 @@ public final class MainWindow {
      * password unlocked from the vault (via keyring or prompt); otherwise a one-time prompt.
      */
     private String resolvePassword(SshSessionConfig cfg) {
-        if (!cfg.isPasswordAuth()) {
+        return resolvePassword(cfg.getId(), cfg.isPasswordAuth(), cfg.isSavePassword(), cfg.getName());
+    }
+
+    /**
+     * Resolves the password to try for one host (EDT): {@code null} if password auth is off; a
+     * saved password unlocked from the vault (via keyring or prompt); otherwise a one-time prompt.
+     * A cancelled prompt yields {@code null}, so connection falls back to agent/key auth.
+     */
+    private String resolvePassword(String id, boolean passwordAuth, boolean savePassword,
+                                   String promptName) {
+        if (!passwordAuth) {
             return null;
         }
         VaultManager vaults = VaultManager.get();
-        if (cfg.isSavePassword() && vaults.vault().hasPassword(cfg.getId())) {
+        if (savePassword && vaults.vault().hasPassword(id)) {
             if (!vaults.ensureUnlocked(frame)) {
                 return null;
             }
             try {
-                return vaults.vault().getPassword(cfg.getId());
+                return vaults.vault().getPassword(id);
             } catch (VaultException e) {
                 return null;
             }
         }
-        char[] entered = MasterPasswordDialog.promptSessionPassword(frame, cfg.getName());
+        char[] entered = MasterPasswordDialog.promptSessionPassword(frame, promptName);
         if (entered == null) {
             return null;
         }
         String password = new String(entered);
         java.util.Arrays.fill(entered, '\0');
         return password;
+    }
+
+    /**
+     * Builds the jump-host chain (EDT) for {@code cfg}, resolving each hop's password up front.
+     * Hops with a blank host are skipped defensively (the dialog already drops them).
+     */
+    private List<SshConnect.HostHop> resolveJumpHosts(SshSessionConfig cfg) {
+        List<SshConnect.HostHop> hops = new ArrayList<>();
+        for (JumpHostConfig jh : cfg.getJumpHosts()) {
+            if (jh.getHost() == null || jh.getHost().isBlank()) {
+                continue;
+            }
+            String label = jh.getUser() + "@" + jh.getHost();
+            String pw = resolvePassword(jh.getId(), jh.isPasswordAuth(), jh.isSavePassword(), label);
+            hops.add(new SshConnect.HostHop(jh.getHost(), jh.getPort(), jh.getUser(), pw));
+        }
+        return hops;
     }
 
     // ---- shortcuts ----
@@ -618,6 +704,7 @@ public final class MainWindow {
                 }
             }
             case OPEN_LOCAL -> openLocalInCurrent();
+            case OPEN_SFTP -> openSftpForActivePane();
             case TOGGLE_THEME -> ThemeManager.get().toggle();
             case TOGGLE_BROADCAST -> {
                 if (grid != null) {
@@ -800,6 +887,8 @@ public final class MainWindow {
         terminal.add(menuItem("Close Pane", TermAction.CLOSE_PANE));
 
         JMenu ssh = new JMenu("SSH");
+        ssh.add(menuItem("Open SFTP Browser", TermAction.OPEN_SFTP));
+        ssh.addSeparator();
         JMenuItem agentKeys = new JMenuItem("Show Agent Keys…");
         agentKeys.addActionListener(e -> showAgentKeys());
         ssh.add(agentKeys);
