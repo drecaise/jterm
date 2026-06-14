@@ -11,7 +11,9 @@ import com.katmoda.jterm.security.VaultException;
 import com.katmoda.jterm.security.VaultManager;
 import com.katmoda.jterm.dnd.PaneTransferable;
 import com.katmoda.jterm.dnd.TabTransferable;
+import com.katmoda.jterm.rdp.RdpTab;
 import com.katmoda.jterm.session.JumpHostConfig;
+import com.katmoda.jterm.session.RdpSessionConfig;
 import com.katmoda.jterm.session.SessionNode;
 import com.katmoda.jterm.session.SessionStore;
 import com.katmoda.jterm.session.SshSessionConfig;
@@ -40,6 +42,7 @@ import com.katmoda.jterm.ui.security.MasterPasswordDialog;
 import com.katmoda.jterm.ui.sidebar.OpenMode;
 import com.katmoda.jterm.ui.sidebar.SessionSidebar;
 import com.katmoda.jterm.ui.SessionIcon;
+import com.katmoda.jterm.ui.TabContent;
 import com.katmoda.jterm.ui.theme.ThemeManager;
 
 import javax.swing.Icon;
@@ -112,7 +115,8 @@ public final class MainWindow {
 
     public void show() {
         sidebar = new SessionSidebar(sessionStore, this::openSshSession,
-                this::openLocalInCurrent, this::openWslSession, this::openSftpForConfig);
+                this::openLocalInCurrent, this::openWslSession, this::openSftpForConfig,
+                this::openRdpSession);
 
         configureTabs();
 
@@ -129,6 +133,12 @@ public final class MainWindow {
             @Override
             public void windowClosing(WindowEvent e) {
                 TunnelManager.get().stopAll();
+            }
+
+            @Override
+            public void windowActivated(WindowEvent e) {
+                // Re-focus an embedded RDP desktop when the window regains focus (e.g. alt-tab back).
+                focusSelectedRdpTab();
             }
         });
         frame.setSize(new Dimension(1100, 720));
@@ -151,7 +161,10 @@ public final class MainWindow {
         addTab();
         // Attached only after the first real tab exists so the placeholder's transient
         // auto-selection during setup doesn't trigger a spurious extra tab.
-        tabs.addChangeListener(e -> guardPlusSelection());
+        tabs.addChangeListener(e -> {
+            guardPlusSelection();
+            focusSelectedRdpTab();
+        });
 
         frame.setVisible(true);
 
@@ -267,6 +280,34 @@ public final class MainWindow {
         connectAsync(cfg, session -> grid.placeSessionInActive(session, sshFactory(cfg)));
     }
 
+    /** Opens a saved RDP session in its own tab (RDP never goes in a split pane). */
+    private void openRdpSession(RdpSessionConfig cfg) {
+        RdpTab tab = new RdpTab(cfg, () -> rdpPassword(cfg));
+        String base = "RDP " + (++tabCounter);
+        tab.putClientProperty("baseTitle", base);
+        int at = plusIndex();
+        tabs.insertTab(cfg.getName(), iconFor(cfg.getIconId(), "builtin/rdp"), tab, null, at);
+        setTabColor(at, null);
+        tabs.setSelectedIndex(at);
+        // The tab's Close button needs to know which tab it is now that it's inserted.
+        tab.setCloseAction(() -> closeTabForComponent(tab));
+    }
+
+    /** Resolve the RDP password as a char[] (or null), reusing the shared vault/prompt logic. */
+    private char[] rdpPassword(RdpSessionConfig cfg) {
+        String pw = resolvePassword(cfg.getId(), cfg.isPasswordAuth(), cfg.isSavePassword(),
+                cfg.getName());
+        return pw != null ? pw.toCharArray() : null;
+    }
+
+    /** Closes the tab hosting {@code comp}, if it's still present. */
+    private void closeTabForComponent(java.awt.Component comp) {
+        int index = tabs.indexOfComponent(comp);
+        if (index >= 0) {
+            closeTabAt(index);
+        }
+    }
+
     private PaneGrid newGrid() {
         PaneGrid grid = new PaneGrid();
         // A dropped SSH session connects off-EDT; the grid then places it (split a pane or fill an
@@ -360,8 +401,8 @@ public final class MainWindow {
                 || tabs.getComponentAt(index) == plusPlaceholder) {
             return;
         }
-        if (tabs.getComponentAt(index) instanceof PaneGrid grid) {
-            grid.disposeAll();
+        if (tabs.getComponentAt(index) instanceof TabContent content) {
+            content.dispose();
         }
         tabs.removeTabAt(index);
         // When the last real tab goes, removing it selects the placeholder; the selection
@@ -392,6 +433,13 @@ public final class MainWindow {
 
     private PaneGrid currentGrid() {
         return (tabs.getSelectedComponent() instanceof PaneGrid grid) ? grid : null;
+    }
+
+    /** If the selected tab is an embedded RDP desktop, hand it keyboard focus (on the EDT). */
+    private void focusSelectedRdpTab() {
+        if (tabs.getSelectedComponent() instanceof RdpTab rdp) {
+            SwingUtilities.invokeLater(rdp::focusEmbedded);
+        }
     }
 
     /** Sets a tab's icon + title from its active pane's session (SSH icon/name, or themed local). */
@@ -451,7 +499,11 @@ public final class MainWindow {
     }
 
     private Icon iconFor(String iconId) {
-        String id = (iconId != null && !iconId.isBlank()) ? iconId : "builtin/server";
+        return iconFor(iconId, "builtin/server");
+    }
+
+    private Icon iconFor(String iconId, String defaultId) {
+        String id = (iconId != null && !iconId.isBlank()) ? iconId : defaultId;
         return IconLibrary.get().icon(id, 16);
     }
 

@@ -3,6 +3,7 @@ package com.katmoda.jterm.ui.sidebar;
 import com.formdev.flatlaf.extras.FlatSVGIcon;
 import com.katmoda.jterm.icon.IconLibrary;
 import com.katmoda.jterm.session.FolderNode;
+import com.katmoda.jterm.session.RdpSessionConfig;
 import com.katmoda.jterm.session.SessionNode;
 import com.katmoda.jterm.session.SshSessionConfig;
 import com.katmoda.jterm.session.WslDistroNode;
@@ -62,6 +63,8 @@ final class SessionNodeRenderer extends DefaultTreeCellRenderer {
                         : UIManager.getIcon("Tree.closedIcon"));
             } else if (node instanceof SshSessionConfig) {
                 setIcon(UIManager.getIcon("Tree.leafIcon"));
+            } else if (node instanceof RdpSessionConfig) {
+                setIcon(IconLibrary.get().icon("builtin/rdp", 16));
             }
         }
         return this;
