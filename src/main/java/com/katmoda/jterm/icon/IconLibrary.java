@@ -42,7 +42,7 @@ public final class IconLibrary {
 
     /** Resource base names used as app chrome, not offered in the picker. */
     private static final Set<String> EXCLUDED = Set.of(
-            "app", "folder-plus", "terminal-plus", "terminal-light", "terminal-dark");
+            "app", "folder-plus", "terminal-plus", "rdp-plus", "terminal-light", "terminal-dark");
 
     /** Used only if resource discovery fails, so the picker is never empty. */
     private static final String[] FALLBACK = {

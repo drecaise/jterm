@@ -11,6 +11,7 @@ import com.katmoda.jterm.macro.Macro;
 import com.katmoda.jterm.macro.MacroLibrary;
 import com.katmoda.jterm.session.FolderNode;
 import com.katmoda.jterm.session.JumpHostConfig;
+import com.katmoda.jterm.session.RdpSessionConfig;
 import com.katmoda.jterm.session.SessionExport;
 import com.katmoda.jterm.session.SessionNode;
 import com.katmoda.jterm.session.SessionStore;
@@ -100,6 +101,7 @@ public final class SessionSidebar extends JPanel {
     private final Runnable onOpenLocal;
     private final BiConsumer<String, OpenMode> onOpenWsl;
     private final Consumer<SshSessionConfig> onOpenSftp;
+    private final Consumer<RdpSessionConfig> onOpenRdp;
 
     /**
      * The pinned, non-editable "WSL" folder of runtime-detected WSL2 distributions, or
@@ -115,13 +117,15 @@ public final class SessionSidebar extends JPanel {
                           BiConsumer<SshSessionConfig, OpenMode> onOpenSsh,
                           Runnable onOpenLocal,
                           BiConsumer<String, OpenMode> onOpenWsl,
-                          Consumer<SshSessionConfig> onOpenSftp) {
+                          Consumer<SshSessionConfig> onOpenSftp,
+                          Consumer<RdpSessionConfig> onOpenRdp) {
         super(new BorderLayout());
         this.store = store;
         this.onOpenSsh = onOpenSsh;
         this.onOpenLocal = onOpenLocal;
         this.onOpenWsl = onOpenWsl;
         this.onOpenSftp = onOpenSftp;
+        this.onOpenRdp = onOpenRdp;
         this.wslFolder = isWindows() ? new FolderNode("WSL") : null;
 
         this.model = new DefaultTreeModel(buildRoot());
@@ -221,6 +225,7 @@ public final class SessionSidebar extends JPanel {
         bar.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
         bar.add(iconButton("icons/folder-plus.svg", "New folder", e -> newFolder()));
         bar.add(iconButton("icons/terminal-plus.svg", "New SSH session", e -> newSsh()));
+        bar.add(iconButton("icons/rdp-plus.svg", "New RDP session", e -> newRdp()));
         return bar;
     }
 
@@ -522,6 +527,11 @@ public final class SessionSidebar extends JPanel {
                 if (password != null) {
                     out.put(ssh.getId(), password);
                 }
+            } else if (child instanceof RdpSessionConfig rdp && rdp.isSavePassword()) {
+                String password = vault.getPassword(rdp.getId());
+                if (password != null) {
+                    out.put(rdp.getId(), password);
+                }
             }
         }
     }
@@ -598,6 +608,14 @@ public final class SessionSidebar extends JPanel {
                 if (password != null) {
                     newCreds.put(newId, password);
                 }
+            } else if (child instanceof RdpSessionConfig rdp) {
+                String oldId = rdp.getId();
+                String newId = UUID.randomUUID().toString();
+                rdp.setId(newId);
+                String password = (oldCreds != null) ? oldCreds.get(oldId) : null;
+                if (password != null) {
+                    newCreds.put(newId, password);
+                }
             }
         }
     }
@@ -631,6 +649,8 @@ public final class SessionSidebar extends JPanel {
         SessionNode node = selectedNode();
         if (node instanceof SshSessionConfig ssh) {
             onOpenSsh.accept(ssh, OpenMode.NEW_TAB);
+        } else if (node instanceof RdpSessionConfig rdp) {
+            onOpenRdp.accept(rdp);
         } else if (node instanceof WslDistroNode wsl) {
             onOpenWsl.accept(wsl.distro(), OpenMode.NEW_TAB);
         }
@@ -771,13 +791,31 @@ public final class SessionSidebar extends JPanel {
             menu.add(duplicate);
             menu.add(delete);
             addMoveItems(menu, ssh);
+        } else if (node instanceof RdpSessionConfig rdp) {
+            JMenuItem open = new JMenuItem("Open");
+            open.addActionListener(a -> onOpenRdp.accept(rdp));
+            JMenuItem edit = new JMenuItem("Edit…");
+            edit.addActionListener(a -> editRdp(rdp));
+            JMenuItem duplicate = new JMenuItem("Duplicate");
+            duplicate.addActionListener(a -> duplicateRdpSession(rdp));
+            JMenuItem delete = new JMenuItem("Delete");
+            delete.addActionListener(a -> deleteSelected());
+            menu.add(open);
+            menu.addSeparator();
+            menu.add(edit);
+            menu.add(duplicate);
+            menu.add(delete);
+            addMoveItems(menu, rdp);
         } else {
             JMenuItem newFolder = new JMenuItem("New Folder…");
             newFolder.addActionListener(a -> newFolder());
             JMenuItem newSsh = new JMenuItem("New SSH Session…");
             newSsh.addActionListener(a -> newSsh());
+            JMenuItem newRdp = new JMenuItem("New RDP Session…");
+            newRdp.addActionListener(a -> newRdp());
             menu.add(newFolder);
             menu.add(newSsh);
+            menu.add(newRdp);
             if (node instanceof FolderNode folder) {
                 JMenuItem export = new JMenuItem("Export Sessions…");
                 export.addActionListener(a -> exportFolder(folder));
@@ -928,6 +966,221 @@ public final class SessionSidebar extends JPanel {
     private void editFolder(FolderNode folder) {
         if (showFolderDialog(folder, "Edit Folder")) {
             rebuild();
+        }
+    }
+
+    // ---- RDP sessions ----
+
+    private void newRdp() {
+        RdpSessionConfig cfg = new RdpSessionConfig();
+        FolderNode dest = showRdpDialog(cfg, "New RDP Session", targetFolder());
+        if (dest != null) {
+            dest.getChildren().add(cfg);
+            rebuild();
+        }
+    }
+
+    private void editRdp(RdpSessionConfig rdp) {
+        FolderNode current = parentFolderOf(rdp);
+        FolderNode dest = showRdpDialog(rdp, "Edit RDP Session", current);
+        if (dest == null) {
+            return;
+        }
+        if (current != null && dest != current) {
+            current.getChildren().remove(rdp);
+            dest.getChildren().add(rdp);
+        }
+        rebuild();
+    }
+
+    private void duplicateRdpSession(RdpSessionConfig original) {
+        RdpSessionConfig copy = copyOfRdp(original);
+        copy.setName(uniqueDuplicateName(original.getName()));
+        FolderNode parent = parentFolderOf(original);
+        FolderNode dest = showRdpDialog(copy, "Duplicate RDP Session",
+                parent != null ? parent : store.root());
+        if (dest != null) {
+            dest.getChildren().add(copy);
+            rebuild();
+        }
+    }
+
+    /** Copies every editable setting (but not the id or any saved vault password). */
+    private static RdpSessionConfig copyOfRdp(RdpSessionConfig src) {
+        RdpSessionConfig copy = new RdpSessionConfig();
+        copy.setName(src.getName());
+        copy.setIconId(src.getIconId());
+        copy.setHost(src.getHost());
+        copy.setPort(src.getPort());
+        copy.setUser(src.getUser());
+        copy.setDomain(src.getDomain());
+        copy.setPasswordAuth(src.isPasswordAuth());
+        copy.setSavePassword(src.isSavePassword());
+        copy.setWidthMode(src.getWidthMode());
+        copy.setScalingMode(src.getScalingMode());
+        copy.setWidth(src.getWidth());
+        copy.setHeight(src.getHeight());
+        copy.setColorDepth(src.getColorDepth());
+        copy.setSecurityMode(src.getSecurityMode());
+        copy.setIgnoreCertErrors(src.isIgnoreCertErrors());
+        copy.setRedirectClipboard(src.isRedirectClipboard());
+        copy.setRedirectDrives(src.isRedirectDrives());
+        copy.setRedirectAudio(src.isRedirectAudio());
+        copy.setGateway(src.getGateway());
+        return copy;
+    }
+
+    /**
+     * Tabbed form dialog ("Basic settings" + "Display"); mutates {@code cfg} on OK. Returns the
+     * folder the user chose to place the session in, or {@code null} if cancelled.
+     * {@code initialFolder} is preselected in the folder drop-down.
+     */
+    private FolderNode showRdpDialog(RdpSessionConfig cfg, String title, FolderNode initialFolder) {
+        // ---- Basic settings ----
+        JTextField name = new JTextField(cfg.getName());
+        focusOnShow(name, true);
+        JTextField host = new JTextField(cfg.getHost());
+        JTextField port = new JTextField(String.valueOf(cfg.getPort()));
+        JTextField user = new JTextField(cfg.getUser());
+        JTextField domain = new JTextField(cfg.getDomain());
+
+        ToggleSwitch passwordAuth = new ToggleSwitch(cfg.isPasswordAuth());
+        JPasswordField password = new JPasswordField();
+        password.putClientProperty("JTextField.placeholderText",
+                cfg.isSavePassword() ? "(leave blank to keep saved)" : "(prompt on connect)");
+        Runnable syncPasswordEnabled = () -> password.setEnabled(passwordAuth.isSelected());
+        passwordAuth.addActionListener(a -> syncPasswordEnabled.run());
+        syncPasswordEnabled.run();
+
+        String[] iconId = {cfg.getIconId()};
+        Icon fallback = IconLibrary.get().icon("builtin/rdp", 16);
+        JButton iconBtn = new JButton();
+        updateIconButton(iconBtn, iconId[0], fallback);
+        iconBtn.addActionListener(a -> {
+            String picked = IconPickerDialog.pick(this);
+            if (picked != null) {
+                iconId[0] = picked.isEmpty() ? null : picked;
+                updateIconButton(iconBtn, iconId[0], fallback);
+            }
+        });
+
+        List<FolderOption> folders = folderOptions();
+        JComboBox<FolderOption> folderCombo = new JComboBox<>(folders.toArray(new FolderOption[0]));
+        for (FolderOption option : folders) {
+            if (option.folder() == initialFolder) {
+                folderCombo.setSelectedItem(option);
+                break;
+            }
+        }
+
+        JPanel basic = formPanel();
+        row(basic, "Name:", name);
+        row(basic, "Folder:", folderCombo);
+        row(basic, "Host:", host);
+        row(basic, "Port:", port);
+        row(basic, "User:", user);
+        row(basic, "Domain:", domain);
+        row(basic, "Icon:", iconBtn);
+        row(basic, "Password auth:", passwordAuth);
+        row(basic, "Password:", password);
+
+        // ---- Display ----
+        JComboBox<RdpSessionConfig.WidthMode> resolution =
+                new JComboBox<>(RdpSessionConfig.WidthMode.values());
+        resolution.setSelectedItem(cfg.getWidthMode());
+        JTextField width = new JTextField(String.valueOf(cfg.getWidth()));
+        JTextField height = new JTextField(String.valueOf(cfg.getHeight()));
+        Runnable syncFixed = () -> {
+            boolean fixed = resolution.getSelectedItem() == RdpSessionConfig.WidthMode.FIXED;
+            width.setEnabled(fixed);
+            height.setEnabled(fixed);
+        };
+        resolution.addActionListener(a -> syncFixed.run());
+        syncFixed.run();
+
+        JComboBox<RdpSessionConfig.ScalingMode> scaling =
+                new JComboBox<>(RdpSessionConfig.ScalingMode.values());
+        scaling.setSelectedItem(cfg.getScalingMode());
+        scaling.setToolTipText("DYNAMIC renegotiates the remote resolution to fill the tab "
+                + "(crisp; needs a cooperative server). SMART scales the picture to the tab "
+                + "(always tracks size; may letterbox).");
+
+        JComboBox<Integer> colorDepth = new JComboBox<>(new Integer[]{0, 16, 24, 32});
+        colorDepth.setRenderer(new javax.swing.DefaultListCellRenderer() {
+            @Override
+            public java.awt.Component getListCellRendererComponent(javax.swing.JList<?> list,
+                    Object value, int index, boolean selected, boolean focus) {
+                Object text = (value instanceof Integer i && i == 0) ? "Auto" : value;
+                return super.getListCellRendererComponent(list, text, index, selected, focus);
+            }
+        });
+        colorDepth.setSelectedItem(cfg.getColorDepth());
+        JComboBox<RdpSessionConfig.SecurityMode> security =
+                new JComboBox<>(RdpSessionConfig.SecurityMode.values());
+        security.setSelectedItem(cfg.getSecurityMode());
+
+        ToggleSwitch ignoreCert = new ToggleSwitch(cfg.isIgnoreCertErrors());
+        ignoreCert.setToolTipText("Accept any TLS certificate, including self-signed and "
+                + "name-mismatched ones (insecure). Needed for servers like GNOME Remote Desktop.");
+
+        ToggleSwitch clipboard = new ToggleSwitch(cfg.isRedirectClipboard());
+        ToggleSwitch drives = new ToggleSwitch(cfg.isRedirectDrives());
+        ToggleSwitch audio = new ToggleSwitch(cfg.isRedirectAudio());
+
+        JPanel display = formPanel();
+        row(display, "Resolution:", resolution);
+        row(display, "Fill mode:", scaling);
+        row(display, "Width:", width);
+        row(display, "Height:", height);
+        row(display, "Color depth:", colorDepth);
+        row(display, "Security:", security);
+        row(display, "Ignore certificate errors:", ignoreCert);
+        row(display, "Redirect clipboard:", clipboard);
+        row(display, "Redirect drives:", drives);
+        row(display, "Redirect audio:", audio);
+
+        JTabbedPane tabs = new JTabbedPane();
+        tabs.addTab("Basic settings", basic);
+        tabs.addTab("Display", display);
+
+        int result = JOptionPane.showConfirmDialog(this, tabs, title,
+                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (result != JOptionPane.OK_OPTION) {
+            return null;
+        }
+        cfg.setName(blankToDefault(name.getText(), "rdp"));
+        cfg.setHost(host.getText().trim());
+        cfg.setUser(user.getText().trim());
+        cfg.setDomain(domain.getText());
+        cfg.setIconId(iconId[0]);
+        try {
+            cfg.setPort(Integer.parseInt(port.getText().trim()));
+        } catch (NumberFormatException ex) {
+            cfg.setPort(3389);
+        }
+        cfg.setWidthMode((RdpSessionConfig.WidthMode) resolution.getSelectedItem());
+        cfg.setScalingMode((RdpSessionConfig.ScalingMode) scaling.getSelectedItem());
+        cfg.setWidth(parseIntOr(width.getText(), cfg.getWidth()));
+        cfg.setHeight(parseIntOr(height.getText(), cfg.getHeight()));
+        cfg.setColorDepth((Integer) colorDepth.getSelectedItem());
+        cfg.setSecurityMode((RdpSessionConfig.SecurityMode) security.getSelectedItem());
+        cfg.setIgnoreCertErrors(ignoreCert.isSelected());
+        cfg.setRedirectClipboard(clipboard.isSelected());
+        cfg.setRedirectDrives(drives.isSelected());
+        cfg.setRedirectAudio(audio.isSelected());
+        cfg.setPasswordAuth(passwordAuth.isSelected());
+        cfg.setSavePassword(applyVaultPassword(cfg.getId(), passwordAuth.isSelected(),
+                password.getPassword()));
+
+        FolderOption chosen = (FolderOption) folderCombo.getSelectedItem();
+        return chosen != null ? chosen.folder() : initialFolder;
+    }
+
+    private static int parseIntOr(String text, int fallback) {
+        try {
+            return Integer.parseInt(text.trim());
+        } catch (NumberFormatException e) {
+            return fallback;
         }
     }
 

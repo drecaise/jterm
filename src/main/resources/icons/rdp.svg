@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <!-- stand -->
+  <rect x="22" y="35" width="4" height="5" fill="#B0BEC5"/>
+  <rect x="16.5" y="39.5" width="15" height="2.8" rx="1.4" fill="#90A4AE"/>
+  <!-- monitor -->
+  <rect x="4" y="6" width="40" height="30" rx="3.5" fill="#1E88E5"/>
+  <rect x="7.5" y="9.5" width="33" height="23" rx="1.6" fill="#E8F4FD"/>
+  <!-- "remote" circular arrow on the screen -->
+  <path d="M19 15.2 A7 7 0 1 0 29 15.2" fill="none" stroke="#1565C0"
+        stroke-width="3" stroke-linecap="round"/>
+  <path d="M29 10.8 L33.2 15.6 L26.5 16.2 Z" fill="#1565C0"/>
+  <!-- cursor accent (remote control) -->
+  <path d="M32.6 23.8 L32.6 31.4 L34.6 29.4 L36 32.3 L37.4 31.7 L36 28.8 L38.4 28.7 Z"
+        fill="#FF7043" stroke="#FFFFFF" stroke-width="0.8" stroke-linejoin="round"/>
+</svg>

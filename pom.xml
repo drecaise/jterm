@@ -17,6 +17,7 @@
         <main.class>com.katmoda.jterm.app.Main</main.class>
 
         <flatlaf.version>3.7.1</flatlaf.version>
+        <jna.version>5.17.0</jna.version>
         <jediterm.version>3.70</jediterm.version>
         <pty4j.version>0.13.12</pty4j.version>
         <sshd.version>2.18.0</sshd.version>
@@ -110,6 +111,21 @@
                     <artifactId>secret-service</artifactId>
                 </exclusion>
             </exclusions>
+        </dependency>
+
+        <!-- JNA: used to embed the external FreeRDP window into an RDP tab — getting the AWT
+             canvas's native handle, and on Windows reparenting via SetParent. Referenced only
+             from the on-demand RDP UI (com.katmoda.jterm.rdp), so it loads lazily. java-keyring
+             keeps JNA optional, so we declare it explicitly. -->
+        <dependency>
+            <groupId>net.java.dev.jna</groupId>
+            <artifactId>jna</artifactId>
+            <version>${jna.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>net.java.dev.jna</groupId>
+            <artifactId>jna-platform</artifactId>
+            <version>${jna.version}</version>
         </dependency>
 
         <!-- slf4j backend so JediTerm/sshd logging has a provider -->

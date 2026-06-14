@@ -13,6 +13,7 @@ import com.katmoda.jterm.session.SshSessionConfig;
 import com.katmoda.jterm.terminal.SessionFactory;
 import com.katmoda.jterm.terminal.TerminalSession;
 import com.katmoda.jterm.terminal.local.LocalSession;
+import com.katmoda.jterm.ui.TabContent;
 import com.katmoda.jterm.ui.pane.TerminalPane;
 import com.katmoda.jterm.ui.theme.ThemeColors;
 import com.katmoda.jterm.ui.theme.ThemeManager;
@@ -49,7 +50,7 @@ import java.awt.event.MouseEvent;
  * for {@link TerminalPane} via {@code instanceof}; everything structural works on
  * {@link GridContent}.</p>
  */
-public final class PaneGrid extends JPanel implements BroadcastBus {
+public final class PaneGrid extends JPanel implements BroadcastBus, TabContent {
 
     public static final int MAX = 3;
 
@@ -408,6 +409,11 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
                 }
             }
         }
+    }
+
+    @Override
+    public void dispose() {
+        disposeAll();
     }
 
     /** Terminate every cell's session (called when the owning tab closes). */

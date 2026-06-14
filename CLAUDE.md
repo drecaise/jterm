@@ -5,9 +5,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 `jterm` — a Java 21 Swing desktop terminal emulator: tabbed windows, a uniform 3×3
-splittable pane grid, a saved-sessions sidebar (folders + SSH sessions with icons),
+splittable pane grid, a saved-sessions sidebar (folders + SSH/RDP sessions with icons),
 drag-and-drop session launching, input broadcast, light/dark theming, and SSH with
-ssh-agent + key + password auth backed by an encrypted credential vault.
+ssh-agent + key + password auth backed by an encrypted credential vault. Saved RDP
+(Remote Desktop) sessions open a full-tab desktop driven by an external FreeRDP process
+(see the RDP architecture note below).
 
 ## Build & run
 
@@ -34,6 +36,16 @@ small throwaway `javac`/`java` snippets against the resolved classpath
   `pom.xml`. `jediterm-core` is an *explicit compile dependency* because `jediterm-ui`
   declares it `runtime`-scoped (you'll get "cannot find symbol" on `TtyConnector`/`Color`
   etc. without it).
+- **JNA** (`jna` + `jna-platform`) is an *explicit compile dependency* — it's only `optional`
+  via java-keyring so it isn't on our tree otherwise. It's used solely by the RDP embedding code
+  (getting an AWT canvas's native handle; Windows `SetParent` reparenting), referenced only from
+  the on-demand RDP UI so it loads lazily.
+- **RDP needs an external FreeRDP binary at runtime** (not a Maven dep): `xfreerdp`/`sdl-freerdp`
+  on Linux/macOS, `wfreerdp.exe`/`sdl-freerdp.exe` on Windows. It is *not* bundled.
+  `RdpProcess.resolveBinary()` searches, in order: the `JTERM_FREERDP` env var (full path), then
+  next to the running jar (the jar's dir + a `freerdp/` subfolder beside it — so a binary can be
+  dropped next to `jterm.jar` without touching PATH), then `PATH`; missing → a friendly
+  `RdpUnavailableException` dialog with an install hint.
 - When inspecting library APIs before coding against them, `javap`/`unzip -l` on the jars in
   `~/.m2/repository` is the fastest source of truth (done throughout this codebase's history).
 
@@ -108,6 +120,37 @@ Auth order is publickey (agent → on-disk keys) then password — MINA tries th
   `secret-tool` (Linux) and `security` (macOS) CLIs, and java-keyring's JNA backend (Windows
   only). java-keyring's dbus-java Linux backend **hangs** on some setups and is excluded in
   `pom.xml` — do not reintroduce it.
+
+### RDP sessions run an external FreeRDP process in a full tab (not a pane)
+A whole remote desktop in a 3×3 split makes no sense, so RDP is the one session type that is *not*
+a `GridContent` in a `PaneGrid` — it's its own tab. Tabs are therefore either a `PaneGrid` or an
+`rdp.RdpTab`; both implement `ui.TabContent` so `MainWindow.closeTabAt` disposes either uniformly
+(no orphan process). `MainWindow.openRdpSession` is the single place that touches RDP, so the
+`rdp`/`rdp.embed` packages + JNA load lazily on first open (the SFTP-isolation pattern).
+
+- **No pure-Java RDP client is used** — the maintained-and-secure path is to drive **FreeRDP** as
+  a child process. `rdp.RdpProcess` builds the `xfreerdp` command and **feeds the password via
+  stdin (`/from-stdin`), never argv** (so it can't leak via `ps`). Host identity defaults to
+  FreeRDP's TOFU store (`/cert:tofu`); a session may set `ignoreCertErrors` to use `/cert:ignore`
+  (insecure) — needed for self-signed certs whose CN doesn't match the host (e.g. GNOME Remote
+  Desktop), since `/cert:tofu` auto-accepts an unknown cert but still refuses a name mismatch.
+  NLA/TLS are preserved; clipboard/drive/audio redirection is opt-in per session. Color depth
+  defaults to **Auto** (`colorDepth == 0` → no `/bpp` flag at all), because some servers refuse a
+  forced depth; 16/24/32 are selectable. FreeRDP's stderr is echoed to the console and kept in a
+  ring buffer (`RdpProcess.recentOutput()`) so `RdpTab` shows the failure cause in-tab instead of a
+  bare "disconnected".
+- **Embedding** (`rdp.embed.WindowEmbedder`, chosen per-OS): **Linux/X11** passes
+  `/parent-window:<xid>` (canvas window id via JNA `Native.getComponentID`); **Windows** launches
+  `wfreerdp` then `SetParent`-reparents its top-level window into the canvas (JNA `User32`) and
+  merges its input queue with the AWT UI thread via `AttachThreadInput` (else the embedded foreign
+  window gets no keyboard input); `RdpTab` forwards focus to it via `WindowEmbedder.focus()`.
+  **macOS cannot embed a foreign window**, so it runs FreeRDP detached with an in-tab status panel.
+  The embedded window is sized to fill the canvas on attach and on every resize (`onResize` →
+  `MoveWindow`); the remote desktop tracks that size via `/dynamic-resolution`. Windows reparenting
+  (incl. keyboard/resize) and the macOS fallback are coded to spec but **must be verified on those
+  OSes** — they can't be tested from this Linux dev box.
+- **Credentials** reuse the same `CredentialVault`/`VaultManager`, keyed by `RdpSessionConfig.id`
+  exactly like SSH (`MainWindow.rdpPassword` → shared `resolvePassword`).
 
 ### Desktop integration (GNOME/Wayland icon)
 The window icon (`app.AppIcon`) is set via `setIconImages`, but GNOME ignores it for the
