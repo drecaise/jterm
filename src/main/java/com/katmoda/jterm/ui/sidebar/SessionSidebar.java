@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.formdev.flatlaf.extras.FlatSVGIcon;
 import com.katmoda.jterm.dnd.LocalTransferable;
 import com.katmoda.jterm.dnd.SessionTransferable;
+import com.katmoda.jterm.dnd.WslTransferable;
 import com.katmoda.jterm.icon.IconLibrary;
 import com.katmoda.jterm.highlight.HighlightLibrary;
 import com.katmoda.jterm.macro.Macro;
@@ -142,8 +143,14 @@ public final class SessionSidebar extends JPanel {
 
             @Override
             protected Transferable createTransferable(JComponent c) {
-                return (selectedNode() instanceof SshSessionConfig ssh)
-                        ? new SessionTransferable(ssh) : null;
+                SessionNode node = selectedNode();
+                if (node instanceof SshSessionConfig ssh) {
+                    return new SessionTransferable(ssh);
+                }
+                if (node instanceof WslDistroNode wsl) {
+                    return new WslTransferable(wsl.distro());
+                }
+                return null;
             }
 
             @Override
