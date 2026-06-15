@@ -9,6 +9,7 @@ import com.katmoda.jterm.dnd.PaneMoveCoordinator;
 import com.katmoda.jterm.dnd.PaneTransferable;
 import com.katmoda.jterm.dnd.SessionDropHandler;
 import com.katmoda.jterm.dnd.SessionTransferable;
+import com.katmoda.jterm.dnd.WslTransferable;
 import com.katmoda.jterm.session.SshSessionConfig;
 import com.katmoda.jterm.terminal.SessionFactory;
 import com.katmoda.jterm.terminal.TerminalSession;
@@ -601,6 +602,27 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         }
     }
 
+    /** A factory that synchronously opens a fresh shell in {@code distro} (used for restart). */
+    private SessionFactory wslFactory(String distro) {
+        return onReady -> {
+            TerminalSession session = safeWslSession(distro);
+            if (session != null) {
+                onReady.accept(session);
+            }
+        };
+    }
+
+    private TerminalSession safeWslSession(String distro) {
+        try {
+            return LocalSession.startWsl(distro);
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this,
+                    "Failed to start WSL distribution \"" + distro + "\":\n" + e.getMessage(),
+                    "jterm", JOptionPane.ERROR_MESSAGE);
+            return null;
+        }
+    }
+
     /** Build a pane wrapping a fresh session; not yet bound to this grid (see {@link #registerPane}). */
     private TerminalPane createPane(TerminalSession session) {
         TtyConnector wrapped = new BroadcastingTtyConnector(session.connector(), this);
@@ -683,6 +705,15 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
                             splitFromPaneAndOpen(content, region, session, localFactory());
                         }
                         dtde.dropComplete(true);
+                    } else if (dtde.isDataFlavorSupported(WslTransferable.WSL_FLAVOR)) {
+                        dtde.acceptDrop(DnDConstants.ACTION_COPY);
+                        String distro = (String) dtde.getTransferable()
+                                .getTransferData(WslTransferable.WSL_FLAVOR);
+                        TerminalSession session = safeWslSession(distro);
+                        if (session != null) {
+                            splitFromPaneAndOpen(content, region, session, wslFactory(distro));
+                        }
+                        dtde.dropComplete(true);
                     } else {
                         dtde.rejectDrop();
                     }
@@ -695,7 +726,8 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
 
     private static boolean isSessionDrag(DropTargetDragEvent dtde) {
         return dtde.isDataFlavorSupported(SessionTransferable.SESSION_FLAVOR)
-                || dtde.isDataFlavorSupported(LocalTransferable.LOCAL_FLAVOR);
+                || dtde.isDataFlavorSupported(LocalTransferable.LOCAL_FLAVOR)
+                || dtde.isDataFlavorSupported(WslTransferable.WSL_FLAVOR);
     }
 
     /**
@@ -1055,6 +1087,15 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
                     } else if (dtde.isDataFlavorSupported(LocalTransferable.LOCAL_FLAVOR)) {
                         dtde.acceptDrop(DnDConstants.ACTION_COPY);
                         placeSessionInCell(r, c, safeLocalSession(), localFactory());
+                        dtde.dropComplete(true);
+                    } else if (dtde.isDataFlavorSupported(WslTransferable.WSL_FLAVOR)) {
+                        dtde.acceptDrop(DnDConstants.ACTION_COPY);
+                        String distro = (String) dtde.getTransferable()
+                                .getTransferData(WslTransferable.WSL_FLAVOR);
+                        TerminalSession session = safeWslSession(distro);
+                        if (session != null) {
+                            placeSessionInCell(r, c, session, wslFactory(distro));
+                        }
                         dtde.dropComplete(true);
                     } else {
                         dtde.rejectDrop();
