@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Two curved arrows forming a handover/exchange symbol -->
+  <defs>
+    <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="hsl(215, 65%, 42%)"/>
+      <stop offset="100%" stop-color="hsl(215, 70%, 33%)"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="1" y1="1" x2="0" y2="0">
+      <stop offset="0%" stop-color="hsl(168, 52%, 45%)"/>
+      <stop offset="100%" stop-color="hsl(168, 55%, 36%)"/>
+    </linearGradient>
+  </defs>
+  <!-- Rounded square background -->
+  <rect width="64" height="64" rx="14" fill="hsl(215, 65%, 42%)"/>
+  <!-- Top arrow: curves right-to-left (outgoing shift) -->
+  <path d="M18 22 C18 22, 32 12, 46 22" stroke="white" stroke-width="5" stroke-linecap="round" fill="none"/>
+  <polygon points="43,11 53,22 41,27" fill="white"/>
+  <!-- Bottom arrow: curves left-to-right (incoming shift) -->
+  <path d="M46 42 C46 42, 32 52, 18 42" stroke="hsl(168, 52%, 45%)" stroke-width="5" stroke-linecap="round" fill="none"/>
+  <polygon points="21,53 11,42 23,37" fill="hsl(168, 52%, 45%)"/>
+</svg>
