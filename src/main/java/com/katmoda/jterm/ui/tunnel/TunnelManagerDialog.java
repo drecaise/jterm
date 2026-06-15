@@ -1,5 +1,6 @@
 package com.katmoda.jterm.ui.tunnel;
 
+import com.formdev.flatlaf.FlatClientProperties;
 import com.katmoda.jterm.session.FolderNode;
 import com.katmoda.jterm.session.SessionNode;
 import com.katmoda.jterm.session.SessionStore;
@@ -58,6 +59,10 @@ public final class TunnelManagerDialog extends JDialog {
         list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         list.setCellRenderer(new TunnelRenderer());
         list.addListSelectionListener(e -> updateButtons());
+        // Show the tunnel icon (not the inherited app icon) in the title bar. FlatLaf defaults
+        // the title-bar icon off for dialogs, so opt in via the client property as well.
+        setIconImages(TunnelEditDialog.tunnelIconImages());
+        getRootPane().putClientProperty(FlatClientProperties.TITLE_BAR_SHOW_ICON, true);
         reload();
         setContentPane(buildContent());
         updateButtons();

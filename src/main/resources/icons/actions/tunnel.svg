@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="20 25 472 472" width="472" height="472">
+  <!-- base -->
+  <rect x="20" y="406" width="472" height="30" rx="15" fill="#4b5563"/>
+  <rect x="256" y="406" width="236" height="30" rx="15" fill="#3f4753"/>
+  <!-- legs -->
+  <rect x="96" y="348" width="24" height="62" fill="#6b7280"/>
+  <rect x="244" y="348" width="24" height="62" fill="#6b7280"/>
+  <rect x="392" y="348" width="24" height="62" fill="#6b7280"/>
+  <!-- cylinder body -->
+  <rect x="120" y="92" width="300" height="270" fill="#54a3f7"/>
+  <ellipse cx="420" cy="227" rx="72" ry="135" fill="#54a3f7"/>
+  <!-- darker lower half for depth -->
+  <rect x="120" y="227" width="300" height="135" fill="#4791f0"/>
+  <path d="M420 227 A72 135 0 0 0 348 227 L492 227 A72 135 0 0 1 420 227 Z" fill="#4791f0"/>
+  <!-- opening: cyan ring -->
+  <ellipse cx="120" cy="227" rx="74" ry="140" fill="#4dd0e8"/>
+  <ellipse cx="120" cy="227" rx="74" ry="140" fill="#3fc3dd" clip-path="url(#half)"/>
+  <!-- inner hole -->
+  <ellipse cx="128" cy="227" rx="50" ry="112" fill="#3f86db"/>
+  <ellipse cx="128" cy="227" rx="50" ry="112" fill="#3576cc" clip-path="url(#half)"/>
+  <defs>
+    <clipPath id="half">
+      <rect x="0" y="227" width="512" height="285"/>
+    </clipPath>
+  </defs>
+</svg>
