@@ -636,6 +636,16 @@ public final class SessionSidebar extends JPanel {
         }
     }
 
+    /**
+     * Duplicates the selected SSH session via the same prefilled "Duplicate SSH Session"
+     * dialog as the right-click menu. No-op when the selection is a folder, a WSL node, or empty.
+     */
+    public void duplicateSelected() {
+        if (selectedNode() instanceof SshSessionConfig ssh) {
+            duplicateSession(ssh);
+        }
+    }
+
     /** Moves the selected node one position earlier among its siblings. */
     public void moveSelectedUp() {
         moveSelected(-1);

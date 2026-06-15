@@ -6,7 +6,7 @@
 
     <groupId>com.katmoda</groupId>
     <artifactId>jterm</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.1-SNAPSHOT</version>
     <packaging>jar</packaging>
     <name>jterm</name>
     <description>Java 21 tabbed/splittable terminal emulator with SSH sessions</description>

@@ -5,6 +5,7 @@ import com.jediterm.terminal.TtyConnector;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Wraps a pane's real {@link TtyConnector}. Reads/resize/etc. pass straight through;
@@ -19,9 +20,29 @@ public final class BroadcastingTtyConnector implements TtyConnector {
     private final TtyConnector real;
     private BroadcastBus bus;
 
+    /** Fired (off-EDT) the first time output is read after each {@link #outputHandled()}. */
+    private volatile Runnable onOutput;
+    /** Coalesces output notifications: only one is in flight until {@link #outputHandled()}. */
+    private final AtomicBoolean notifyPending = new AtomicBoolean(false);
+
     public BroadcastingTtyConnector(TtyConnector real, BroadcastBus bus) {
         this.real = real;
         this.bus = bus;
+    }
+
+    /**
+     * Sets a callback fired when this connector reads output, used to flag background-tab
+     * activity. It fires at most once per {@link #outputHandled()} cycle, so a flood of reads
+     * (e.g. {@code yes}) doesn't swamp the EDT — the handler re-arms by calling
+     * {@link #outputHandled()} once it has processed the signal.
+     */
+    public void setOnOutput(Runnable onOutput) {
+        this.onOutput = onOutput;
+    }
+
+    /** Re-arms the output signal so the next read fires {@link #onOutput} again. */
+    public void outputHandled() {
+        notifyPending.set(false);
     }
 
     /** The wrapped connector, used as the broadcast source identity. */
@@ -52,7 +73,12 @@ public final class BroadcastingTtyConnector implements TtyConnector {
 
     @Override
     public int read(char[] buf, int offset, int length) throws IOException {
-        return real.read(buf, offset, length);
+        int n = real.read(buf, offset, length);
+        Runnable cb = onOutput;
+        if (n > 0 && cb != null && notifyPending.compareAndSet(false, true)) {
+            cb.run();
+        }
+        return n;
     }
 
     @Override

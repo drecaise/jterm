@@ -29,6 +29,19 @@ public final class AppSettings {
     // dark (the app's original default) on a fresh install or a settings file predating this field.
     private boolean darkTheme = true;
 
+    // Window state restored on launch. Whether the frame was maximized, and the sidebar (split
+    // divider) width in pixels. Defaults match the original hard-coded values.
+    private boolean windowMaximized = false;
+    private int sidebarWidth = 240;
+
+    // The window's restored-down (non-maximized) bounds, so it reopens on the same monitor at the
+    // same size. Location defaults to Integer.MIN_VALUE ("unset" → center on the primary screen);
+    // size defaults to the original hard-coded 1100x720.
+    private int windowX = Integer.MIN_VALUE;
+    private int windowY = Integer.MIN_VALUE;
+    private int windowWidth = 1100;
+    private int windowHeight = 720;
+
     // Default terminal settings applied to the local terminal and to any saved session that
     // leaves a field unset ("inherit"). The font defaults to the bundled MobaFont.
     private String defaultTerminalType = "xterm-256color";
@@ -72,6 +85,59 @@ public final class AppSettings {
 
     public void setDarkTheme(boolean darkTheme) {
         this.darkTheme = darkTheme;
+    }
+
+    /** Whether the window was maximized on last exit (persisted across restarts). */
+    public boolean isWindowMaximized() {
+        return windowMaximized;
+    }
+
+    public void setWindowMaximized(boolean windowMaximized) {
+        this.windowMaximized = windowMaximized;
+    }
+
+    /** The sidebar (split divider) width in pixels, restored on launch. */
+    public int getSidebarWidth() {
+        return sidebarWidth;
+    }
+
+    public void setSidebarWidth(int sidebarWidth) {
+        if (sidebarWidth > 0) {
+            this.sidebarWidth = sidebarWidth;
+        }
+    }
+
+    public int getWindowX() {
+        return windowX;
+    }
+
+    public int getWindowY() {
+        return windowY;
+    }
+
+    public int getWindowWidth() {
+        return windowWidth;
+    }
+
+    public int getWindowHeight() {
+        return windowHeight;
+    }
+
+    /** Whether a window location was saved (false on a fresh install → center on screen). */
+    public boolean hasWindowLocation() {
+        return windowX != Integer.MIN_VALUE && windowY != Integer.MIN_VALUE;
+    }
+
+    /** Records the window's restored-down bounds (size must be positive to be stored). */
+    public void setWindowBounds(int x, int y, int width, int height) {
+        this.windowX = x;
+        this.windowY = y;
+        if (width > 0) {
+            this.windowWidth = width;
+        }
+        if (height > 0) {
+            this.windowHeight = height;
+        }
     }
 
     public String getDefaultTerminalType() {
@@ -144,7 +210,8 @@ public final class AppSettings {
             new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
                     .writeValue(file().toFile(), new Persisted(copyOnSelect, pasteOnRightClick,
                             defaultTerminalType, defaultCharset, defaultFontFamily, defaultFontSize,
-                            globalHighlightListId, darkTheme));
+                            globalHighlightListId, darkTheme, windowMaximized, sidebarWidth,
+                            windowX, windowY, windowWidth, windowHeight));
         } catch (Exception ignored) {
             // Settings are a convenience; a failed write shouldn't break the app.
         }
@@ -174,6 +241,24 @@ public final class AppSettings {
                 if (p.darkTheme != null) {
                     settings.darkTheme = p.darkTheme;
                 }
+                if (p.windowMaximized != null) {
+                    settings.windowMaximized = p.windowMaximized;
+                }
+                if (p.sidebarWidth != null && p.sidebarWidth > 0) {
+                    settings.sidebarWidth = p.sidebarWidth;
+                }
+                if (p.windowX != null) {
+                    settings.windowX = p.windowX;
+                }
+                if (p.windowY != null) {
+                    settings.windowY = p.windowY;
+                }
+                if (p.windowWidth != null && p.windowWidth > 0) {
+                    settings.windowWidth = p.windowWidth;
+                }
+                if (p.windowHeight != null && p.windowHeight > 0) {
+                    settings.windowHeight = p.windowHeight;
+                }
             } catch (Exception ignored) {
                 // Fall back to defaults on a malformed file.
             }
@@ -190,6 +275,9 @@ public final class AppSettings {
     private record Persisted(boolean copyOnSelect, boolean pasteOnRightClick,
                              String defaultTerminalType, String defaultCharset,
                              String defaultFontFamily, int defaultFontSize,
-                             String globalHighlightListId, Boolean darkTheme) {
+                             String globalHighlightListId, Boolean darkTheme,
+                             Boolean windowMaximized, Integer sidebarWidth,
+                             Integer windowX, Integer windowY,
+                             Integer windowWidth, Integer windowHeight) {
     }
 }
