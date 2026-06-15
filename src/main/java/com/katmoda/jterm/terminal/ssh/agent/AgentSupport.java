@@ -55,14 +55,48 @@ public final class AgentSupport {
     public static SshAgent open(String preferredEndpoint) throws IOException {
         String endpoint = (preferredEndpoint != null && !preferredEndpoint.isBlank())
                 ? preferredEndpoint : resolveEndpoint();
-        if (endpoint == null || endpoint.isBlank()) {
+        if (!isWindows()) {
+            if (endpoint == null || endpoint.isBlank()) {
+                throw new IOException("No ssh-agent endpoint available (is the agent running?)");
+            }
+            return new JdkAgentProxy(endpoint);
+        }
+        return openWindows(endpoint);
+    }
+
+    /**
+     * On Windows several agents can be present at once (e.g. an empty OpenSSH agent service plus
+     * Pageant holding the key). Open every available source and, if there's more than one, front
+     * them with a {@link CompositeSshAgent} so jterm uses whichever agent actually holds the key.
+     */
+    private static SshAgent openWindows(String endpoint) throws IOException {
+        List<SshAgent> agents = new ArrayList<>();
+        if (endpoint != null && !endpoint.isBlank()) {
+            agents.add(new WindowsPipeAgentProxy(endpoint)); // OpenSSH pipe / KeeAgent / SSH_AUTH_SOCK
+        }
+        if (PageantAgentProxy.isPageantRunning()) {
+            agents.add(new PageantAgentProxy());
+        }
+        if (agents.isEmpty()) {
             throw new IOException("No ssh-agent endpoint available (is the agent running?)");
         }
-        return isWindows() ? new WindowsPipeAgentProxy(endpoint) : new JdkAgentProxy(endpoint);
+        return agents.size() == 1 ? agents.get(0) : new CompositeSshAgent(agents);
     }
 
     public static SshAgent open() throws IOException {
         return open(null);
+    }
+
+    /**
+     * Whether any agent is reachable: a resolvable Unix endpoint / OpenSSH pipe, or — on Windows —
+     * a running Pageant. Used to decide whether to install the agent auth factory at all.
+     */
+    public static boolean isAgentAvailable() {
+        String endpoint = resolveEndpoint();
+        if (endpoint != null && !endpoint.isBlank()) {
+            return true;
+        }
+        return isWindows() && PageantAgentProxy.isPageantRunning();
     }
 
     /** List the agent's identities (type, SHA-256 fingerprint, comment). */
