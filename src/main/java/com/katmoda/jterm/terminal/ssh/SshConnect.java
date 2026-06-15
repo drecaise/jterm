@@ -242,11 +242,15 @@ public final class SshConnect {
      * still apply).
      */
     private static void installAgent(SshClient client) {
-        String endpoint = AgentSupport.resolveEndpoint();
-        if (endpoint == null || endpoint.isBlank()) {
+        if (!AgentSupport.isAgentAvailable()) {
             return;
         }
-        client.getProperties().put(SshAgent.SSH_AUTHSOCKET_ENV_NAME, endpoint);
+        // The endpoint may be null on Windows when only Pageant (which has no socket/pipe path)
+        // is present; the factory still builds the agent itself in that case.
+        String endpoint = AgentSupport.resolveEndpoint();
+        if (endpoint != null && !endpoint.isBlank()) {
+            client.getProperties().put(SshAgent.SSH_AUTHSOCKET_ENV_NAME, endpoint);
+        }
         client.setAgentFactory(new JdkAgentFactory());
     }
 
