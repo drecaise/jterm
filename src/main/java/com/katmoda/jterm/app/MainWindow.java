@@ -30,7 +30,9 @@ import com.katmoda.jterm.ui.AgentKeysDialog;
 import com.katmoda.jterm.ui.ErrorDialog;
 import com.katmoda.jterm.ui.grid.GridContent;
 import com.katmoda.jterm.ui.grid.PaneGrid;
+import com.katmoda.jterm.ui.grid.TabActivityIcon;
 import com.katmoda.jterm.ui.macro.MacroManagerDialog;
+import com.katmoda.jterm.ui.pane.PaneActivity;
 import com.katmoda.jterm.ui.pane.TerminalPane;
 import com.katmoda.jterm.ui.sftp.SftpLauncher;
 import com.katmoda.jterm.ui.tunnel.TunnelManagerDialog;
@@ -58,9 +60,11 @@ import javax.swing.SwingWorker;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
-import java.awt.Dimension;
+import java.awt.GraphicsDevice;
+import java.awt.GraphicsEnvironment;
 import java.awt.Insets;
 import java.awt.Point;
+import java.awt.Rectangle;
 import java.awt.Taskbar;
 import java.awt.KeyboardFocusManager;
 import java.awt.dnd.DnDConstants;
@@ -74,6 +78,8 @@ import java.awt.dnd.InvalidDnDOperationException;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.awt.event.MouseListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
@@ -109,6 +115,10 @@ public final class MainWindow {
     /** While true, the global terminal-shortcut dispatcher stands down so the editor can capture keys. */
     private boolean shortcutCaptureActive = false;
     private SessionSidebar sidebar;
+    private JSplitPane split;
+    /** The window's most recent restored-down (non-maximized) bounds, tracked so a maximized exit
+     *  still persists the monitor + size to reopen at when un-maximized. */
+    private Rectangle lastNormalBounds;
 
     public void show() {
         sidebar = new SessionSidebar(sessionStore, this::openSshSession,
@@ -116,8 +126,8 @@ public final class MainWindow {
 
         configureTabs();
 
-        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, sidebar, tabs);
-        split.setDividerLocation(240);
+        split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, sidebar, tabs);
+        split.setDividerLocation(AppSettings.get().getSidebarWidth());
         split.setResizeWeight(0.0);
 
         frame.setJMenuBar(buildMenuBar());
@@ -128,11 +138,29 @@ public final class MainWindow {
         frame.addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
+                saveWindowState();
                 TunnelManager.get().stopAll();
             }
         });
-        frame.setSize(new Dimension(1100, 720));
-        frame.setLocationRelativeTo(null);
+        restoreWindowBounds();
+        // Track the restored-down bounds so a maximized exit still records which monitor (and what
+        // size) to reopen at; updated only while not maximized.
+        frame.addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentMoved(ComponentEvent e) {
+                rememberNormalBounds();
+            }
+
+            @Override
+            public void componentResized(ComponentEvent e) {
+                rememberNormalBounds();
+            }
+        });
+        // Restore the maximized state from the previous session (the bounds above become the
+        // restored-down geometry once the user un-maximizes).
+        if (AppSettings.get().isWindowMaximized()) {
+            frame.setExtendedState(frame.getExtendedState() | JFrame.MAXIMIZED_BOTH);
+        }
         applyAppIcon();
 
         installShortcutDispatcher();
@@ -151,12 +179,74 @@ public final class MainWindow {
         addTab();
         // Attached only after the first real tab exists so the placeholder's transient
         // auto-selection during setup doesn't trigger a spurious extra tab.
-        tabs.addChangeListener(e -> guardPlusSelection());
+        tabs.addChangeListener(e -> {
+            guardPlusSelection();
+            updateForegroundStates();
+        });
+        // Mark the initial tab as foreground (it won't accrue activity while visible).
+        updateForegroundStates();
 
         frame.setVisible(true);
 
         // Bring up any tunnels the user marked auto-start (resolves credentials as needed).
         startAutoStartTunnels();
+    }
+
+    /**
+     * Restores the window to its previous bounds (size + monitor) when those still fall on a
+     * connected screen; otherwise centers a default-sized window on the primary screen. The saved
+     * location can become off-screen if a monitor was disconnected or rearranged since last run.
+     */
+    private void restoreWindowBounds() {
+        AppSettings s = AppSettings.get();
+        Rectangle bounds = new Rectangle(s.getWindowX(), s.getWindowY(),
+                s.getWindowWidth(), s.getWindowHeight());
+        if (s.hasWindowLocation() && isOnScreen(bounds)) {
+            frame.setBounds(bounds);
+        } else {
+            frame.setSize(s.getWindowWidth(), s.getWindowHeight());
+            frame.setLocationRelativeTo(null);
+        }
+        lastNormalBounds = frame.getBounds();
+    }
+
+    /** True if a meaningful portion of {@code bounds} lands on some connected screen device. */
+    private static boolean isOnScreen(Rectangle bounds) {
+        for (GraphicsDevice device : GraphicsEnvironment.getLocalGraphicsEnvironment()
+                .getScreenDevices()) {
+            Rectangle visible = device.getDefaultConfiguration().getBounds().intersection(bounds);
+            if (visible.width >= 100 && visible.height >= 100) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Captures the current bounds as the restored-down geometry, unless the window is maximized. */
+    private void rememberNormalBounds() {
+        if ((frame.getExtendedState() & JFrame.MAXIMIZED_BOTH) != JFrame.MAXIMIZED_BOTH) {
+            lastNormalBounds = frame.getBounds();
+        }
+    }
+
+    /**
+     * Persists the window's maximized state, restored-down bounds (so it reopens on the same
+     * monitor at the same size), and the sidebar (split divider) width. Called on close from both
+     * the window's X and the Quit menu item. The divider location is the sidebar's pixel width
+     * regardless of window size (a left-anchored horizontal split), so it's captured the same way
+     * whether or not the window is maximized; the bounds come from the tracked restored-down
+     * geometry so a maximized exit doesn't persist the maximized size.
+     */
+    private void saveWindowState() {
+        AppSettings settings = AppSettings.get();
+        boolean maximized = (frame.getExtendedState() & JFrame.MAXIMIZED_BOTH) == JFrame.MAXIMIZED_BOTH;
+        settings.setWindowMaximized(maximized);
+        if (split != null) {
+            settings.setSidebarWidth(split.getDividerLocation());
+        }
+        Rectangle b = (lastNormalBounds != null) ? lastNormalBounds : frame.getBounds();
+        settings.setWindowBounds(b.x, b.y, b.width, b.height);
+        settings.save();
     }
 
     private void applyAppIcon() {
@@ -274,6 +364,8 @@ public final class MainWindow {
         grid.setDropHandler((cfg, placer) ->
                 connectAsync(cfg, session -> placer.accept(session, sshFactory(cfg))));
         grid.setOnActiveChanged(() -> decorateTab(grid));
+        // Re-decorate the tab when a background pane gains output / disconnects (or is cleared).
+        grid.setOnActivity(() -> decorateTab(grid));
         // When the last pane is closed from the stopped screen, close the tab too.
         grid.setOnEmpty(() -> closeTabForGrid(grid));
         // Lets this grid adopt a pane dragged in from another tab (detach it from its source first).
@@ -409,6 +501,7 @@ public final class MainWindow {
             tabs.setIconAt(idx, IconLibrary.get().icon("builtin/folder", 16));
             tabs.setTitleAt(idx, content.displayTitle());
             setTabColor(idx, null);
+            applyActivityIndicator(idx, grid, content);
             return;
         }
         TerminalSession session = pane.session();
@@ -427,6 +520,44 @@ public final class MainWindow {
                     : (base != null ? base.toString() : session.title());
             tabs.setTitleAt(idx, title);
             setTabColor(idx, null);
+        }
+        applyActivityIndicator(idx, grid, content);
+    }
+
+    /**
+     * Overlays the background-activity indicator on a tab. A split tab (more than one pane) shows a
+     * dot-grid icon mirroring its layout, leaving the title default. A single-pane tab keeps its
+     * session icon and recolors the title text (light blue = unread output, red = disconnected,
+     * default = nothing new). The icon was already set by {@link #decorateTab}, so only multi-pane
+     * tabs replace it here.
+     */
+    private void applyActivityIndicator(int idx, PaneGrid grid, GridContent active) {
+        if (grid.paneCount() > 1) {
+            tabs.setIconAt(idx, new TabActivityIcon(grid));
+            tabs.setForegroundAt(idx, null);
+        } else {
+            PaneActivity activity = (active instanceof TerminalPane pane)
+                    ? pane.activity() : PaneActivity.NONE;
+            tabs.setForegroundAt(idx, titleColorFor(activity));
+        }
+    }
+
+    /** Tab-title color for an activity state, or {@code null} (theme default) when nothing's new. */
+    private static Color titleColorFor(PaneActivity activity) {
+        return switch (activity) {
+            case NEW_OUTPUT -> TabActivityIcon.NEW_OUTPUT_COLOR;
+            case DISCONNECTED -> TabActivityIcon.DISCONNECTED_COLOR;
+            case NONE -> null;
+        };
+    }
+
+    /** Marks the selected tab's grid foreground (clearing its indicator) and the rest background. */
+    private void updateForegroundStates() {
+        Component selected = tabs.getSelectedComponent();
+        for (int i = 0; i <= lastRealTabIndex(); i++) {
+            if (tabs.getComponentAt(i) instanceof PaneGrid grid) {
+                grid.setForeground(grid == selected);
+            }
         }
     }
 
@@ -860,6 +991,11 @@ public final class MainWindow {
                     sidebar.moveSelectedDown();
                 }
             }
+            case DUPLICATE_SESSION -> {
+                if (sidebar != null) {
+                    sidebar.duplicateSelected();
+                }
+            }
             case MOVE_TAB_LEFT -> moveSelectedTab(-1);
             case MOVE_TAB_RIGHT -> moveSelectedTab(1);
         }
@@ -1016,7 +1152,11 @@ public final class MainWindow {
         file.add(menuItem("Move Tab Right", TermAction.MOVE_TAB_RIGHT));
         file.addSeparator();
         JMenuItem quit = new JMenuItem("Quit");
-        quit.addActionListener(e -> frame.dispose());
+        quit.addActionListener(e -> {
+            saveWindowState();
+            TunnelManager.get().stopAll();
+            frame.dispose();
+        });
         file.add(quit);
 
         JMenu terminal = new JMenu("Terminal");

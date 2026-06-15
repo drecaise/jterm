@@ -13,6 +13,7 @@ import com.katmoda.jterm.session.SshSessionConfig;
 import com.katmoda.jterm.terminal.SessionFactory;
 import com.katmoda.jterm.terminal.TerminalSession;
 import com.katmoda.jterm.terminal.local.LocalSession;
+import com.katmoda.jterm.ui.pane.PaneActivity;
 import com.katmoda.jterm.ui.pane.TerminalPane;
 import com.katmoda.jterm.ui.theme.ThemeColors;
 import com.katmoda.jterm.ui.theme.ThemeManager;
@@ -23,6 +24,7 @@ import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.border.Border;
 import java.awt.BorderLayout;
@@ -63,9 +65,12 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     private int activeRow = 0;
     private int activeCol = 0;
     private boolean broadcastActive = false;
+    /** True while this grid's tab is the selected (front) one; suppresses activity flagging. */
+    private boolean foreground = false;
     private SessionDropHandler dropHandler;
     private PaneMoveCoordinator moveCoordinator;
     private Runnable onActiveChanged;
+    private Runnable onActivity;
     private Runnable onEmpty;
 
     public PaneGrid() {
@@ -90,6 +95,73 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
      *  tab can close itself instead of leaving an empty grid. */
     public void setOnEmpty(Runnable onEmpty) {
         this.onEmpty = onEmpty;
+    }
+
+    /** Fired when a pane's background-activity state changes, so the owning tab can re-decorate. */
+    public void setOnActivity(Runnable onActivity) {
+        this.onActivity = onActivity;
+    }
+
+    /**
+     * Marks whether this grid's tab is in front. Going to the front means everything is "seen", so
+     * every pane's activity is cleared and the tab re-decorated. Activity only accrues while in the
+     * background (see {@link #markOutput} and {@link #handleSessionEnd}).
+     */
+    public void setForeground(boolean fg) {
+        this.foreground = fg;
+        if (fg) {
+            for (int r = 0; r < rows; r++) {
+                for (int c = 0; c < cols; c++) {
+                    if (panes[r][c] instanceof TerminalPane pane) {
+                        pane.setActivity(PaneActivity.NONE);
+                    }
+                }
+            }
+            fireActivity();
+        }
+    }
+
+    /** This grid's live row/column counts and per-cell activity, for the tab indicator. */
+    public int rows() {
+        return rows;
+    }
+
+    public int cols() {
+        return cols;
+    }
+
+    /** Whether the cell at (r,c) holds content (a terminal or the SFTP browser). */
+    public boolean isCellOccupied(int r, int c) {
+        return r >= 0 && r < rows && c >= 0 && c < cols && panes[r][c] != null;
+    }
+
+    /** Activity of the cell at (r,c); {@link PaneActivity#NONE} for empty or non-terminal cells. */
+    public PaneActivity activityAt(int r, int c) {
+        if (r >= 0 && r < rows && c >= 0 && c < cols && panes[r][c] instanceof TerminalPane pane) {
+            return pane.activity();
+        }
+        return PaneActivity.NONE;
+    }
+
+    private void fireActivity() {
+        if (onActivity != null) {
+            onActivity.run();
+        }
+    }
+
+    /**
+     * A background pane produced output (EDT, coalesced via the connector). Flag it as having
+     * unread output unless the tab is in front (visible → already seen) or the pane has already
+     * disconnected (the more urgent state wins).
+     */
+    private void markOutput(TerminalPane pane) {
+        if (foreground || locate(pane) == null || pane.activity() == PaneActivity.DISCONNECTED) {
+            return;
+        }
+        if (pane.activity() != PaneActivity.NEW_OUTPUT) {
+            pane.setActivity(PaneActivity.NEW_OUTPUT);
+            fireActivity();
+        }
     }
 
     /** The currently focused cell if it's a terminal, or {@code null} (empty or non-terminal). */
@@ -546,8 +618,15 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         if (content instanceof TerminalPane pane) {
             pane.setOnContentEnded(() -> handleSessionEnd(pane));
             pane.setOnBroadcastToggle(this::updateBorders);
+            // A freshly placed/adopted pane has no unseen output yet.
+            pane.setActivity(PaneActivity.NONE);
             if (pane.inputConnector() instanceof BroadcastingTtyConnector b) {
                 b.setBus(this);
+                // Output read off-EDT → flag background-tab activity on the EDT (coalesced).
+                b.setOnOutput(() -> SwingUtilities.invokeLater(() -> {
+                    b.outputHandled();
+                    markOutput(pane);
+                }));
             }
             pane.setBroadcastMode(broadcastActive);
         } else {
@@ -676,6 +755,11 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
             return;
         }
         pane.showSessionStopped(() -> removePane(pane), () -> restartPane(pane));
+        // Flag the disconnect on a background tab (a visible tab is "seen"; selection clears it).
+        if (!foreground) {
+            pane.setActivity(PaneActivity.DISCONNECTED);
+            fireActivity();
+        }
     }
 
     /** Return/exit on the stopped screen (or a non-terminal cell ending): drop the cell and collapse. */

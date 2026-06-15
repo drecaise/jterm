@@ -79,6 +79,7 @@ public final class TerminalPane extends JPanel implements GridContent {
     private Runnable highlightTeardown;
     private Border savedBorder;
     private boolean stopped;
+    private PaneActivity activity = PaneActivity.NONE;
 
     public TerminalPane(TerminalSession session, ThemeColors theme, TtyConnector connector) {
         super(new BorderLayout());
@@ -138,6 +139,15 @@ public final class TerminalPane extends JPanel implements GridContent {
 
     public TerminalSession session() {
         return session;
+    }
+
+    /** This pane's background-activity state, shown on its tab while the tab isn't in front. */
+    public PaneActivity activity() {
+        return activity;
+    }
+
+    public void setActivity(PaneActivity activity) {
+        this.activity = activity;
     }
 
     /** The real (unwrapped) connector, used as broadcast source/target identity. */
