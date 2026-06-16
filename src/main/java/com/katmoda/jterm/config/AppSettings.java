@@ -25,6 +25,11 @@ public final class AppSettings {
     private boolean copyOnSelect = false;
     private boolean pasteOnRightClick = false;
 
+    // Whether an unknown (first-seen) host's key is trusted and recorded automatically, without the
+    // trust-on-first-use prompt. Defaults to off (prompt). A CHANGED host key is always warned about
+    // regardless of this setting — see terminal.ssh.JtermKnownHostsVerifier.
+    private boolean autoAcceptNewHostKeys = false;
+
     // Whether a local terminal tab is opened automatically on launch. Defaults to true (the app's
     // original behavior); read once at startup, so toggling it only affects the next launch.
     private boolean openTerminalOnStartup = true;
@@ -92,6 +97,18 @@ public final class AppSettings {
 
     public void setPasteOnRightClick(boolean pasteOnRightClick) {
         this.pasteOnRightClick = pasteOnRightClick;
+    }
+
+    /**
+     * Whether an unknown host's key is trusted automatically (no first-use prompt). Read live by
+     * the SSH host-key verifier. A <em>changed</em> host key always prompts regardless of this.
+     */
+    public boolean isAutoAcceptNewHostKeys() {
+        return autoAcceptNewHostKeys;
+    }
+
+    public void setAutoAcceptNewHostKeys(boolean autoAcceptNewHostKeys) {
+        this.autoAcceptNewHostKeys = autoAcceptNewHostKeys;
     }
 
     /** Whether a local terminal tab is opened automatically on launch (read once at startup). */
@@ -266,7 +283,7 @@ public final class AppSettings {
                             globalHighlightListId, darkTheme, windowMaximized, sidebarWidth,
                             windowX, windowY, windowWidth, windowHeight,
                             defaultUsername, defaultTabColorHex, openTerminalOnStartup,
-                            defaultKeyPath));
+                            defaultKeyPath, autoAcceptNewHostKeys));
         } catch (Exception ignored) {
             // Settings are a convenience; a failed write shouldn't break the app.
         }
@@ -280,6 +297,9 @@ public final class AppSettings {
                 Persisted p = new ObjectMapper().readValue(file.toFile(), Persisted.class);
                 settings.copyOnSelect = p.copyOnSelect;
                 settings.pasteOnRightClick = p.pasteOnRightClick;
+                if (p.autoAcceptNewHostKeys != null) {
+                    settings.autoAcceptNewHostKeys = p.autoAcceptNewHostKeys;
+                }
                 if (p.openTerminalOnStartup != null) {
                     settings.openTerminalOnStartup = p.openTerminalOnStartup;
                 }
@@ -345,6 +365,7 @@ public final class AppSettings {
                              Integer windowX, Integer windowY,
                              Integer windowWidth, Integer windowHeight,
                              String defaultUsername, String defaultTabColorHex,
-                             Boolean openTerminalOnStartup, String defaultKeyPath) {
+                             Boolean openTerminalOnStartup, String defaultKeyPath,
+                             Boolean autoAcceptNewHostKeys) {
     }
 }

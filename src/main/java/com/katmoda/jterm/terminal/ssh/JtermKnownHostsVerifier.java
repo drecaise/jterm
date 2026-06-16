@@ -1,5 +1,6 @@
 package com.katmoda.jterm.terminal.ssh;
 
+import com.katmoda.jterm.config.AppSettings;
 import org.apache.sshd.client.config.hosts.KnownHostEntry;
 import org.apache.sshd.client.keyverifier.KnownHostsServerKeyVerifier;
 import org.apache.sshd.client.keyverifier.ServerKeyVerifier;
@@ -57,11 +58,16 @@ public final class JtermKnownHostsVerifier extends KnownHostsServerKeyVerifier {
 
     @Override
     protected boolean acceptUnknownHostKey(ClientSession session, SocketAddress remote, PublicKey serverKey) {
-        String message = "The authenticity of host '" + remote + "' can't be established.\n"
-                + keyType(serverKey) + " key fingerprint:\n" + KeyUtils.getFingerPrint(serverKey)
-                + "\n\nTrust this host and continue connecting?";
-        if (!confirmOnEdt("Unknown host key", message, JOptionPane.WARNING_MESSAGE)) {
-            return false;
+        // With auto-accept on, trust a first-seen host silently and record its key. This only
+        // covers unknown hosts; a CHANGED key still goes through acceptModifiedServerKey, which
+        // always warns regardless of this setting.
+        if (!AppSettings.get().isAutoAcceptNewHostKeys()) {
+            String message = "The authenticity of host '" + remote + "' can't be established.\n"
+                    + keyType(serverKey) + " key fingerprint:\n" + KeyUtils.getFingerPrint(serverKey)
+                    + "\n\nTrust this host and continue connecting?";
+            if (!confirmOnEdt("Unknown host key", message, JOptionPane.WARNING_MESSAGE)) {
+                return false;
+            }
         }
         // MINA's base impl would append the key here, but it gates the write behind the
         // (reject-all) delegate verifier, so we must persist it ourselves. Without this the
