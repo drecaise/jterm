@@ -3,6 +3,7 @@ package com.katmoda.jterm.ui.preferences;
 import com.katmoda.jterm.config.AppSettings;
 import com.katmoda.jterm.ui.component.HighlightListCombo;
 import com.katmoda.jterm.ui.component.HighlightListsForm;
+import com.katmoda.jterm.ui.component.TabColorPicker;
 import com.katmoda.jterm.ui.component.TerminalSettingsForm;
 import com.katmoda.jterm.ui.component.ToggleSwitch;
 
@@ -12,6 +13,7 @@ import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JTabbedPane;
+import javax.swing.JTextField;
 import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.FlowLayout;
@@ -41,11 +43,14 @@ public final class PreferencesDialog {
 
         ToggleSwitch copyOnSelect = new ToggleSwitch(settings.isCopyOnSelect());
         ToggleSwitch pasteOnRightClick = new ToggleSwitch(settings.isPasteOnRightClick());
+        ToggleSwitch openTerminalOnStartup = new ToggleSwitch(settings.isOpenTerminalOnStartup());
         JPanel general = new JPanel(new GridBagLayout());
         int row = 0;
         addToggleRow(general, row++, "Copy to clipboard on select:", copyOnSelect);
         addToggleRow(general, row++, "Paste on right click:", pasteOnRightClick);
         addHint(general, row++, "With this on, right-click pastes; use Ctrl+right-click for the menu.");
+        addToggleRow(general, row++, "Open a terminal on startup:", openTerminalOnStartup);
+        addHint(general, row++, "With this off, jterm starts with no open tabs.");
 
         TerminalSettingsForm terminalDefaults = new TerminalSettingsForm(false,
                 settings.getDefaultTerminalType(), settings.getDefaultCharset(),
@@ -73,8 +78,20 @@ public final class PreferencesDialog {
         highlighting.add(hint("Colors matching text in new output. Sessions can override this."
                 + " Applies to newly opened terminals."), BorderLayout.SOUTH);
 
+        // Session defaults: the username and tab color inherited by folders/sessions that leave
+        // them unset. (Sessions and folders can still override these.)
+        JTextField defaultUser = new JTextField(settings.getDefaultUsername(), 16);
+        TabColorPicker defaultTabColor = new TabColorPicker(settings.getDefaultTabColorHex(), "Default");
+        JPanel sessionDefaults = new JPanel(new GridBagLayout());
+        int sdRow = 0;
+        addFieldRow(sessionDefaults, sdRow++, "Default username:", defaultUser);
+        addFieldRow(sessionDefaults, sdRow++, "Default tab color:", defaultTabColor.component());
+        addHint(sessionDefaults, sdRow++, "Used by folders and sessions that don't set their own."
+                + " Applies to newly opened sessions.");
+
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("General", general);
+        tabs.addTab("Session Defaults", sessionDefaults);
         tabs.addTab("Terminal Settings", terminal);
         tabs.addTab("Highlighting", highlighting);
 
@@ -85,12 +102,15 @@ public final class PreferencesDialog {
         }
         settings.setCopyOnSelect(copyOnSelect.isSelected());
         settings.setPasteOnRightClick(pasteOnRightClick.isSelected());
+        settings.setOpenTerminalOnStartup(openTerminalOnStartup.isSelected());
         settings.setDefaultTerminalType(terminalDefaults.terminalType());
         settings.setDefaultCharset(terminalDefaults.charset());
         settings.setDefaultFontFamily(terminalDefaults.fontFamily());
         settings.setDefaultFontSize(terminalDefaults.fontSize());
         highlightForm.commit();
         settings.setGlobalHighlightListId(HighlightListCombo.selectedId(highlightDefault));
+        settings.setDefaultUsername(defaultUser.getText());
+        settings.setDefaultTabColorHex(defaultTabColor.hex());
         settings.save();
     }
 
@@ -108,6 +128,22 @@ public final class PreferencesDialog {
         g.fill = GridBagConstraints.NONE;
         g.insets = new Insets(4, 0, 4, 4);
         form.add(toggle, g);
+    }
+
+    /** A "Label:   [component]" row: label on the left, the component at its natural size. */
+    private static void addFieldRow(JPanel form, int row, String label, Component field) {
+        GridBagConstraints g = new GridBagConstraints();
+        g.gridx = 0;
+        g.gridy = row;
+        g.anchor = GridBagConstraints.WEST;
+        g.insets = new Insets(4, 4, 4, 10);
+        form.add(new JLabel(label), g);
+
+        g.gridx = 1;
+        g.weightx = 1;
+        g.fill = GridBagConstraints.NONE;
+        g.insets = new Insets(4, 0, 4, 4);
+        form.add(field, g);
     }
 
     /** A full-width, de-emphasised explanatory line spanning both columns. */

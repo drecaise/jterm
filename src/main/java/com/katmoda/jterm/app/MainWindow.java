@@ -176,7 +176,11 @@ public final class MainWindow {
             }
         });
 
-        addTab();
+        // Open the initial local terminal unless the user opted out (then the window starts with
+        // only the "+" placeholder; the selection guard recreates a tab once one is closed to zero).
+        if (AppSettings.get().isOpenTerminalOnStartup()) {
+            addTab();
+        }
         // Attached only after the first real tab exists so the placeholder's transient
         // auto-selection during setup doesn't trigger a spurious extra tab.
         tabs.addChangeListener(e -> {
@@ -352,7 +356,7 @@ public final class MainWindow {
         // Immediate feedback before the (off-EDT) connection completes.
         tabs.setTitleAt(at, cfg.getName());
         tabs.setIconAt(at, iconFor(cfg.getIconId()));
-        setTabColor(at, cfg.getTabColorHex());
+        setTabColor(at, sessionStore.effectiveTabColorHex(cfg));
         grid.initEmpty();
         connectAsync(cfg, session -> grid.placeSessionInActive(session, sshFactory(cfg)));
     }
@@ -476,7 +480,12 @@ public final class MainWindow {
             return;
         }
         if (realTabCount() == 0) {
-            addTab();
+            // Closing the last tab normally springs a fresh one back; honor the startup preference
+            // instead, so opting out of a startup terminal also leaves an empty window here (the
+            // "+" placeholder stays selected; the button and drag-drop still open new tabs).
+            if (AppSettings.get().isOpenTerminalOnStartup()) {
+                addTab();
+            }
         } else {
             tabs.setSelectedIndex(plus - 1);
         }
@@ -589,9 +598,20 @@ public final class MainWindow {
     // ---- session opening ----
 
     private void openLocalInCurrent() {
+        openLocalInCurrent(OpenMode.ACTIVE);
+    }
+
+    private void openLocalInCurrent(OpenMode mode) {
         PaneGrid grid = currentGrid();
-        if (grid != null) {
-            grid.openLocalInActive();
+        if (grid == null) {
+            // No open tab (e.g. the startup terminal was suppressed): open one in a fresh tab.
+            addTab();
+            return;
+        }
+        switch (mode) {
+            case SPLIT_COLUMN -> grid.splitColumn();
+            case SPLIT_ROW -> grid.splitRow();
+            default -> grid.openLocalInActive();
         }
     }
 
@@ -637,8 +657,9 @@ public final class MainWindow {
      */
     private void openSftpForConfig(SshSessionConfig cfg) {
         String password = resolvePassword(cfg);
-        String label = (cfg.getUser() != null ? cfg.getUser() + "@" : "") + cfg.getHost();
-        SftpLauncher.openFresh(cfg.getHost(), cfg.getPort(), cfg.getUser(), password,
+        String effectiveUser = sessionStore.effectiveUser(cfg);
+        String label = (!effectiveUser.isBlank() ? effectiveUser + "@" : "") + cfg.getHost();
+        SftpLauncher.openFresh(cfg.getHost(), cfg.getPort(), effectiveUser, password,
                 cfg.getKeyPath(), keyPassphraseProvider(), label,
                 this::placeSftp,
                 cause -> ErrorDialog.show(frame, "SFTP", "SFTP connection failed:", cause));
@@ -725,15 +746,19 @@ public final class MainWindow {
         String password = resolvePassword(cfg);
         List<SshConnect.HostHop> jumpHosts = resolveJumpHosts(cfg);
         SshConnect.PassphraseProvider passphrases = keyPassphraseProvider();
+        // Resolve the inherited username/tab color (session → folder chain → global default) on the
+        // EDT, since it walks the live session tree.
+        String effectiveUser = sessionStore.effectiveUser(cfg);
+        String effectiveTabColorHex = sessionStore.effectiveTabColorHex(cfg);
         new SwingWorker<SshSession, Void>() {
             @Override
             protected SshSession doInBackground() throws Exception {
                 TerminalProfile profile = AppSettings.get().resolve(cfg.getTerminalType(),
                         cfg.getTerminalCharset(), cfg.getFontFamily(), cfg.getFontSize());
-                return SshSession.connect(cfg.getHost(), cfg.getPort(), cfg.getUser(),
+                return SshSession.connect(cfg.getHost(), cfg.getPort(), effectiveUser,
                         cfg.isAgentForwarding(), password, cfg.getKeyPath(), jumpHosts, passphrases,
                         cfg.getName(), cfg.getIconId(), profile, cfg.getHighlightListId(),
-                        cfg.getTabColorHex());
+                        effectiveTabColorHex);
             }
 
             @Override
@@ -871,11 +896,12 @@ public final class MainWindow {
         String password = resolvePassword(cfg);
         List<SshConnect.HostHop> jumpHosts = resolveJumpHosts(cfg);
         SshConnect.PassphraseProvider passphrases = keyPassphraseProvider();
+        String effectiveUser = sessionStore.effectiveUser(cfg);
         new SwingWorker<SshConnect.Connected, Void>() {
             @Override
             protected SshConnect.Connected doInBackground() throws Exception {
                 return SshConnect.open(jumpHosts,
-                        new SshConnect.HostHop(cfg.getHost(), cfg.getPort(), cfg.getUser(),
+                        new SshConnect.HostHop(cfg.getHost(), cfg.getPort(), effectiveUser,
                                 password, cfg.getKeyPath()),
                         passphrases);
             }
@@ -1150,6 +1176,13 @@ public final class MainWindow {
         file.add(menuItem("Close Tab", TermAction.CLOSE_TAB));
         file.add(menuItem("Move Tab Left", TermAction.MOVE_TAB_LEFT));
         file.add(menuItem("Move Tab Right", TermAction.MOVE_TAB_RIGHT));
+        file.addSeparator();
+        JMenuItem exportSessions = new JMenuItem("Export Sessions…");
+        exportSessions.addActionListener(e -> sidebar.exportRootSessions());
+        file.add(exportSessions);
+        JMenuItem importSessions = new JMenuItem("Import Sessions…");
+        importSessions.addActionListener(e -> sidebar.importRootSessions());
+        file.add(importSessions);
         file.addSeparator();
         JMenuItem quit = new JMenuItem("Quit");
         quit.addActionListener(e -> {

@@ -25,6 +25,10 @@ public final class AppSettings {
     private boolean copyOnSelect = false;
     private boolean pasteOnRightClick = false;
 
+    // Whether a local terminal tab is opened automatically on launch. Defaults to true (the app's
+    // original behavior); read once at startup, so toggling it only affects the next launch.
+    private boolean openTerminalOnStartup = true;
+
     // Whether the dark theme is active. Persisted so the choice survives a restart; defaults to
     // dark (the app's original default) on a fresh install or a settings file predating this field.
     private boolean darkTheme = true;
@@ -55,6 +59,12 @@ public final class AppSettings {
     // users whose settings.json predates this field keep "(None)" (loaded as null below).
     private String globalHighlightListId = HighlightLibrary.DEFAULT_LIST_ID;
 
+    // Global default SSH username and tab color, inherited by folders/sessions that leave them
+    // unset. The username defaults to the OS user (preserving the prior per-session default);
+    // the tab color defaults to null ("theme default" — no override).
+    private String defaultUsername = System.getProperty("user.name", "");
+    private String defaultTabColorHex = null;
+
     public AppSettings() {
     }
 
@@ -76,6 +86,15 @@ public final class AppSettings {
 
     public void setPasteOnRightClick(boolean pasteOnRightClick) {
         this.pasteOnRightClick = pasteOnRightClick;
+    }
+
+    /** Whether a local terminal tab is opened automatically on launch (read once at startup). */
+    public boolean isOpenTerminalOnStartup() {
+        return openTerminalOnStartup;
+    }
+
+    public void setOpenTerminalOnStartup(boolean openTerminalOnStartup) {
+        this.openTerminalOnStartup = openTerminalOnStartup;
     }
 
     /** Whether the dark theme is active (persisted across restarts). */
@@ -183,6 +202,25 @@ public final class AppSettings {
                         ? globalHighlightListId : null;
     }
 
+    /** The global default SSH username, or {@code ""} if none is configured. */
+    public String getDefaultUsername() {
+        return defaultUsername;
+    }
+
+    public void setDefaultUsername(String defaultUsername) {
+        this.defaultUsername = (defaultUsername != null) ? defaultUsername.trim() : "";
+    }
+
+    /** The global default tab color as {@code "#RRGGBB"}, or {@code null} for the theme default. */
+    public String getDefaultTabColorHex() {
+        return defaultTabColorHex;
+    }
+
+    public void setDefaultTabColorHex(String defaultTabColorHex) {
+        this.defaultTabColorHex =
+                (defaultTabColorHex != null && !defaultTabColorHex.isBlank()) ? defaultTabColorHex : null;
+    }
+
     /** The application-wide default terminal profile (used by the local terminal). */
     public TerminalProfile defaultProfile() {
         return TerminalProfile.from(defaultTerminalType, defaultCharset, defaultFontFamily, defaultFontSize);
@@ -211,7 +249,8 @@ public final class AppSettings {
                     .writeValue(file().toFile(), new Persisted(copyOnSelect, pasteOnRightClick,
                             defaultTerminalType, defaultCharset, defaultFontFamily, defaultFontSize,
                             globalHighlightListId, darkTheme, windowMaximized, sidebarWidth,
-                            windowX, windowY, windowWidth, windowHeight));
+                            windowX, windowY, windowWidth, windowHeight,
+                            defaultUsername, defaultTabColorHex, openTerminalOnStartup));
         } catch (Exception ignored) {
             // Settings are a convenience; a failed write shouldn't break the app.
         }
@@ -225,6 +264,9 @@ public final class AppSettings {
                 Persisted p = new ObjectMapper().readValue(file.toFile(), Persisted.class);
                 settings.copyOnSelect = p.copyOnSelect;
                 settings.pasteOnRightClick = p.pasteOnRightClick;
+                if (p.openTerminalOnStartup != null) {
+                    settings.openTerminalOnStartup = p.openTerminalOnStartup;
+                }
                 if (!isBlank(p.defaultTerminalType)) {
                     settings.defaultTerminalType = p.defaultTerminalType;
                 }
@@ -238,6 +280,10 @@ public final class AppSettings {
                     settings.defaultFontSize = p.defaultFontSize;
                 }
                 settings.setGlobalHighlightListId(p.globalHighlightListId);
+                if (p.defaultUsername != null) {
+                    settings.defaultUsername = p.defaultUsername.trim();
+                }
+                settings.setDefaultTabColorHex(p.defaultTabColorHex);
                 if (p.darkTheme != null) {
                     settings.darkTheme = p.darkTheme;
                 }
@@ -278,6 +324,8 @@ public final class AppSettings {
                              String globalHighlightListId, Boolean darkTheme,
                              Boolean windowMaximized, Integer sidebarWidth,
                              Integer windowX, Integer windowY,
-                             Integer windowWidth, Integer windowHeight) {
+                             Integer windowWidth, Integer windowHeight,
+                             String defaultUsername, String defaultTabColorHex,
+                             Boolean openTerminalOnStartup) {
     }
 }

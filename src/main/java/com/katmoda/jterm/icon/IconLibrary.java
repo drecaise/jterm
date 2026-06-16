@@ -179,6 +179,43 @@ public final class IconLibrary {
         }
     }
 
+    /** Whether {@code iconId} refers to a user-imported (custom) icon (vs. a built-in). */
+    public static boolean isCustom(String iconId) {
+        return iconId != null && iconId.startsWith("custom/");
+    }
+
+    /**
+     * Deletes a user-imported (custom) icon: removes its file, drops its registration and any
+     * cached renderings, and persists {@code icons.json}. No-op for built-in / unknown ids.
+     * Callers are responsible for reverting any sessions/folders that referenced the id.
+     *
+     * @return {@code true} if a custom icon was removed
+     */
+    public boolean deleteImported(String iconId) {
+        if (!isCustom(iconId)) {
+            return false;
+        }
+        ImportedIcon target = null;
+        for (ImportedIcon ii : imported) {
+            if (ii.getId().equals(iconId)) {
+                target = ii;
+                break;
+            }
+        }
+        if (target == null) {
+            return false;
+        }
+        try {
+            Files.deleteIfExists(dir.resolve(target.getFileName()));
+        } catch (Exception ignored) {
+            // Leave the orphaned file; the registration is what matters for the picker.
+        }
+        imported.remove(target);
+        cache.keySet().removeIf(key -> key.startsWith(iconId + "@"));
+        save();
+        return true;
+    }
+
     // ---- built-in discovery ----
 
     /**

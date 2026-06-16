@@ -16,7 +16,9 @@ public final class SshSessionConfig implements SessionNode {
     private String iconId;
     private String host = "";
     private int port = 22;
-    private String user = System.getProperty("user.name", "");
+    // Blank means "inherit" — the effective username is resolved at connect time against the
+    // session's folder chain and the global default (see SessionStore.effectiveUser).
+    private String user = "";
     private boolean agentForwarding = true;
     private boolean passwordAuth = false;
     private boolean savePassword = false;
