@@ -19,35 +19,34 @@
  */
 package com.katmoda.jterm.dnd;
 
-import com.katmoda.jterm.ui.grid.PaneGrid;
-import com.katmoda.jterm.ui.pane.TerminalPane;
+import com.katmoda.jterm.session.FolderNode;
 
 import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.Transferable;
 import java.awt.datatransfer.UnsupportedFlavorException;
 
 /**
- * Carries a tab (its {@link PaneGrid}) during a drag from the tab strip. Always offers
- * {@link #TAB_FLAVOR} for reordering on the strip. A <em>single-pane</em> tab additionally offers
- * {@link PaneTransferable#PANE_FLAVOR} carrying that sole pane, so it can be dropped into another
- * tab's grid; a multi-pane tab only reorders (it can't be squeezed into one cell).
+ * Carries a {@link FolderNode} during an intra-JVM drag within the sidebar tree, so a folder
+ * can be re-parented onto another folder. Uses a local-object flavor (no serialization needed).
+ *
+ * <p>This is a distinct flavor from {@link SessionTransferable#SESSION_FLAVOR} on purpose: only
+ * the sidebar tree recognises it, so a folder cannot be dropped onto a terminal pane (there is
+ * nothing to launch).
  */
-public final class TabTransferable implements Transferable {
+public final class FolderTransferable implements Transferable {
 
-    public static final DataFlavor TAB_FLAVOR = createFlavor();
+    public static final DataFlavor FOLDER_FLAVOR = createFlavor();
 
-    private final PaneGrid grid;
-    private final TerminalPane solePane;
+    private final FolderNode folder;
 
-    public TabTransferable(PaneGrid grid) {
-        this.grid = grid;
-        this.solePane = grid.solePane();
+    public FolderTransferable(FolderNode folder) {
+        this.folder = folder;
     }
 
     private static DataFlavor createFlavor() {
         try {
             return new DataFlavor(DataFlavor.javaJVMLocalObjectMimeType
-                    + ";class=" + PaneGrid.class.getName());
+                    + ";class=" + FolderNode.class.getName());
         } catch (ClassNotFoundException e) {
             throw new ExceptionInInitializerError(e);
         }
@@ -55,27 +54,19 @@ public final class TabTransferable implements Transferable {
 
     @Override
     public DataFlavor[] getTransferDataFlavors() {
-        return solePane != null
-                ? new DataFlavor[]{TAB_FLAVOR, PaneTransferable.PANE_FLAVOR}
-                : new DataFlavor[]{TAB_FLAVOR};
+        return new DataFlavor[]{FOLDER_FLAVOR};
     }
 
     @Override
     public boolean isDataFlavorSupported(DataFlavor flavor) {
-        if (TAB_FLAVOR.equals(flavor)) {
-            return true;
-        }
-        return solePane != null && PaneTransferable.PANE_FLAVOR.equals(flavor);
+        return FOLDER_FLAVOR.equals(flavor);
     }
 
     @Override
     public Object getTransferData(DataFlavor flavor) throws UnsupportedFlavorException {
-        if (TAB_FLAVOR.equals(flavor)) {
-            return grid;
+        if (!FOLDER_FLAVOR.equals(flavor)) {
+            throw new UnsupportedFlavorException(flavor);
         }
-        if (solePane != null && PaneTransferable.PANE_FLAVOR.equals(flavor)) {
-            return solePane;
-        }
-        throw new UnsupportedFlavorException(flavor);
+        return folder;
     }
 }

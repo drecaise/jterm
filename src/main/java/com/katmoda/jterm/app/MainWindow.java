@@ -1,3 +1,22 @@
+/*
+ * jterm — a Java terminal emulator.
+ * Copyright (C) 2026 Mark Moses
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
 package com.katmoda.jterm.app;
 
 import com.katmoda.jterm.config.AppSettings;
@@ -45,12 +64,17 @@ import javax.swing.JFrame;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
+import javax.swing.JDialog;
 import javax.swing.JOptionPane;
+import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
+import javax.swing.JTextArea;
 import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 import java.awt.BorderLayout;
+import java.awt.Dimension;
+import java.awt.Font;
 import java.awt.GraphicsDevice;
 import java.awt.GraphicsEnvironment;
 import java.awt.Rectangle;
@@ -61,6 +85,8 @@ import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
@@ -915,6 +941,9 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         JMenuItem about = new JMenuItem("About " + AppInfo.name() + "…");
         about.addActionListener(e -> showAboutDialog());
         help.add(about);
+        JMenuItem licenses = new JMenuItem("Third-Party Licenses…");
+        licenses.addActionListener(e -> showThirdPartyLicenses());
+        help.add(licenses);
 
         bar.add(file);
         bar.add(terminal);
@@ -925,13 +954,54 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         return bar;
     }
 
-    /** Modal "About" dialog: application name, build version, and author. */
+    /**
+     * Modal "About" dialog: application name, build version, author, and the GNU GPL notice
+     * the FSF recommends presenting in a GUI "about box".
+     */
     private void showAboutDialog() {
         String message = "<html><b>" + AppInfo.name() + "</b><br>"
                 + "Version " + AppInfo.version() + "<br><br>"
-                + "Author: " + AppInfo.author() + "</html>";
+                + "Copyright &copy; 2026 " + AppInfo.author() + "<br><br>"
+                + "This program is free software: you can redistribute it and/or modify it<br>"
+                + "under the terms of the GNU General Public License as published by the<br>"
+                + "Free Software Foundation, either version 3 of the License, or (at your<br>"
+                + "option) any later version.<br><br>"
+                + "This program comes with ABSOLUTELY NO WARRANTY. See the GNU General<br>"
+                + "Public License for more details &lt;https://www.gnu.org/licenses/&gt;.<br><br>"
+                + "See <b>Help &rarr; Third-Party Licenses</b> for bundled components.</html>";
         JOptionPane.showMessageDialog(
                 frame, message, "About " + AppInfo.name(), JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    /**
+     * Modal, scrollable dialog listing the bundled open-source libraries and their licenses.
+     * The text is read from {@code /third-party-licenses.txt} on the classpath.
+     */
+    private void showThirdPartyLicenses() {
+        String text;
+        try (InputStream in = MainWindow.class.getResourceAsStream("/third-party-licenses.txt")) {
+            text = in != null
+                    ? new String(in.readAllBytes(), StandardCharsets.UTF_8)
+                    : "Third-party license information is unavailable.";
+        } catch (Exception ex) {
+            text = "Third-party license information is unavailable.";
+        }
+
+        JTextArea area = new JTextArea(text);
+        area.setEditable(false);
+        area.setLineWrap(true);
+        area.setWrapStyleWord(true);
+        area.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        area.setCaretPosition(0);
+
+        JScrollPane scroll = new JScrollPane(area);
+        scroll.setPreferredSize(new Dimension(640, 480));
+
+        JDialog dialog = new JDialog(frame, "Third-Party Licenses", true);
+        dialog.getContentPane().add(scroll, BorderLayout.CENTER);
+        dialog.pack();
+        dialog.setLocationRelativeTo(frame);
+        dialog.setVisible(true);
     }
 
     /**
