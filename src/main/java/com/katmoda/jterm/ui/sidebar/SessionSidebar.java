@@ -7,6 +7,7 @@ import com.katmoda.jterm.dnd.LocalTransferable;
 import com.katmoda.jterm.dnd.SessionTransferable;
 import com.katmoda.jterm.dnd.WslTransferable;
 import com.katmoda.jterm.icon.IconLibrary;
+import com.katmoda.jterm.config.AppSettings;
 import com.katmoda.jterm.highlight.HighlightLibrary;
 import com.katmoda.jterm.macro.Macro;
 import com.katmoda.jterm.macro.MacroLibrary;
@@ -25,6 +26,7 @@ import com.katmoda.jterm.ui.security.MasterPasswordDialog;
 import com.katmoda.jterm.ui.component.HighlightListCombo;
 import com.katmoda.jterm.ui.component.JumpHostsForm;
 import com.katmoda.jterm.ui.component.KeyFileField;
+import com.katmoda.jterm.ui.component.TabColorPicker;
 import com.katmoda.jterm.ui.component.TerminalSettingsForm;
 import com.katmoda.jterm.ui.component.ToggleSwitch;
 
@@ -32,7 +34,6 @@ import javax.swing.BorderFactory;
 import javax.swing.DropMode;
 import javax.swing.Icon;
 import javax.swing.JButton;
-import javax.swing.JColorChooser;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
@@ -61,8 +62,6 @@ import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
 import java.awt.BorderLayout;
-import java.awt.Color;
-import java.awt.FlowLayout;
 import java.awt.GridLayout;
 import java.awt.datatransfer.Transferable;
 import java.awt.event.ActionListener;
@@ -98,7 +97,7 @@ public final class SessionSidebar extends JPanel {
     private final DefaultTreeModel model;
 
     private final BiConsumer<SshSessionConfig, OpenMode> onOpenSsh;
-    private final Runnable onOpenLocal;
+    private final Consumer<OpenMode> onOpenLocal;
     private final BiConsumer<String, OpenMode> onOpenWsl;
     private final Consumer<SshSessionConfig> onOpenSftp;
 
@@ -114,7 +113,7 @@ public final class SessionSidebar extends JPanel {
 
     public SessionSidebar(SessionStore store,
                           BiConsumer<SshSessionConfig, OpenMode> onOpenSsh,
-                          Runnable onOpenLocal,
+                          Consumer<OpenMode> onOpenLocal,
                           BiConsumer<String, OpenMode> onOpenWsl,
                           Consumer<SshSessionConfig> onOpenSftp) {
         super(new BorderLayout());
@@ -243,7 +242,8 @@ public final class SessionSidebar extends JPanel {
         local.setHorizontalAlignment(JButton.LEFT);
         local.setToolTipText("Click to open in the active pane, or drag onto a pane to split");
 
-        local.addActionListener(e -> onOpenLocal.run());
+        local.addActionListener(e -> onOpenLocal.accept(OpenMode.ACTIVE));
+        local.setComponentPopupMenu(buildLocalPopup());
 
         // Drag onto a pane to split-and-open a local shell (mirrors saved SSH sessions).
         local.setTransferHandler(new TransferHandler() {
@@ -416,24 +416,10 @@ public final class SessionSidebar extends JPanel {
         return true;
     }
 
-    /** Finds the folder directly containing {@code node}, searching the whole tree. */
+    /** Finds the folder directly containing {@code node}, or null if it's the root / not found. */
     private FolderNode parentFolderOf(SessionNode node) {
-        return findParent(store.root(), node);
-    }
-
-    private FolderNode findParent(FolderNode folder, SessionNode node) {
-        for (SessionNode child : folder.getChildren()) {
-            if (child == node) {
-                return folder;
-            }
-            if (child instanceof FolderNode sub) {
-                FolderNode found = findParent(sub, node);
-                if (found != null) {
-                    return found;
-                }
-            }
-        }
-        return null;
+        List<FolderNode> ancestors = store.ancestorsOf(node);
+        return ancestors.isEmpty() ? null : ancestors.get(ancestors.size() - 1);
     }
 
     /** A folder choice in the edit dialog's drop-down; indented to show nesting depth. */
@@ -461,6 +447,16 @@ public final class SessionSidebar extends JPanel {
 
     // ---- import / export (JSON) ----
 
+    /** Exports the whole saved-sessions tree (the root folder). Used by the File menu. */
+    public void exportRootSessions() {
+        exportFolder(store.root());
+    }
+
+    /** Imports a sessions export into the root of the saved-sessions tree. Used by the File menu. */
+    public void importRootSessions() {
+        importSessions(store.root());
+    }
+
     /**
      * Writes {@code folder} and its subtree to a user-chosen JSON file. A checkbox offers to
      * also include saved passwords; opting in first requires the master password, after which
@@ -479,6 +475,7 @@ public final class SessionSidebar extends JPanel {
 
         SessionExport export = new SessionExport();
         export.folder = folder;
+        export.root = (folder == store.root());
         if (includeCreds.isSelected() && !collectCredentials(folder, export.credentials)) {
             return; // user cancelled the master-password prompt
         }
@@ -587,9 +584,17 @@ public final class SessionSidebar extends JPanel {
             importCredentials(remapped);
         }
 
-        target.getChildren().add(export.folder);
+        // A root export carries the top-level "Sessions" container; merge its children into the
+        // destination so re-importing doesn't nest a "Sessions" folder inside the root. Any other
+        // folder is added as a child of the destination.
+        if (export.root) {
+            target.getChildren().addAll(export.folder.getChildren());
+        } else {
+            target.getChildren().add(export.folder);
+        }
         rebuild();
-        JOptionPane.showMessageDialog(this, "Imported \"" + export.folder.getName() + "\".",
+        String imported = export.root ? "the exported sessions" : "\"" + export.folder.getName() + "\"";
+        JOptionPane.showMessageDialog(this, "Imported " + imported + ".",
                 "Import Sessions", JOptionPane.INFORMATION_MESSAGE);
     }
 
@@ -721,6 +726,23 @@ public final class SessionSidebar extends JPanel {
             tree.setSelectionPath(path);
         }
         buildPopup().show(tree, e.getX(), e.getY());
+    }
+
+    /** Context menu for the "Local Terminal" button, mirroring the saved-session open options. */
+    private JPopupMenu buildLocalPopup() {
+        JPopupMenu menu = new JPopupMenu();
+        JMenuItem openActive = new JMenuItem("Open in Active Pane");
+        openActive.addActionListener(a -> onOpenLocal.accept(OpenMode.ACTIVE));
+        JMenu split = new JMenu("Open in Split Pane");
+        JMenuItem right = new JMenuItem("Split Right (new column)");
+        right.addActionListener(a -> onOpenLocal.accept(OpenMode.SPLIT_COLUMN));
+        JMenuItem below = new JMenuItem("Split Below (new row)");
+        below.addActionListener(a -> onOpenLocal.accept(OpenMode.SPLIT_ROW));
+        split.add(right);
+        split.add(below);
+        menu.add(openActive);
+        menu.add(split);
+        return menu;
     }
 
     private JPopupMenu buildPopup() {
@@ -957,18 +979,35 @@ public final class SessionSidebar extends JPanel {
         JButton iconBtn = new JButton();
         updateIconButton(iconBtn, iconId[0], fallback);
         iconBtn.addActionListener(a -> {
-            String picked = IconPickerDialog.pick(this);
+            String picked = IconPickerDialog.pick(this, deletedId -> {
+                revertDeletedIcon(deletedId);
+                if (deletedId.equals(iconId[0])) {
+                    iconId[0] = null;
+                    updateIconButton(iconBtn, iconId[0], fallback);
+                }
+            });
             if (picked != null) {
                 iconId[0] = picked.isEmpty() ? null : picked;
                 updateIconButton(iconBtn, iconId[0], fallback);
             }
         });
 
+        // Per-folder default username and tab color, inherited by sessions/sub-folders beneath this
+        // folder. Blank inherits from an ancestor folder, then the global default.
+        JTextField user = new JTextField(folder.getUser() != null ? folder.getUser() : "");
+        user.putClientProperty("JTextField.placeholderText",
+                "(inherit: " + inheritedUser(folder) + ")");
+        TabColorPicker tabColor = new TabColorPicker(folder.getTabColorHex(), "Inherit");
+
         JPanel form = new JPanel(new GridLayout(0, 2, 6, 6));
         form.add(new JLabel("Name:"));
         form.add(name);
         form.add(new JLabel("Icon:"));
         form.add(iconBtn);
+        form.add(new JLabel("Default user:"));
+        form.add(user);
+        form.add(new JLabel("Default tab color:"));
+        form.add(tabColor.component());
 
         int result = JOptionPane.showConfirmDialog(this, form, title,
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
@@ -977,7 +1016,54 @@ public final class SessionSidebar extends JPanel {
         }
         folder.setName(blankToDefault(name.getText(), "Folder"));
         folder.setIconId(iconId[0]);
+        folder.setUser(user.getText());
+        folder.setTabColorHex(tabColor.hex());
         return true;
+    }
+
+    /**
+     * The username a blank field on {@code folder} would inherit: the nearest ancestor folder's
+     * value, then the global default, then the OS user. (Excludes the folder's own value.)
+     */
+    private String inheritedUser(FolderNode folder) {
+        List<FolderNode> ancestors = store.ancestorsOf(folder);
+        for (int i = ancestors.size() - 1; i >= 0; i--) {
+            String folderUser = ancestors.get(i).getUser();
+            if (folderUser != null && !folderUser.isBlank()) {
+                return folderUser;
+            }
+        }
+        String global = AppSettings.get().getDefaultUsername();
+        return (global != null && !global.isBlank()) ? global : System.getProperty("user.name", "");
+    }
+
+    /**
+     * After a custom icon is deleted from the picker, reverts every folder/session that referenced
+     * it back to its type default (a null id), then persists and refreshes the tree.
+     */
+    private void revertDeletedIcon(String iconId) {
+        if (clearIconRefs(store.root(), iconId)) {
+            store.save();
+        }
+        rebuild();
+    }
+
+    /** Recursively nulls out any {@code iconId} reference under {@code folder}; returns whether any changed. */
+    private boolean clearIconRefs(FolderNode folder, String iconId) {
+        boolean changed = false;
+        if (iconId.equals(folder.getIconId())) {
+            folder.setIconId(null);
+            changed = true;
+        }
+        for (SessionNode child : folder.getChildren()) {
+            if (child instanceof FolderNode sub) {
+                changed |= clearIconRefs(sub, iconId);
+            } else if (iconId.equals(child.getIconId())) {
+                child.setIconId(null);
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     /** Shows the chosen icon, or {@code fallback} (the type default) when none is set. */
@@ -1014,6 +1100,9 @@ public final class SessionSidebar extends JPanel {
         JTextField host = new JTextField(cfg.getHost());
         JTextField port = new JTextField(String.valueOf(cfg.getPort()));
         JTextField user = new JTextField(cfg.getUser());
+        // Blank inherits from the folder chain / global default; show what that resolves to.
+        user.putClientProperty("JTextField.placeholderText",
+                "(inherit: " + store.effectiveUser(cfg) + ")");
         ToggleSwitch agent = new ToggleSwitch(cfg.isAgentForwarding());
 
         ToggleSwitch passwordAuth = new ToggleSwitch(cfg.isPasswordAuth());
@@ -1031,7 +1120,13 @@ public final class SessionSidebar extends JPanel {
         JButton iconBtn = new JButton();
         updateIconButton(iconBtn, iconId[0], fallback);
         iconBtn.addActionListener(a -> {
-            String picked = IconPickerDialog.pick(this);
+            String picked = IconPickerDialog.pick(this, deletedId -> {
+                revertDeletedIcon(deletedId);
+                if (deletedId.equals(iconId[0])) {
+                    iconId[0] = null;
+                    updateIconButton(iconBtn, iconId[0], fallback);
+                }
+            });
             if (picked != null) {
                 iconId[0] = picked.isEmpty() ? null : picked;
                 updateIconButton(iconBtn, iconId[0], fallback);
@@ -1051,26 +1146,8 @@ public final class SessionSidebar extends JPanel {
         JComboBox<HighlightListCombo.Option> highlightCombo = HighlightListCombo.perSession(
                 cfg.getHighlightListId(), HighlightLibrary.get().lists());
 
-        // Custom tab color: a swatch button to pick, plus Clear to fall back to the theme default.
-        Color[] tabColor = {decodeColorOrNull(cfg.getTabColorHex())};
-        JButton tabColorBtn = new JButton();
-        updateTabColorButton(tabColorBtn, tabColor[0]);
-        tabColorBtn.addActionListener(a -> {
-            Color picked = JColorChooser.showDialog(this, "Tab Color",
-                    tabColor[0] != null ? tabColor[0] : Color.GRAY);
-            if (picked != null) {
-                tabColor[0] = picked;
-                updateTabColorButton(tabColorBtn, picked);
-            }
-        });
-        JButton tabColorClear = new JButton("Clear");
-        tabColorClear.addActionListener(a -> {
-            tabColor[0] = null;
-            updateTabColorButton(tabColorBtn, null);
-        });
-        JPanel tabColorPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
-        tabColorPanel.add(tabColorBtn);
-        tabColorPanel.add(tabColorClear);
+        // Custom tab color: a swatch to pick, plus Clear to inherit (folder → global → theme default).
+        TabColorPicker tabColor = new TabColorPicker(cfg.getTabColorHex(), "Inherit");
 
         JPanel basic = formPanel();
         row(basic, "Name:", name);
@@ -1085,7 +1162,7 @@ public final class SessionSidebar extends JPanel {
         row(basic, "Password:", password);
         row(basic, "Run macro on connect:", macroCombo);
         row(basic, "Output highlighting:", highlightCombo);
-        row(basic, "Tab color:", tabColorPanel);
+        row(basic, "Tab color:", tabColor.component());
 
         // ---- Terminal settings ---- (blank fields inherit the application defaults)
         TerminalSettingsForm terminalSettings = new TerminalSettingsForm(true,
@@ -1121,7 +1198,7 @@ public final class SessionSidebar extends JPanel {
         MacroOption macro = (MacroOption) macroCombo.getSelectedItem();
         cfg.setMacroId(macro != null ? macro.id() : null);
         cfg.setHighlightListId(HighlightListCombo.selectedId(highlightCombo));
-        cfg.setTabColorHex(tabColor[0] != null ? String.format("#%06X", tabColor[0].getRGB() & 0xFFFFFF) : null);
+        cfg.setTabColorHex(tabColor.hex());
         cfg.setKeyPath(keyFile.path());
         applyPasswordSettings(cfg, passwordAuth.isSelected(), password.getPassword());
         applyJumpHosts(cfg, jumpHostsForm.results());
@@ -1154,31 +1231,6 @@ public final class SessionSidebar extends JPanel {
         return combo;
     }
 
-    /** Shows the chosen tab color as the button's background, or "Default" when none is set. */
-    private static void updateTabColorButton(JButton button, Color color) {
-        if (color != null) {
-            button.setText("      ");
-            button.setBackground(color);
-            button.setOpaque(true);
-            button.setToolTipText("Click to change the tab color");
-        } else {
-            button.setText("Default");
-            button.setBackground(null);
-            button.setOpaque(false);
-            button.setToolTipText("Click to choose a tab color");
-        }
-    }
-
-    private static Color decodeColorOrNull(String hex) {
-        if (hex == null || hex.isBlank()) {
-            return null;
-        }
-        try {
-            return Color.decode(hex);
-        } catch (NumberFormatException e) {
-            return null;
-        }
-    }
 
     private static JPanel formPanel() {
         return new JPanel(new GridLayout(0, 2, 6, 6));

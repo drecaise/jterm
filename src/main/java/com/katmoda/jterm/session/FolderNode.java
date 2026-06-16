@@ -11,6 +11,12 @@ public final class FolderNode implements SessionNode {
     private boolean expanded = true;
     private List<SessionNode> children = new ArrayList<>();
 
+    // Per-folder default SSH username and tab color, inherited by sessions beneath this folder
+    // (unless they or a nearer sub-folder override them). null/blank means "inherit" (fall back to
+    // an ancestor folder, then the global default).
+    private String user;
+    private String tabColorHex;
+
     public FolderNode() {
     }
 
@@ -53,5 +59,23 @@ public final class FolderNode implements SessionNode {
 
     public void setChildren(List<SessionNode> children) {
         this.children = (children != null) ? children : new ArrayList<>();
+    }
+
+    /** Per-folder default SSH username, or {@code null} to inherit. */
+    public String getUser() {
+        return user;
+    }
+
+    public void setUser(String user) {
+        this.user = (user != null && !user.isBlank()) ? user.trim() : null;
+    }
+
+    /** Per-folder default tab color as {@code "#RRGGBB"}, or {@code null} to inherit. */
+    public String getTabColorHex() {
+        return tabColorHex;
+    }
+
+    public void setTabColorHex(String tabColorHex) {
+        this.tabColorHex = (tabColorHex != null && !tabColorHex.isBlank()) ? tabColorHex : null;
     }
 }
