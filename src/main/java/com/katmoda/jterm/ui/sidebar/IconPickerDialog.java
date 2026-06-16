@@ -24,6 +24,8 @@ import javax.swing.ListSelectionModel;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
+import javax.swing.border.Border;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -35,10 +37,13 @@ import java.awt.Dialog;
 import java.awt.Dimension;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.KeyboardFocusManager;
 import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.event.ActionEvent;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -186,6 +191,39 @@ final class IconPickerDialog {
         scroll.getVerticalScrollBar().setUnitIncrement(CELL);
         scroll.setPreferredSize(new Dimension(COLUMNS * CELL + 28, 5 * CELL));
 
+        // Highlight the grid area with the focus accent (matching the search field's focused look)
+        // while either icon grid has keyboard focus, and auto-select the top-left builtin icon when
+        // the grid is tabbed into, so the arrow keys move it and Enter immediately confirms it.
+        Border restingBorder = scroll.getBorder();
+        Border focusedBorder = BorderFactory.createLineBorder(accentColor(), 2);
+        FocusAdapter gridFocus = new FocusAdapter() {
+            @Override
+            public void focusGained(FocusEvent e) {
+                scroll.setBorder(focusedBorder);
+                if (e.getComponent() == builtinList
+                        && builtinList.getSelectedIndex() < 0
+                        && customList.getSelectedIndex() < 0
+                        && !builtinModel.isEmpty()) {
+                    builtinList.setSelectedIndex(0);
+                    builtinList.ensureIndexIsVisible(0);
+                }
+            }
+
+            @Override
+            public void focusLost(FocusEvent e) {
+                // Keep the highlight while focus moves between the two grids; drop it otherwise.
+                SwingUtilities.invokeLater(() -> {
+                    Component owner = KeyboardFocusManager.getCurrentKeyboardFocusManager()
+                            .getFocusOwner();
+                    if (owner != builtinList && owner != customList) {
+                        scroll.setBorder(restingBorder);
+                    }
+                });
+            }
+        };
+        builtinList.addFocusListener(gridFocus);
+        customList.addFocusListener(gridFocus);
+
         JButton importBtn = new JButton("Import…");
         importBtn.addActionListener(e -> {
             if (importIcon(dialog)) {
@@ -199,6 +237,16 @@ final class IconPickerDialog {
         });
         JButton cancelBtn = new JButton("Cancel");
         cancelBtn.addActionListener(e -> dialog.dispose());
+
+        // Escape cancels, exactly like the Cancel button (leaves result null).
+        dialog.getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
+                .put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "cancel");
+        dialog.getRootPane().getActionMap().put("cancel", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                dialog.dispose();
+            }
+        });
 
         JPanel controls = new JPanel();
         controls.add(importBtn);
@@ -253,6 +301,11 @@ final class IconPickerDialog {
                 }
             }
         });
+    }
+
+    private static Color accentColor() {
+        Color c = UIManager.getColor("Component.focusColor");
+        return c != null ? c : new Color(0x4A90D9);
     }
 
     /** The index of the cell actually under {@code p} (ignoring clicks in the wrap gutter). */
