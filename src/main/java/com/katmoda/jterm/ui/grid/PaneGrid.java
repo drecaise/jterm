@@ -131,6 +131,48 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         return cols;
     }
 
+    public int activeRow() {
+        return activeRow;
+    }
+
+    public int activeCol() {
+        return activeCol;
+    }
+
+    /** A cell's coordinates and its restart factory, used to clone a grid's layout (duplicate tab). */
+    public record CellSpec(int row, int col, SessionFactory factory) {
+    }
+
+    /**
+     * Snapshot of every occupied cell that can be recreated: its position plus the
+     * {@link SessionFactory} that opens a fresh equivalent session. Cells without a factory
+     * (e.g. the SFTP browser) are omitted — they can't be duplicated.
+     */
+    public java.util.List<CellSpec> cellSpecs() {
+        java.util.List<CellSpec> specs = new java.util.ArrayList<>();
+        for (int r = 0; r < rows; r++) {
+            for (int c = 0; c < cols; c++) {
+                if (panes[r][c] != null && factories[r][c] != null) {
+                    specs.add(new CellSpec(r, c, factories[r][c]));
+                }
+            }
+        }
+        return specs;
+    }
+
+    /**
+     * Resize this (freshly created) grid to {@code rows}×{@code cols} with every cell empty and the
+     * given active cell, so {@link #placeSessionInCell} can fill specific cells as duplicated
+     * sessions connect (mirrors the empty-then-place flow of an async SSH tab).
+     */
+    public void prepareEmptyGrid(int rows, int cols, int activeRow, int activeCol) {
+        this.rows = Math.max(1, Math.min(MAX, rows));
+        this.cols = Math.max(1, Math.min(MAX, cols));
+        this.activeRow = Math.max(0, Math.min(this.rows - 1, activeRow));
+        this.activeCol = Math.max(0, Math.min(this.cols - 1, activeCol));
+        relayout();
+    }
+
     /** Whether the cell at (r,c) holds content (a terminal or the SFTP browser). */
     public boolean isCellOccupied(int r, int c) {
         return r >= 0 && r < rows && c >= 0 && c < cols && panes[r][c] != null;

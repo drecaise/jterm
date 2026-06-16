@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.katmoda.jterm.config.AppPaths;
 import com.katmoda.jterm.config.AppSettings;
+import com.katmoda.jterm.security.VaultKeys;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -140,5 +141,57 @@ public final class SessionStore {
             }
         }
         return AppSettings.get().getDefaultTabColorHex();
+    }
+
+    /**
+     * Resolves the effective SSH private-key path for {@code cfg} via the inheritance cascade: the
+     * session's own value, then ancestor folders nearest → root, then the global default. Returns
+     * {@code null} when nothing is set (fall back to the auto-discovered {@code ~/.ssh} identities).
+     */
+    public String effectiveKeyPath(SshSessionConfig cfg) {
+        String own = cfg.getKeyPath();
+        if (own != null && !own.isBlank()) {
+            return own;
+        }
+        List<FolderNode> ancestors = ancestorsOf(cfg);
+        for (int i = ancestors.size() - 1; i >= 0; i--) {
+            String folderKey = ancestors.get(i).getKeyPath();
+            if (folderKey != null && !folderKey.isBlank()) {
+                return folderKey;
+            }
+        }
+        String global = AppSettings.get().getDefaultKeyPath();
+        return (global != null && !global.isBlank()) ? global : null;
+    }
+
+    /**
+     * The credential-vault keys to consult, in priority order, for {@code cfg}'s SSH key
+     * passphrase: the session level, then ancestor folders nearest → root, then the global
+     * default. The first key the vault actually holds wins.
+     */
+    public List<String> keyPassphraseVaultKeys(SshSessionConfig cfg) {
+        List<String> keys = new ArrayList<>();
+        keys.add(VaultKeys.sessionKeyPassphrase(cfg.getId()));
+        List<FolderNode> ancestors = ancestorsOf(cfg);
+        for (int i = ancestors.size() - 1; i >= 0; i--) {
+            keys.add(VaultKeys.folderKeyPassphrase(ancestors.get(i).getId()));
+        }
+        keys.add(VaultKeys.GLOBAL_KEY_PASSPHRASE);
+        return keys;
+    }
+
+    /**
+     * The credential-vault keys to consult, in priority order, for {@code cfg}'s default-password
+     * fallback: ancestor folders nearest → root, then the global default. The session's own saved
+     * password is handled separately (it is gated by the session's {@code savePassword} flag).
+     */
+    public List<String> defaultPasswordVaultKeys(SshSessionConfig cfg) {
+        List<String> keys = new ArrayList<>();
+        List<FolderNode> ancestors = ancestorsOf(cfg);
+        for (int i = ancestors.size() - 1; i >= 0; i--) {
+            keys.add(VaultKeys.folderPassword(ancestors.get(i).getId()));
+        }
+        keys.add(VaultKeys.GLOBAL_PASSWORD);
+        return keys;
     }
 }

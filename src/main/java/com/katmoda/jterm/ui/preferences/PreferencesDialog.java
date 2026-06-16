@@ -1,8 +1,12 @@
 package com.katmoda.jterm.ui.preferences;
 
 import com.katmoda.jterm.config.AppSettings;
+import com.katmoda.jterm.security.VaultException;
+import com.katmoda.jterm.security.VaultKeys;
+import com.katmoda.jterm.security.VaultManager;
 import com.katmoda.jterm.ui.component.HighlightListCombo;
 import com.katmoda.jterm.ui.component.HighlightListsForm;
+import com.katmoda.jterm.ui.component.KeyFileField;
 import com.katmoda.jterm.ui.component.TabColorPicker;
 import com.katmoda.jterm.ui.component.TerminalSettingsForm;
 import com.katmoda.jterm.ui.component.ToggleSwitch;
@@ -12,6 +16,7 @@ import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JPasswordField;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
 import java.awt.BorderLayout;
@@ -82,11 +87,26 @@ public final class PreferencesDialog {
         // them unset. (Sessions and folders can still override these.)
         JTextField defaultUser = new JTextField(settings.getDefaultUsername(), 16);
         TabColorPicker defaultTabColor = new TabColorPicker(settings.getDefaultTabColorHex(), "Default");
+        KeyFileField defaultKeyFile = new KeyFileField(settings.getDefaultKeyPath());
+        defaultKeyFile.setPlaceholder("(none — use ~/.ssh identities)");
+        var vault = VaultManager.get().vault();
+        JPasswordField defaultKeyPassphrase = new JPasswordField(16);
+        defaultKeyPassphrase.putClientProperty("JTextField.placeholderText",
+                vault.hasPassword(VaultKeys.GLOBAL_KEY_PASSPHRASE)
+                        ? "(leave blank to keep saved)" : "(none)");
+        JPasswordField defaultPassword = new JPasswordField(16);
+        defaultPassword.putClientProperty("JTextField.placeholderText",
+                vault.hasPassword(VaultKeys.GLOBAL_PASSWORD)
+                        ? "(leave blank to keep saved)" : "(none)");
         JPanel sessionDefaults = new JPanel(new GridBagLayout());
         int sdRow = 0;
         addFieldRow(sessionDefaults, sdRow++, "Default username:", defaultUser);
         addFieldRow(sessionDefaults, sdRow++, "Default tab color:", defaultTabColor.component());
+        addWideFieldRow(sessionDefaults, sdRow++, "Default key file:", defaultKeyFile.component());
+        addFieldRow(sessionDefaults, sdRow++, "Default key passphrase:", defaultKeyPassphrase);
+        addFieldRow(sessionDefaults, sdRow++, "Default password:", defaultPassword);
         addHint(sessionDefaults, sdRow++, "Used by folders and sessions that don't set their own."
+                + " Passphrase and password are stored encrypted in the credential vault."
                 + " Applies to newly opened sessions.");
 
         JTabbedPane tabs = new JTabbedPane();
@@ -111,7 +131,28 @@ public final class PreferencesDialog {
         settings.setGlobalHighlightListId(HighlightListCombo.selectedId(highlightDefault));
         settings.setDefaultUsername(defaultUser.getText());
         settings.setDefaultTabColorHex(defaultTabColor.hex());
+        settings.setDefaultKeyPath(defaultKeyFile.path());
+        applyVaultSecret(parent, VaultKeys.GLOBAL_KEY_PASSPHRASE, defaultKeyPassphrase.getPassword());
+        applyVaultSecret(parent, VaultKeys.GLOBAL_PASSWORD, defaultPassword.getPassword());
         settings.save();
+    }
+
+    /**
+     * Saves a typed secret to the vault under {@code vaultKey}; a blank field keeps any already-saved
+     * value. Clears {@code entered} afterwards. Unlocks the vault on demand (only when something is
+     * actually being saved).
+     */
+    private static void applyVaultSecret(Component parent, String vaultKey, char[] entered) {
+        if (entered.length > 0 && VaultManager.get().ensureUnlocked(parent)) {
+            try {
+                VaultManager.get().vault().setPassword(vaultKey, entered);
+            } catch (VaultException e) {
+                JOptionPane.showMessageDialog(parent,
+                        "Could not save the secret:\n" + e.getMessage(),
+                        "jterm", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+        java.util.Arrays.fill(entered, '\0');
     }
 
     /** A "Label:   [toggle]" row: label on the left, toggle at its natural size on the right. */
@@ -142,6 +183,22 @@ public final class PreferencesDialog {
         g.gridx = 1;
         g.weightx = 1;
         g.fill = GridBagConstraints.NONE;
+        g.insets = new Insets(4, 0, 4, 4);
+        form.add(field, g);
+    }
+
+    /** As {@link #addFieldRow}, but stretches {@code field} to fill the column (for wide inputs). */
+    private static void addWideFieldRow(JPanel form, int row, String label, Component field) {
+        GridBagConstraints g = new GridBagConstraints();
+        g.gridx = 0;
+        g.gridy = row;
+        g.anchor = GridBagConstraints.WEST;
+        g.insets = new Insets(4, 4, 4, 10);
+        form.add(new JLabel(label), g);
+
+        g.gridx = 1;
+        g.weightx = 1;
+        g.fill = GridBagConstraints.HORIZONTAL;
         g.insets = new Insets(4, 0, 4, 4);
         form.add(field, g);
     }

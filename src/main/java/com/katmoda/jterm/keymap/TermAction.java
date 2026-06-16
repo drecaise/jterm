@@ -20,7 +20,10 @@ public enum TermAction {
     MOVE_SESSION_UP("move-session-up", "Move Session Up", "control shift UP"),
     MOVE_SESSION_DOWN("move-session-down", "Move Session Down", "control shift DOWN"),
     MOVE_TAB_LEFT("move-tab-left", "Move Tab Left", "control shift LEFT"),
-    MOVE_TAB_RIGHT("move-tab-right", "Move Tab Right", "control shift RIGHT");
+    MOVE_TAB_RIGHT("move-tab-right", "Move Tab Right", "control shift RIGHT"),
+    DUPLICATE_TAB("duplicate-tab", "Duplicate Tab", "control shift K"),
+    DETACH_TAB("detach-tab", "Detach Tab to New Window", "control shift O"),
+    ATTACH_TAB("attach-tab", "Attach Tab to Main Window", "control shift I");
 
     private final String id;
     private final String label;

@@ -36,6 +36,11 @@ public final class KeyFileField {
         return panel;
     }
 
+    /** Overrides the empty-field placeholder text (e.g. to show an inherited default). */
+    public void setPlaceholder(String text) {
+        path.putClientProperty("JTextField.placeholderText", text);
+    }
+
     /** The entered key-file path, trimmed; empty for none. */
     public String path() {
         return path.getText().trim();

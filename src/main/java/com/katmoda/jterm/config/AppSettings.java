@@ -65,6 +65,12 @@ public final class AppSettings {
     private String defaultUsername = System.getProperty("user.name", "");
     private String defaultTabColorHex = null;
 
+    // Global default SSH private-key path, inherited by folders/sessions that leave their key path
+    // blank. "" means none configured (fall back to the auto-discovered ~/.ssh identities). The
+    // matching passphrase (and the global default password) are secrets, kept in the credential
+    // vault rather than here — see security.VaultKeys.
+    private String defaultKeyPath = "";
+
     public AppSettings() {
     }
 
@@ -221,6 +227,15 @@ public final class AppSettings {
                 (defaultTabColorHex != null && !defaultTabColorHex.isBlank()) ? defaultTabColorHex : null;
     }
 
+    /** The global default SSH private-key path, or {@code ""} if none is configured. */
+    public String getDefaultKeyPath() {
+        return defaultKeyPath;
+    }
+
+    public void setDefaultKeyPath(String defaultKeyPath) {
+        this.defaultKeyPath = (defaultKeyPath != null) ? defaultKeyPath.trim() : "";
+    }
+
     /** The application-wide default terminal profile (used by the local terminal). */
     public TerminalProfile defaultProfile() {
         return TerminalProfile.from(defaultTerminalType, defaultCharset, defaultFontFamily, defaultFontSize);
@@ -250,7 +265,8 @@ public final class AppSettings {
                             defaultTerminalType, defaultCharset, defaultFontFamily, defaultFontSize,
                             globalHighlightListId, darkTheme, windowMaximized, sidebarWidth,
                             windowX, windowY, windowWidth, windowHeight,
-                            defaultUsername, defaultTabColorHex, openTerminalOnStartup));
+                            defaultUsername, defaultTabColorHex, openTerminalOnStartup,
+                            defaultKeyPath));
         } catch (Exception ignored) {
             // Settings are a convenience; a failed write shouldn't break the app.
         }
@@ -284,6 +300,9 @@ public final class AppSettings {
                     settings.defaultUsername = p.defaultUsername.trim();
                 }
                 settings.setDefaultTabColorHex(p.defaultTabColorHex);
+                if (p.defaultKeyPath != null) {
+                    settings.defaultKeyPath = p.defaultKeyPath.trim();
+                }
                 if (p.darkTheme != null) {
                     settings.darkTheme = p.darkTheme;
                 }
@@ -326,6 +345,6 @@ public final class AppSettings {
                              Integer windowX, Integer windowY,
                              Integer windowWidth, Integer windowHeight,
                              String defaultUsername, String defaultTabColorHex,
-                             Boolean openTerminalOnStartup) {
+                             Boolean openTerminalOnStartup, String defaultKeyPath) {
     }
 }

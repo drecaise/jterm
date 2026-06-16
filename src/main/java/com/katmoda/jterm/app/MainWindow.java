@@ -8,9 +8,8 @@ import com.katmoda.jterm.macro.Macro;
 import com.katmoda.jterm.macro.MacroLibrary;
 import com.katmoda.jterm.macro.MacroRunner;
 import com.katmoda.jterm.security.VaultException;
+import com.katmoda.jterm.security.VaultKeys;
 import com.katmoda.jterm.security.VaultManager;
-import com.katmoda.jterm.dnd.PaneTransferable;
-import com.katmoda.jterm.dnd.TabTransferable;
 import com.katmoda.jterm.session.JumpHostConfig;
 import com.katmoda.jterm.session.SessionNode;
 import com.katmoda.jterm.session.SessionStore;
@@ -21,7 +20,6 @@ import com.katmoda.jterm.session.TunnelStore;
 import com.katmoda.jterm.terminal.SessionFactory;
 import com.katmoda.jterm.terminal.local.LocalSession;
 import com.katmoda.jterm.terminal.TerminalProfile;
-import com.katmoda.jterm.terminal.TerminalSession;
 import com.katmoda.jterm.terminal.ssh.SshConnect;
 import com.katmoda.jterm.terminal.ssh.SshSession;
 import com.katmoda.jterm.terminal.ssh.TunnelManager;
@@ -30,9 +28,7 @@ import com.katmoda.jterm.ui.AgentKeysDialog;
 import com.katmoda.jterm.ui.ErrorDialog;
 import com.katmoda.jterm.ui.grid.GridContent;
 import com.katmoda.jterm.ui.grid.PaneGrid;
-import com.katmoda.jterm.ui.grid.TabActivityIcon;
 import com.katmoda.jterm.ui.macro.MacroManagerDialog;
-import com.katmoda.jterm.ui.pane.PaneActivity;
 import com.katmoda.jterm.ui.pane.TerminalPane;
 import com.katmoda.jterm.ui.sftp.SftpLauncher;
 import com.katmoda.jterm.ui.tunnel.TunnelManagerDialog;
@@ -41,51 +37,32 @@ import com.katmoda.jterm.ui.preferences.ShortcutsDialog;
 import com.katmoda.jterm.ui.security.MasterPasswordDialog;
 import com.katmoda.jterm.ui.sidebar.OpenMode;
 import com.katmoda.jterm.ui.sidebar.SessionSidebar;
-import com.katmoda.jterm.ui.SessionIcon;
+import com.katmoda.jterm.ui.tabs.TabPane;
 import com.katmoda.jterm.ui.theme.ThemeManager;
 
 import javax.swing.Icon;
-import javax.swing.JButton;
 import javax.swing.JFrame;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
-import javax.swing.JPanel;
 import javax.swing.JSplitPane;
-import javax.swing.JTabbedPane;
 import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 import java.awt.BorderLayout;
-import java.awt.Color;
-import java.awt.Component;
 import java.awt.GraphicsDevice;
 import java.awt.GraphicsEnvironment;
-import java.awt.Insets;
-import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.Taskbar;
 import java.awt.KeyboardFocusManager;
-import java.awt.dnd.DnDConstants;
-import java.awt.dnd.DragGestureListener;
-import java.awt.dnd.DragSource;
-import java.awt.dnd.DropTarget;
-import java.awt.dnd.DropTargetAdapter;
-import java.awt.dnd.DropTargetDragEvent;
-import java.awt.dnd.DropTargetDropEvent;
-import java.awt.dnd.InvalidDnDOperationException;
 import java.awt.event.KeyEvent;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
-import java.awt.event.MouseListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 /**
@@ -97,21 +74,13 @@ import java.util.function.Consumer;
  * The dispatcher consumes matching events, preventing duplicate firing via menu
  * accelerators (which are shown only for discoverability).</p>
  */
-public final class MainWindow {
+public final class MainWindow implements TerminalWindow, TerminalServices {
 
     private final JFrame frame = new JFrame("jterm");
-    private final JTabbedPane tabs = new JTabbedPane();
     private final SessionStore sessionStore = new SessionStore();
     private final Keymap keymap = Keymap.loadOrDefaults();
+    private final TabPane tabPane;
 
-    /** Permanent trailing tab that hosts the "+" button, keeping it right after the last tab. */
-    private final JPanel plusPlaceholder = new JPanel();
-    private JButton plusButton;
-    /** Tab selected immediately before the current mouse press, captured so a tab drag can keep the
-     *  previously-active grid visible as the drop target instead of switching to the dragged tab. */
-    private int selectedBeforePress = -1;
-
-    private int tabCounter = 0;
     /** While true, the global terminal-shortcut dispatcher stands down so the editor can capture keys. */
     private boolean shortcutCaptureActive = false;
     private SessionSidebar sidebar;
@@ -120,13 +89,18 @@ public final class MainWindow {
      *  still persists the monitor + size to reopen at when un-maximized. */
     private Rectangle lastNormalBounds;
 
+    public MainWindow() {
+        // Register before building the tab pane: the WindowManager is the shared registry every
+        // window (and the global shortcut dispatcher) consults.
+        WindowManager.get().registerMain(this);
+        this.tabPane = new TabPane(this, this);
+    }
+
     public void show() {
         sidebar = new SessionSidebar(sessionStore, this::openSshSession,
                 this::openLocalInCurrent, this::openWslSession, this::openSftpForConfig);
 
-        configureTabs();
-
-        split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, sidebar, tabs);
+        split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, sidebar, tabPane);
         split.setDividerLocation(AppSettings.get().getSidebarWidth());
         split.setResizeWeight(0.0);
 
@@ -166,29 +140,18 @@ public final class MainWindow {
         installShortcutDispatcher();
 
         // Refresh active-pane accent borders and re-decorate tabs (so the themed local-terminal
-        // icon swaps) across all tabs when the theme switches.
+        // icon swaps) across every window's tabs when the theme switches.
         ThemeManager.get().addListener(theme -> {
-            for (int i = 0; i < tabs.getTabCount(); i++) {
-                if (tabs.getComponentAt(i) instanceof PaneGrid grid) {
-                    grid.refreshTheme();
-                    grid.applyTheme(theme);
-                }
+            for (TerminalWindow window : WindowManager.get().windows()) {
+                window.tabPane().refreshThemeAllTabs(theme);
             }
         });
 
         // Open the initial local terminal unless the user opted out (then the window starts with
         // only the "+" placeholder; the selection guard recreates a tab once one is closed to zero).
         if (AppSettings.get().isOpenTerminalOnStartup()) {
-            addTab();
+            tabPane.addTab();
         }
-        // Attached only after the first real tab exists so the placeholder's transient
-        // auto-selection during setup doesn't trigger a spurious extra tab.
-        tabs.addChangeListener(e -> {
-            guardPlusSelection();
-            updateForegroundStates();
-        });
-        // Mark the initial tab as foreground (it won't accrue activity while visible).
-        updateForegroundStates();
 
         frame.setVisible(true);
 
@@ -265,347 +228,60 @@ public final class MainWindow {
         }
     }
 
-    private void configureTabs() {
-        // Card-style tabs: each tab is drawn as a bordered "card" so they read as real tabs.
-        tabs.putClientProperty("JTabbedPane.tabType", "card");
-        tabs.putClientProperty("JTabbedPane.tabClosable", true);
-        BiConsumer<JTabbedPane, Integer> closeCallback = (pane, index) -> closeTabAt(index);
-        tabs.putClientProperty("JTabbedPane.tabCloseCallback", closeCallback);
-        installPlusTab();
-        installTabDnd();
+    // ---- TerminalWindow / TerminalServices ----
+
+    @Override
+    public JFrame frame() {
+        return frame;
     }
 
-    /**
-     * Adds a permanent, non-closable trailing tab whose tab-component is a compact "+" button,
-     * so "new tab" sits immediately right of the last real tab (the browser pattern) rather than
-     * pinned to the far edge. The placeholder never holds content; {@link #guardPlusSelection()}
-     * keeps it from becoming the active tab.
-     */
-    private void installPlusTab() {
-        plusPlaceholder.putClientProperty("JTabbedPane.tabClosable", false);
-        tabs.addTab(null, plusPlaceholder);
-        plusButton = buildNewTabButton();
-        tabs.setTabComponentAt(tabs.indexOfComponent(plusPlaceholder), plusButton);
-        installNewTabDropTarget(plusButton);
+    @Override
+    public TabPane tabPane() {
+        return tabPane;
     }
 
-    /** Dropping a dragged pane on "+" pulls it out of its split into a brand-new tab. */
-    private void installNewTabDropTarget(JButton button) {
-        new DropTarget(button, DnDConstants.ACTION_MOVE, new DropTargetAdapter() {
-            @Override
-            public void dragOver(DropTargetDragEvent dtde) {
-                if (dtde.isDataFlavorSupported(PaneTransferable.PANE_FLAVOR)) {
-                    dtde.acceptDrag(DnDConstants.ACTION_MOVE);
-                } else {
-                    dtde.rejectDrag();
-                }
-            }
-
-            @Override
-            public void drop(DropTargetDropEvent dtde) {
-                try {
-                    if (!dtde.isDataFlavorSupported(PaneTransferable.PANE_FLAVOR)) {
-                        dtde.rejectDrop();
-                        return;
-                    }
-                    dtde.acceptDrop(DnDConstants.ACTION_MOVE);
-                    TerminalPane pane = (TerminalPane) dtde.getTransferable()
-                            .getTransferData(PaneTransferable.PANE_FLAVOR);
-                    movePaneToNewTab(pane);
-                    dtde.dropComplete(true);
-                } catch (Exception e) {
-                    dtde.dropComplete(false);
-                }
-            }
-        });
+    @Override
+    public boolean isMain() {
+        return true;
     }
 
-    private JButton buildNewTabButton() {
-        JButton button = new JButton("+");
-        button.setToolTipText(newTabTooltip());
-        button.putClientProperty("JButton.buttonType", "toolBarButton");
-        button.setFocusable(false);
-        button.setMargin(new Insets(0, 5, 0, 5));
-        button.addActionListener(e -> addTab());
-        return button;
+    @Override
+    public Keymap keymap() {
+        return keymap;
     }
 
-    private String newTabTooltip() {
-        KeyStroke ks = keymap.strokeFor(TermAction.NEW_TAB);
-        if (ks == null) {
-            return "New tab";
-        }
-        String mods = KeyEvent.getModifiersExText(ks.getModifiers());
-        String key = KeyEvent.getKeyText(ks.getKeyCode());
-        String accel = mods.isBlank() ? key : mods + "+" + key;
-        return "New tab (" + accel + ")";
+    @Override
+    public String effectiveTabColorHex(SshSessionConfig cfg) {
+        return sessionStore.effectiveTabColorHex(cfg);
     }
 
-    // ---- tabs ----
-
-    private void addTab() {
-        PaneGrid grid = newGrid();
-        insertGrid(grid);
-        grid.openInitialLocal();
-    }
-
-    /** Opens an SSH session in a fresh tab: shows the session's name/icon, then connects async. */
-    private void addSshTab(SshSessionConfig cfg) {
-        PaneGrid grid = newGrid();
-        int at = insertGrid(grid);
-        // Immediate feedback before the (off-EDT) connection completes.
-        tabs.setTitleAt(at, cfg.getName());
-        tabs.setIconAt(at, iconFor(cfg.getIconId()));
-        setTabColor(at, sessionStore.effectiveTabColorHex(cfg));
-        grid.initEmpty();
-        connectAsync(cfg, session -> grid.placeSessionInActive(session, sshFactory(cfg)));
-    }
-
-    private PaneGrid newGrid() {
-        PaneGrid grid = new PaneGrid();
-        // A dropped SSH session connects off-EDT; the grid then places it (split a pane or fill an
-        // empty cell). The factory is paired with the session so a restart can reconnect it.
-        grid.setDropHandler((cfg, placer) ->
-                connectAsync(cfg, session -> placer.accept(session, sshFactory(cfg))));
-        grid.setOnActiveChanged(() -> decorateTab(grid));
-        // Re-decorate the tab when a background pane gains output / disconnects (or is cleared).
-        grid.setOnActivity(() -> decorateTab(grid));
-        // When the last pane is closed from the stopped screen, close the tab too.
-        grid.setOnEmpty(() -> closeTabForGrid(grid));
-        // Lets this grid adopt a pane dragged in from another tab (detach it from its source first).
-        grid.setMoveCoordinator(this::detachFromOwner);
-        return grid;
-    }
-
-    // ---- pane moves between tabs (drag a pane out / a tab into a grid) ----
-
-    /** Pull a pane out of its split into a new tab. No-op if it's the only pane in its tab. */
-    private void movePaneToNewTab(TerminalPane pane) {
-        PaneGrid owner = gridContaining(pane);
-        if (owner == null || owner.paneCount() <= 1) {
-            return;
-        }
-        SessionFactory factory = owner.detachForMove(pane);
-        if (factory == null) {
-            return;
-        }
-        PaneGrid grid = newGrid();
-        insertGrid(grid);
-        grid.adopt(pane, factory);
-        decorateTab(grid);
-    }
-
-    /**
-     * Detach a pane from whichever tab's grid owns it (without closing it), closing that tab if it
-     * empties. Used by a destination grid to take ownership of a pane dragged in from another tab.
-     */
-    private SessionFactory detachFromOwner(TerminalPane pane) {
-        PaneGrid owner = gridContaining(pane);
-        if (owner == null) {
-            return null;
-        }
-        SessionFactory factory = owner.detachForMove(pane);
-        if (owner.paneCount() == 0) {
-            closeTabForGrid(owner);
-        }
-        return factory;
-    }
-
-    /** The tab grid that currently holds {@code pane}, or {@code null}. */
-    private PaneGrid gridContaining(TerminalPane pane) {
-        for (int i = 0; i <= lastRealTabIndex(); i++) {
-            if (tabs.getComponentAt(i) instanceof PaneGrid grid && grid.contains(pane)) {
-                return grid;
-            }
-        }
-        return null;
-    }
-
-    /** Closes the tab hosting {@code grid}, if it's still present. */
-    private void closeTabForGrid(PaneGrid grid) {
-        int index = tabs.indexOfComponent(grid);
-        if (index >= 0) {
-            closeTabAt(index);
-        }
-    }
-
-    /** A factory that reconnects this SSH session (async, with re-auth) for restart. */
-    private SessionFactory sshFactory(SshSessionConfig cfg) {
-        return onReady -> connectAsync(cfg, onReady::accept);
-    }
-
-    /** Inserts a grid as a new tab right before the "+" placeholder and selects it. */
-    private int insertGrid(PaneGrid grid) {
-        String base = "Terminal " + (++tabCounter);
-        grid.putClientProperty("baseTitle", base);
-        int at = plusIndex();
-        tabs.insertTab(base, null, grid, null, at);
-        tabs.setSelectedIndex(at);
-        return at;
-    }
-
-    private void closeCurrentTab() {
-        int index = tabs.getSelectedIndex();
-        if (index >= 0) {
-            closeTabAt(index);
-        }
-    }
-
-    private void closeTabAt(int index) {
-        if (index < 0 || index >= tabs.getTabCount()
-                || tabs.getComponentAt(index) == plusPlaceholder) {
-            return;
-        }
-        if (tabs.getComponentAt(index) instanceof PaneGrid grid) {
-            grid.disposeAll();
-        }
-        tabs.removeTabAt(index);
-        // When the last real tab goes, removing it selects the placeholder; the selection
-        // guard then recreates a fresh tab, so no explicit re-add is needed here.
-    }
-
-    /** Index of the "+" placeholder, which always trails the real tabs. */
-    private int plusIndex() {
-        return tabs.indexOfComponent(plusPlaceholder);
-    }
-
-    private int realTabCount() {
-        return tabs.getTabCount() - (plusIndex() >= 0 ? 1 : 0);
-    }
-
-    /** Keep the "+" placeholder from ever being the active tab. */
-    private void guardPlusSelection() {
-        int plus = plusIndex();
-        if (tabs.getSelectedIndex() != plus) {
-            return;
-        }
-        if (realTabCount() == 0) {
-            // Closing the last tab normally springs a fresh one back; honor the startup preference
-            // instead, so opting out of a startup terminal also leaves an empty window here (the
-            // "+" placeholder stays selected; the button and drag-drop still open new tabs).
-            if (AppSettings.get().isOpenTerminalOnStartup()) {
-                addTab();
-            }
-        } else {
-            tabs.setSelectedIndex(plus - 1);
-        }
-    }
-
-    private PaneGrid currentGrid() {
-        return (tabs.getSelectedComponent() instanceof PaneGrid grid) ? grid : null;
-    }
-
-    /** Sets a tab's icon + title from its active pane's session (SSH icon/name, or themed local). */
-    private void decorateTab(PaneGrid grid) {
-        int idx = tabs.indexOfComponent(grid);
-        if (idx < 0) {
-            return;
-        }
-        GridContent content = grid.activeContent();
-        if (content == null) {
-            return; // leave the current label (e.g. an SSH tab that's still connecting)
-        }
-        if (!(content instanceof TerminalPane pane)) {
-            // A non-terminal cell (the SFTP browser): generic folder icon + its own label.
-            tabs.setIconAt(idx, IconLibrary.get().icon("builtin/folder", 16));
-            tabs.setTitleAt(idx, content.displayTitle());
-            setTabColor(idx, null);
-            applyActivityIndicator(idx, grid, content);
-            return;
-        }
-        TerminalSession session = pane.session();
-        tabs.setIconAt(idx, SessionIcon.forSession(session, 16));
-        if (session instanceof SshSession ssh) {
-            tabs.setTitleAt(idx, ssh.title());
-            setTabColor(idx, ssh.tabColorHex());
-        } else {
-            LocalSession local = (session instanceof LocalSession ls) ? ls : null;
-            boolean customLocal = local != null && local.iconId() != null;
-            // A WSL distro (a custom-icon local session) carries its own name; a plain shell uses
-            // the tab's generic base title ("Terminal N"). Deriving both from the active pane keeps
-            // the title tracking the focused split the same way the icon already does.
-            Object base = grid.getClientProperty("baseTitle");
-            String title = customLocal ? session.title()
-                    : (base != null ? base.toString() : session.title());
-            tabs.setTitleAt(idx, title);
-            setTabColor(idx, null);
-        }
-        applyActivityIndicator(idx, grid, content);
-    }
-
-    /**
-     * Overlays the background-activity indicator on a tab. A split tab (more than one pane) shows a
-     * dot-grid icon mirroring its layout, leaving the title default. A single-pane tab keeps its
-     * session icon and recolors the title text (light blue = unread output, red = disconnected,
-     * default = nothing new). The icon was already set by {@link #decorateTab}, so only multi-pane
-     * tabs replace it here.
-     */
-    private void applyActivityIndicator(int idx, PaneGrid grid, GridContent active) {
-        if (grid.paneCount() > 1) {
-            tabs.setIconAt(idx, new TabActivityIcon(grid));
-            tabs.setForegroundAt(idx, null);
-        } else {
-            PaneActivity activity = (active instanceof TerminalPane pane)
-                    ? pane.activity() : PaneActivity.NONE;
-            tabs.setForegroundAt(idx, titleColorFor(activity));
-        }
-    }
-
-    /** Tab-title color for an activity state, or {@code null} (theme default) when nothing's new. */
-    private static Color titleColorFor(PaneActivity activity) {
-        return switch (activity) {
-            case NEW_OUTPUT -> TabActivityIcon.NEW_OUTPUT_COLOR;
-            case DISCONNECTED -> TabActivityIcon.DISCONNECTED_COLOR;
-            case NONE -> null;
-        };
-    }
-
-    /** Marks the selected tab's grid foreground (clearing its indicator) and the rest background. */
-    private void updateForegroundStates() {
-        Component selected = tabs.getSelectedComponent();
-        for (int i = 0; i <= lastRealTabIndex(); i++) {
-            if (tabs.getComponentAt(i) instanceof PaneGrid grid) {
-                grid.setForeground(grid == selected);
-            }
-        }
-    }
-
-    /**
-     * Applies a custom tab background (or clears it to the theme default when {@code hex} is null).
-     * A custom color is a plain {@code Color}, so it intentionally persists across theme toggles;
-     * the default is restored by passing {@code null}, which lets the tab follow the theme again.
-     */
-    private void setTabColor(int idx, String hex) {
-        if (idx < 0 || idx >= tabs.getTabCount()) {
-            return;
-        }
-        Color color = null;
-        if (hex != null && !hex.isBlank()) {
-            try {
-                color = Color.decode(hex);
-            } catch (NumberFormatException ignored) {
-                // Malformed color → fall back to the default.
-            }
-        }
-        tabs.setBackgroundAt(idx, color);
-    }
-
-    private Icon iconFor(String iconId) {
+    @Override
+    public Icon iconFor(String iconId) {
         String id = (iconId != null && !iconId.isBlank()) ? iconId : "builtin/server";
         return IconLibrary.get().icon(id, 16);
     }
 
     // ---- session opening ----
 
-    private void openLocalInCurrent() {
-        openLocalInCurrent(OpenMode.ACTIVE);
+    /** OPEN_LOCAL shortcut: open a local shell in the focused window's active cell. */
+    private void openLocalInFocused() {
+        TabPane active = WindowManager.get().focusedTabPane();
+        if (active == null) {
+            return;
+        }
+        PaneGrid grid = active.currentGrid();
+        if (grid == null) {
+            active.addTab();
+        } else {
+            grid.openLocalInActive();
+        }
     }
 
     private void openLocalInCurrent(OpenMode mode) {
-        PaneGrid grid = currentGrid();
+        PaneGrid grid = tabPane.currentGrid();
         if (grid == null) {
             // No open tab (e.g. the startup terminal was suppressed): open one in a fresh tab.
-            addTab();
+            tabPane.addTab();
             return;
         }
         switch (mode) {
@@ -617,15 +293,15 @@ public final class MainWindow {
 
     private void openSshSession(SshSessionConfig cfg, OpenMode mode) {
         if (mode == OpenMode.NEW_TAB) {
-            addSshTab(cfg);
+            tabPane.addSshTab(cfg);
             return;
         }
-        PaneGrid grid = currentGrid();
+        PaneGrid grid = tabPane.currentGrid();
         if (grid == null) {
             return;
         }
         connectAsync(cfg, session -> {
-            SessionFactory factory = sshFactory(cfg);
+            SessionFactory factory = tabPane.sshFactory(cfg);
             switch (mode) {
                 case ACTIVE -> grid.placeSessionInActive(session, factory);
                 case SPLIT_COLUMN -> grid.splitColumnAndOpen(session, factory);
@@ -642,7 +318,8 @@ public final class MainWindow {
      * authenticated session — no re-auth). No-op unless the active pane is an SSH terminal.
      */
     private void openSftpForActivePane() {
-        PaneGrid grid = currentGrid();
+        TabPane host = WindowManager.get().focusedTabPane();
+        PaneGrid grid = host != null ? host.currentGrid() : null;
         if (grid == null || !(grid.activePane() instanceof TerminalPane pane)
                 || !(pane.session() instanceof SshSession ssh)) {
             return;
@@ -658,9 +335,10 @@ public final class MainWindow {
     private void openSftpForConfig(SshSessionConfig cfg) {
         String password = resolvePassword(cfg);
         String effectiveUser = sessionStore.effectiveUser(cfg);
+        String effectiveKeyPath = sessionStore.effectiveKeyPath(cfg);
         String label = (!effectiveUser.isBlank() ? effectiveUser + "@" : "") + cfg.getHost();
         SftpLauncher.openFresh(cfg.getHost(), cfg.getPort(), effectiveUser, password,
-                cfg.getKeyPath(), keyPassphraseProvider(), label,
+                effectiveKeyPath, keyPassphraseProvider(cfg, effectiveKeyPath), label,
                 this::placeSftp,
                 cause -> ErrorDialog.show(frame, "SFTP", "SFTP connection failed:", cause));
     }
@@ -670,16 +348,20 @@ public final class MainWindow {
      * an empty cell), or a new tab when the grid is full.
      */
     private void placeSftp(GridContent content) {
-        PaneGrid grid = currentGrid();
+        TabPane host = WindowManager.get().focusedTabPane();
+        if (host == null) {
+            host = tabPane;
+        }
+        PaneGrid grid = host.currentGrid();
         if (grid != null && grid.openContentInBestSplit(content)) {
-            decorateTab(grid);
+            host.decorateTab(grid);
             return;
         }
-        PaneGrid fresh = newGrid();
-        insertGrid(fresh);
+        PaneGrid fresh = host.newGrid();
+        host.insertGrid(fresh);
         fresh.initEmpty();
         fresh.placeContentInActive(content);
-        decorateTab(fresh);
+        host.decorateTab(fresh);
     }
 
     /** Opens a detected WSL2 distribution (synchronously — it's a local pty, no network connect). */
@@ -688,7 +370,7 @@ public final class MainWindow {
             addWslTab(distro);
             return;
         }
-        PaneGrid grid = currentGrid();
+        PaneGrid grid = tabPane.currentGrid();
         if (grid == null) {
             return;
         }
@@ -711,8 +393,8 @@ public final class MainWindow {
         if (session == null) {
             return;
         }
-        PaneGrid grid = newGrid();
-        insertGrid(grid);
+        PaneGrid grid = tabPane.newGrid();
+        tabPane.insertGrid(grid);
         // The tab keeps its generic "Terminal N" base title (for any plain shell split into it);
         // decorateTab names the WSL pane itself from the session (the distro).
         grid.initEmpty();
@@ -740,23 +422,26 @@ public final class MainWindow {
     }
 
     /** Connect an SSH session off the EDT, then hand the live session to {@code onConnected} on the EDT. */
-    private void connectAsync(SshSessionConfig cfg, Consumer<SshSession> onConnected) {
+    @Override
+    public void connectAsync(SshSessionConfig cfg, Consumer<SshSession> onConnected) {
         // Resolve any passwords on the EDT first — they may unlock the vault or prompt. The
         // target and every jump host are resolved up front so the background connect needs no UI.
         String password = resolvePassword(cfg);
         List<SshConnect.HostHop> jumpHosts = resolveJumpHosts(cfg);
-        SshConnect.PassphraseProvider passphrases = keyPassphraseProvider();
-        // Resolve the inherited username/tab color (session → folder chain → global default) on the
-        // EDT, since it walks the live session tree.
+        // Resolve the inherited username / tab color / key path (session → folder chain → global
+        // default) on the EDT, since it walks the live session tree. The saved key passphrase (if
+        // any) is read from the vault here too, so the background connect needs no UI on attempt 0.
         String effectiveUser = sessionStore.effectiveUser(cfg);
         String effectiveTabColorHex = sessionStore.effectiveTabColorHex(cfg);
+        String effectiveKeyPath = sessionStore.effectiveKeyPath(cfg);
+        SshConnect.PassphraseProvider passphrases = keyPassphraseProvider(cfg, effectiveKeyPath);
         new SwingWorker<SshSession, Void>() {
             @Override
             protected SshSession doInBackground() throws Exception {
                 TerminalProfile profile = AppSettings.get().resolve(cfg.getTerminalType(),
                         cfg.getTerminalCharset(), cfg.getFontFamily(), cfg.getFontSize());
                 return SshSession.connect(cfg.getHost(), cfg.getPort(), effectiveUser,
-                        cfg.isAgentForwarding(), password, cfg.getKeyPath(), jumpHosts, passphrases,
+                        cfg.isAgentForwarding(), password, effectiveKeyPath, jumpHosts, passphrases,
                         cfg.getName(), cfg.getIconId(), profile, cfg.getHighlightListId(),
                         effectiveTabColorHex);
             }
@@ -784,11 +469,53 @@ public final class MainWindow {
     }
 
     /**
-     * Resolves the password to try (EDT): {@code null} if password auth is off; a saved
-     * password unlocked from the vault (via keyring or prompt); otherwise a one-time prompt.
+     * Resolves the password to try for the target session (EDT): {@code null} if password auth is
+     * off. Otherwise the cascade is the session's own saved password (when {@code savePassword}),
+     * then the inherited folder/global default password, then a one-time prompt. The inherited
+     * defaults apply only when password auth is enabled (so a session never silently authenticates
+     * with a shared password it didn't opt into).
      */
     private String resolvePassword(SshSessionConfig cfg) {
-        return resolvePassword(cfg.getId(), cfg.isPasswordAuth(), cfg.isSavePassword(), cfg.getName());
+        if (!cfg.isPasswordAuth()) {
+            return null;
+        }
+        List<String> keys = new ArrayList<>();
+        if (cfg.isSavePassword()) {
+            keys.add(VaultKeys.sessionPassword(cfg.getId()));
+        }
+        keys.addAll(sessionStore.defaultPasswordVaultKeys(cfg));
+        String secret = resolveVaultSecret(keys);
+        if (secret != null) {
+            return secret;
+        }
+        char[] entered = MasterPasswordDialog.promptSessionPassword(frame, cfg.getName());
+        if (entered == null) {
+            return null;
+        }
+        String password = new String(entered);
+        java.util.Arrays.fill(entered, '\0');
+        return password;
+    }
+
+    /**
+     * Returns the first secret present (and decryptable) among {@code vaultKeys}, unlocking the
+     * vault on demand. {@code null} if none is stored or the unlock is cancelled/fails.
+     */
+    private String resolveVaultSecret(List<String> vaultKeys) {
+        VaultManager vaults = VaultManager.get();
+        for (String key : vaultKeys) {
+            if (vaults.vault().hasPassword(key)) {
+                if (!vaults.ensureUnlocked(frame)) {
+                    return null;
+                }
+                try {
+                    return vaults.vault().getPassword(key);
+                } catch (VaultException e) {
+                    return null;
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -840,31 +567,99 @@ public final class MainWindow {
     }
 
     /**
-     * A passphrase provider for encrypted key files: prompts on the EDT (the SSH connect runs off
-     * it) and returns {@code null} when cancelled, so the key is skipped and other auth applies.
+     * Builds the passphrase provider for a connect (the SSH connect runs off the EDT, so prompts
+     * are marshalled onto it). For the session's effective key it tries the saved passphrase first
+     * (attempt 0) and offers to remember a newly entered one; for any other key (jump-host keys,
+     * auto-discovered {@code ~/.ssh} identities) it simply prompts. A wrong passphrase re-prompts
+     * (with an error) until MINA gives up; cancelling skips the key so other auth still applies.
+     *
+     * @param cfg              the session being connected (its id keys a remembered passphrase)
+     * @param effectiveKeyPath the resolved configured key path, or {@code null} if none
      */
-    private SshConnect.PassphraseProvider keyPassphraseProvider() {
-        return keyPath -> {
-            String fileName = new java.io.File(keyPath).getName();
-            char[][] holder = new char[1][];
-            Runnable prompt = () -> holder[0] = MasterPasswordDialog.promptKeyPassphrase(frame, fileName);
-            if (SwingUtilities.isEventDispatchThread()) {
-                prompt.run();
-            } else {
-                try {
-                    SwingUtilities.invokeAndWait(prompt);
-                } catch (Exception e) {
+    private SshConnect.PassphraseProvider keyPassphraseProvider(SshSessionConfig cfg,
+                                                               String effectiveKeyPath) {
+        String expectedKey = SshConnect.resolveKeyPath(effectiveKeyPath);
+        String savedPassphrase = resolveSavedPassphrase(cfg, effectiveKeyPath);
+        return new SshConnect.PassphraseProvider() {
+            // Passphrases the user asked to remember, awaiting a successful decrypt to persist.
+            private final java.util.Map<String, String> pendingRemember = new java.util.HashMap<>();
+
+            @Override
+            public String passphraseFor(String keyPath, int attempt) {
+                boolean isSessionKey = expectedKey != null
+                        && expectedKey.equals(SshConnect.resolveKeyPath(keyPath));
+                if (attempt == 0 && isSessionKey && savedPassphrase != null) {
+                    return savedPassphrase; // try the saved one silently first
+                }
+                String error = attempt > 0 ? "Incorrect passphrase — try again." : null;
+                MasterPasswordDialog.KeyPassphraseResult result =
+                        promptPassphraseOnEdt(keyPath, error, isSessionKey);
+                if (result == null) {
                     return null;
                 }
+                String passphrase = new String(result.passphrase());
+                java.util.Arrays.fill(result.passphrase(), '\0');
+                if (result.remember() && isSessionKey) {
+                    pendingRemember.put(SshConnect.resolveKeyPath(keyPath), passphrase);
+                }
+                return passphrase;
             }
-            char[] entered = holder[0];
-            if (entered == null) {
-                return null;
+
+            @Override
+            public void onAccepted(String keyPath) {
+                String passphrase = pendingRemember.remove(SshConnect.resolveKeyPath(keyPath));
+                if (passphrase != null) {
+                    saveSessionPassphrase(cfg.getId(), passphrase);
+                }
             }
-            String passphrase = new String(entered);
-            java.util.Arrays.fill(entered, '\0');
-            return passphrase;
         };
+    }
+
+    /** Reads the saved passphrase for {@code cfg}'s configured key (cascade), or {@code null}. */
+    private String resolveSavedPassphrase(SshSessionConfig cfg, String effectiveKeyPath) {
+        if (effectiveKeyPath == null || effectiveKeyPath.isBlank()) {
+            return null; // no configured key → nothing to attach a saved passphrase to
+        }
+        return resolveVaultSecret(sessionStore.keyPassphraseVaultKeys(cfg));
+    }
+
+    /** Persists a remembered passphrase at the session level (EDT-marshalled; best-effort). */
+    private void saveSessionPassphrase(String sessionId, String passphrase) {
+        Runnable save = () -> {
+            VaultManager vaults = VaultManager.get();
+            if (!vaults.ensureUnlocked(frame)) {
+                return;
+            }
+            try {
+                vaults.vault().setPassword(VaultKeys.sessionKeyPassphrase(sessionId),
+                        passphrase.toCharArray());
+            } catch (VaultException ignored) {
+                // Remembering a passphrase is a convenience; a failed save shouldn't break connect.
+            }
+        };
+        runOnEdt(save);
+    }
+
+    /** Shows the key-passphrase prompt on the EDT and returns its result (or {@code null}). */
+    private MasterPasswordDialog.KeyPassphraseResult promptPassphraseOnEdt(String keyPath,
+            String error, boolean allowRemember) {
+        MasterPasswordDialog.KeyPassphraseResult[] holder = new MasterPasswordDialog.KeyPassphraseResult[1];
+        runOnEdt(() -> holder[0] =
+                MasterPasswordDialog.promptKeyPassphrase(frame, keyPath, error, allowRemember));
+        return holder[0];
+    }
+
+    /** Runs {@code task} synchronously on the EDT (directly if already on it). */
+    private void runOnEdt(Runnable task) {
+        if (SwingUtilities.isEventDispatchThread()) {
+            task.run();
+        } else {
+            try {
+                SwingUtilities.invokeAndWait(task);
+            } catch (Exception ignored) {
+                // Cancelled/interrupted: leave any holder untouched (treated as "no input").
+            }
+        }
     }
 
     // ---- tunneling ----
@@ -895,14 +690,15 @@ public final class MainWindow {
         }
         String password = resolvePassword(cfg);
         List<SshConnect.HostHop> jumpHosts = resolveJumpHosts(cfg);
-        SshConnect.PassphraseProvider passphrases = keyPassphraseProvider();
         String effectiveUser = sessionStore.effectiveUser(cfg);
+        String effectiveKeyPath = sessionStore.effectiveKeyPath(cfg);
+        SshConnect.PassphraseProvider passphrases = keyPassphraseProvider(cfg, effectiveKeyPath);
         new SwingWorker<SshConnect.Connected, Void>() {
             @Override
             protected SshConnect.Connected doInBackground() throws Exception {
                 return SshConnect.open(jumpHosts,
                         new SshConnect.HostHop(cfg.getHost(), cfg.getPort(), effectiveUser,
-                                password, cfg.getKeyPath()),
+                                password, effectiveKeyPath),
                         passphrases);
             }
 
@@ -978,11 +774,24 @@ public final class MainWindow {
         });
     }
 
+    /**
+     * Routes a bound action. Tab/pane/grid actions target whichever window currently has focus (the
+     * main window or a detached one); the sidebar-only actions act on the main window's sidebar.
+     */
     private void handle(TermAction action) {
-        PaneGrid grid = currentGrid();
+        TabPane active = WindowManager.get().focusedTabPane();
+        PaneGrid grid = active != null ? active.currentGrid() : null;
         switch (action) {
-            case NEW_TAB -> addTab();
-            case CLOSE_TAB -> closeCurrentTab();
+            case NEW_TAB -> {
+                if (active != null) {
+                    active.addTab();
+                }
+            }
+            case CLOSE_TAB -> {
+                if (active != null) {
+                    active.closeCurrentTab();
+                }
+            }
             case SPLIT_COLUMN -> {
                 if (grid != null) {
                     grid.splitColumn();
@@ -998,7 +807,7 @@ public final class MainWindow {
                     grid.closeActivePane();
                 }
             }
-            case OPEN_LOCAL -> openLocalInCurrent();
+            case OPEN_LOCAL -> openLocalInFocused();
             case OPEN_SFTP -> openSftpForActivePane();
             case OPEN_TUNNELS -> openTunnelManager();
             case TOGGLE_THEME -> ThemeManager.get().toggle();
@@ -1022,147 +831,31 @@ public final class MainWindow {
                     sidebar.duplicateSelected();
                 }
             }
-            case MOVE_TAB_LEFT -> moveSelectedTab(-1);
-            case MOVE_TAB_RIGHT -> moveSelectedTab(1);
-        }
-    }
-
-    // ---- tab reordering (keyboard + drag) ----
-
-    /** Moves the active tab one slot left ({@code -1}) or right ({@code +1}), clamped to real tabs. */
-    private void moveSelectedTab(int delta) {
-        int from = tabs.getSelectedIndex();
-        if (from < 0 || tabs.getComponentAt(from) == plusPlaceholder) {
-            return;
-        }
-        int to = from + delta;
-        if (to < 0 || to > lastRealTabIndex()) {
-            return;
-        }
-        moveTab(from, to);
-    }
-
-    /** Highest index that holds a real (movable) tab — everything before the "+" placeholder. */
-    private int lastRealTabIndex() {
-        int plus = plusIndex();
-        return (plus >= 0 ? plus : tabs.getTabCount()) - 1;
-    }
-
-    /**
-     * Reorders a tab from {@code from} to {@code to}, preserving its title, icon, tooltip, custom
-     * tab color and selection. The "+" placeholder is never moved past. JTabbedPane has no native
-     * move, so the tab is removed and re-inserted.
-     */
-    private void moveTab(int from, int to) {
-        to = Math.max(0, Math.min(to, lastRealTabIndex()));
-        if (from == to || from < 0 || tabs.getComponentAt(from) == plusPlaceholder) {
-            return;
-        }
-        Component comp = tabs.getComponentAt(from);
-        String title = tabs.getTitleAt(from);
-        Icon icon = tabs.getIconAt(from);
-        String tip = tabs.getToolTipTextAt(from);
-        boolean wasSelected = tabs.getSelectedIndex() == from;
-        tabs.removeTabAt(from);
-        tabs.insertTab(title, icon, comp, tip, to);
-        // Re-derive icon/title/custom color from the live session so a moved default-colored tab
-        // keeps following the theme (rather than pinning whatever color it had at this index).
-        if (comp instanceof PaneGrid grid) {
-            decorateTab(grid);
-        }
-        if (wasSelected) {
-            tabs.setSelectedIndex(to);
-        }
-    }
-
-    /**
-     * Wires tab drag-and-drop: a tab can be dragged across the strip to reorder, or (single-pane
-     * tabs only) dropped into another tab's pane/empty cell to move that terminal in. Reorder and
-     * drag-into-grid both start from a tab drag, so this replaces the old {@code MouseAdapter}
-     * reorder — a {@code MouseAdapter} drag and a Swing DnD drag can't share the tab strip.
-     */
-    private void installTabDnd() {
-        // Capture the selection *before* the press selects the pressed tab, so a drag can keep the
-        // previously-active grid on screen as the drop target. Runs before the UI's own listener.
-        captureSelectionBeforeUi();
-
-        DragGestureListener onDrag = dge -> {
-            Point origin = dge.getDragOrigin();
-            int idx = tabs.indexAtLocation(origin.x, origin.y);
-            if (idx < 0 || tabs.getComponentAt(idx) == plusPlaceholder
-                    || !(tabs.getComponentAt(idx) instanceof PaneGrid grid)) {
-                return;
-            }
-            // Keep the previously-viewed grid visible (the press already switched to the dragged tab).
-            int restore = (selectedBeforePress >= 0 && selectedBeforePress <= lastRealTabIndex())
-                    ? selectedBeforePress : idx;
-            if (tabs.getSelectedIndex() != restore) {
-                tabs.setSelectedIndex(restore);
-            }
-            try {
-                dge.startDrag(null, new TabTransferable(grid));
-            } catch (InvalidDnDOperationException ignored) {
-                // A drag is already in flight.
-            }
-        };
-        DragSource.getDefaultDragSource()
-                .createDefaultDragGestureRecognizer(tabs, DnDConstants.ACTION_MOVE, onDrag);
-
-        // Reorder: a tab dropped on the strip (drops over panes/cells are handled by their own,
-        // deeper drop targets, so they never reach here).
-        new DropTarget(tabs, DnDConstants.ACTION_MOVE, new DropTargetAdapter() {
-            @Override
-            public void dragOver(DropTargetDragEvent dtde) {
-                if (dtde.isDataFlavorSupported(TabTransferable.TAB_FLAVOR)) {
-                    dtde.acceptDrag(DnDConstants.ACTION_MOVE);
-                } else {
-                    dtde.rejectDrag();
+            case MOVE_TAB_LEFT -> {
+                if (active != null) {
+                    active.moveSelectedTab(-1);
                 }
             }
-
-            @Override
-            public void drop(DropTargetDropEvent dtde) {
-                try {
-                    if (!dtde.isDataFlavorSupported(TabTransferable.TAB_FLAVOR)) {
-                        dtde.rejectDrop();
-                        return;
-                    }
-                    dtde.acceptDrop(DnDConstants.ACTION_MOVE);
-                    PaneGrid grid = (PaneGrid) dtde.getTransferable()
-                            .getTransferData(TabTransferable.TAB_FLAVOR);
-                    int from = tabs.indexOfComponent(grid);
-                    int to = tabs.indexAtLocation(dtde.getLocation().x, dtde.getLocation().y);
-                    if (to < 0 || to > lastRealTabIndex()) {
-                        to = lastRealTabIndex();
-                    }
-                    if (from >= 0) {
-                        moveTab(from, to);
-                    }
-                    dtde.dropComplete(true);
-                } catch (Exception e) {
-                    dtde.dropComplete(false);
+            case MOVE_TAB_RIGHT -> {
+                if (active != null) {
+                    active.moveSelectedTab(1);
                 }
             }
-        });
-    }
-
-    /** Records the selected tab on each press, ahead of the UI's selection, into
-     *  {@link #selectedBeforePress}. */
-    private void captureSelectionBeforeUi() {
-        MouseListener capture = new MouseAdapter() {
-            @Override
-            public void mousePressed(MouseEvent e) {
-                selectedBeforePress = tabs.getSelectedIndex();
+            case DUPLICATE_TAB -> {
+                if (active != null) {
+                    active.duplicateSelectedTab();
+                }
             }
-        };
-        // Re-order listeners so ours fires before the UI's selection handler (added at UI install).
-        MouseListener[] existing = tabs.getMouseListeners();
-        for (MouseListener ml : existing) {
-            tabs.removeMouseListener(ml);
-        }
-        tabs.addMouseListener(capture);
-        for (MouseListener ml : existing) {
-            tabs.addMouseListener(ml);
+            case DETACH_TAB -> {
+                if (active != null) {
+                    active.detachSelectedTab();
+                }
+            }
+            case ATTACH_TAB -> {
+                if (active != null) {
+                    active.attachSelectedToMain();
+                }
+            }
         }
     }
 
@@ -1174,6 +867,8 @@ public final class MainWindow {
         JMenu file = new JMenu("File");
         file.add(menuItem("New Tab", TermAction.NEW_TAB));
         file.add(menuItem("Close Tab", TermAction.CLOSE_TAB));
+        file.add(menuItem("Duplicate Tab", TermAction.DUPLICATE_TAB));
+        file.add(menuItem("Detach Tab to New Window", TermAction.DETACH_TAB));
         file.add(menuItem("Move Tab Left", TermAction.MOVE_TAB_LEFT));
         file.add(menuItem("Move Tab Right", TermAction.MOVE_TAB_RIGHT));
         file.addSeparator();
@@ -1261,9 +956,10 @@ public final class MainWindow {
         return macros;
     }
 
-    /** Runs a macro on the active pane's (broadcasting) connector, so broadcast is respected. */
+    /** Runs a macro on the focused window's active pane (broadcasting connector, so broadcast applies). */
     private void runMacroOnActivePane(Macro macro) {
-        PaneGrid grid = currentGrid();
+        TabPane host = WindowManager.get().focusedTabPane();
+        PaneGrid grid = host != null ? host.currentGrid() : null;
         if (grid == null) {
             return;
         }
@@ -1306,9 +1002,7 @@ public final class MainWindow {
     private void onKeymapChanged() {
         frame.setJMenuBar(buildMenuBar());
         frame.revalidate();
-        if (plusButton != null) {
-            plusButton.setToolTipText(newTabTooltip());
-        }
+        tabPane.refreshNewTabTooltip();
     }
 
     /** Lists the keys the app can use from the ssh-agent (read off the EDT, shown on it). */
