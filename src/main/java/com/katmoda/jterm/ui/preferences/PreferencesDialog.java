@@ -49,6 +49,7 @@ public final class PreferencesDialog {
         ToggleSwitch copyOnSelect = new ToggleSwitch(settings.isCopyOnSelect());
         ToggleSwitch pasteOnRightClick = new ToggleSwitch(settings.isPasteOnRightClick());
         ToggleSwitch openTerminalOnStartup = new ToggleSwitch(settings.isOpenTerminalOnStartup());
+        ToggleSwitch autoAcceptNewHostKeys = new ToggleSwitch(settings.isAutoAcceptNewHostKeys());
         JPanel general = new JPanel(new GridBagLayout());
         int row = 0;
         addToggleRow(general, row++, "Copy to clipboard on select:", copyOnSelect);
@@ -56,6 +57,9 @@ public final class PreferencesDialog {
         addHint(general, row++, "With this on, right-click pastes; use Ctrl+right-click for the menu.");
         addToggleRow(general, row++, "Open a terminal on startup:", openTerminalOnStartup);
         addHint(general, row++, "With this off, jterm starts with no open tabs.");
+        addToggleRow(general, row++, "Auto-accept new host keys:", autoAcceptNewHostKeys);
+        addHint(general, row++, "Trust first-seen SSH hosts without prompting. You're still warned"
+                + " if a host's key changes.");
 
         TerminalSettingsForm terminalDefaults = new TerminalSettingsForm(false,
                 settings.getDefaultTerminalType(), settings.getDefaultCharset(),
@@ -123,6 +127,7 @@ public final class PreferencesDialog {
         settings.setCopyOnSelect(copyOnSelect.isSelected());
         settings.setPasteOnRightClick(pasteOnRightClick.isSelected());
         settings.setOpenTerminalOnStartup(openTerminalOnStartup.isSelected());
+        settings.setAutoAcceptNewHostKeys(autoAcceptNewHostKeys.isSelected());
         settings.setDefaultTerminalType(terminalDefaults.terminalType());
         settings.setDefaultCharset(terminalDefaults.charset());
         settings.setDefaultFontFamily(terminalDefaults.fontFamily());
