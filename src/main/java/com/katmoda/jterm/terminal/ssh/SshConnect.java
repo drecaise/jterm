@@ -6,8 +6,10 @@ import org.apache.sshd.agent.SshAgent;
 import org.apache.sshd.client.SshClient;
 import org.apache.sshd.client.keyverifier.RejectAllServerKeyVerifier;
 import org.apache.sshd.client.session.ClientSession;
+import org.apache.sshd.common.NamedResource;
 import org.apache.sshd.common.config.keys.FilePasswordProvider;
 import org.apache.sshd.common.keyprovider.FileKeyPairProvider;
+import org.apache.sshd.common.session.SessionContext;
 import org.apache.sshd.common.util.net.SshdSocketAddress;
 
 import java.io.IOException;
@@ -46,16 +48,30 @@ public final class SshConnect {
     }
 
     /**
-     * Supplies the passphrase for an encrypted key file on demand (returns {@code null} to skip
-     * the key). Invoked off the EDT during connect, only when a key is actually encrypted.
+     * Supplies the passphrase for an encrypted key file on demand. Invoked off the EDT during
+     * connect, only when a key is actually encrypted.
+     *
+     * <p>{@code attempt} is 0 on the first request for a key and increments after each failed
+     * decrypt, letting an implementation try a saved passphrase first ({@code attempt == 0}) and
+     * then prompt — showing an error — on subsequent attempts. Returning {@code null} gives up on
+     * the key (it is skipped so agent/password auth can still apply).</p>
      */
-    @FunctionalInterface
     public interface PassphraseProvider {
-        String passphraseFor(String keyPath);
+        String passphraseFor(String keyPath, int attempt);
+
+        /**
+         * Called once a supplied passphrase has successfully decrypted {@code keyPath}, so an
+         * implementation can persist it if the user asked to remember it. Default: no-op.
+         */
+        default void onAccepted(String keyPath) {
+        }
 
         /** A provider that never supplies a passphrase (encrypted keys are simply skipped). */
-        PassphraseProvider NONE = keyPath -> null;
+        PassphraseProvider NONE = (keyPath, attempt) -> null;
     }
+
+    /** How many times a single encrypted key is offered a passphrase before it is skipped. */
+    private static final int MAX_PASSPHRASE_ATTEMPTS = 3;
 
     /**
      * An authenticated SSH connection: the shared client, the target session, and any upstream
@@ -115,10 +131,13 @@ public final class SshConnect {
         // ssh-agent over a JDK Unix socket (no APR); also enables agent forwarding on channels.
         installAgent(client);
 
-        // Default on-disk identities (agent covers passphrase-protected keys).
+        // Default on-disk identities. Encrypted ones are prompted for via the same passphrase
+        // finder as configured keys (previously they were silently unusable without the agent).
         List<Path> keys = defaultIdentityFiles();
         if (!keys.isEmpty()) {
-            client.setKeyIdentityProvider(new FileKeyPairProvider(keys.toArray(new Path[0])));
+            FileKeyPairProvider defaults = new FileKeyPairProvider(keys.toArray(new Path[0]));
+            defaults.setPasswordFinder(passphraseFinder(passphrases));
+            client.setKeyIdentityProvider(defaults);
         }
 
         client.start();
@@ -204,7 +223,7 @@ public final class SshConnect {
         }
         Path path = expandHome(keyPath.trim());
         FileKeyPairProvider provider = new FileKeyPairProvider(path);
-        provider.setPasswordFinder(passphraseFinder(keyPath, passphrases));
+        provider.setPasswordFinder(passphraseFinder(passphrases));
         try {
             for (KeyPair kp : provider.loadKeys(session)) {
                 session.addPublicKeyIdentity(kp);
@@ -215,14 +234,50 @@ public final class SshConnect {
     }
 
     /**
-     * Adapts a {@link PassphraseProvider} to MINA's {@link FilePasswordProvider}: prompts once
-     * (retry index 0); returning {@code null} on a retry stops MINA looping on a wrong passphrase.
+     * Adapts a {@link PassphraseProvider} to MINA's {@link FilePasswordProvider}. The provider is
+     * asked once per attempt (the resource's name is the key file); a wrong passphrase triggers a
+     * {@code RETRY} so the provider can re-prompt, up to {@link #MAX_PASSPHRASE_ATTEMPTS}. A
+     * {@code null} passphrase (user cancelled) or a successful decrypt stops the loop. On success
+     * the provider is told via {@link PassphraseProvider#onAccepted}.
      */
-    private static FilePasswordProvider passphraseFinder(String keyPath,
-                                                         PassphraseProvider passphrases) {
+    private static FilePasswordProvider passphraseFinder(PassphraseProvider passphrases) {
         PassphraseProvider p = passphrases != null ? passphrases : PassphraseProvider.NONE;
-        return (sessionContext, resource, retryIndex) ->
-                retryIndex == 0 ? p.passphraseFor(keyPath) : null;
+        return new FilePasswordProvider() {
+            @Override
+            public String getPassword(SessionContext session, NamedResource resource, int retryIndex) {
+                return p.passphraseFor(resource.getName(), retryIndex);
+            }
+
+            @Override
+            public ResourceDecodeResult handleDecodeAttemptResult(SessionContext session,
+                    NamedResource resource, int retryIndex, String password, Exception err) {
+                if (err == null) {
+                    if (password != null) {
+                        p.onAccepted(resource.getName());
+                    }
+                    return ResourceDecodeResult.TERMINATE; // decoded OK
+                }
+                // Wrong passphrase: re-prompt until the cap. A null password means the user gave
+                // up, so stop and let the key be skipped (agent/password auth still applies).
+                if (password == null || retryIndex + 1 >= MAX_PASSPHRASE_ATTEMPTS) {
+                    return ResourceDecodeResult.TERMINATE;
+                }
+                return ResourceDecodeResult.RETRY;
+            }
+        };
+    }
+
+    /**
+     * Resolves {@code path} (expanding a leading {@code ~}) to an absolute, normalized string —
+     * the same form a key's {@code NamedResource} name takes during auth — so a caller's
+     * {@link PassphraseProvider} can recognize which configured key it is being asked about.
+     * Returns {@code null} for a blank path.
+     */
+    public static String resolveKeyPath(String path) {
+        if (path == null || path.isBlank()) {
+            return null;
+        }
+        return expandHome(path.trim()).toAbsolutePath().normalize().toString();
     }
 
     private static Path expandHome(String path) {

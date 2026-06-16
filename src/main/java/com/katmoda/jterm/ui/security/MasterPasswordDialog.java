@@ -1,11 +1,13 @@
 package com.katmoda.jterm.ui.security;
 
+import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import java.awt.Component;
 import java.awt.GridLayout;
+import java.io.File;
 import java.util.Arrays;
 
 /**
@@ -74,19 +76,46 @@ public final class MasterPasswordDialog {
         return value.length == 0 ? null : value;
     }
 
-    /** Connect-time prompt for the passphrase of an encrypted key file; null if cancelled/blank. */
-    public static char[] promptKeyPassphrase(Component parent, String keyFileName) {
+    /** Outcome of a key-passphrase prompt: the entered passphrase and whether to remember it. */
+    public record KeyPassphraseResult(char[] passphrase, boolean remember) {
+    }
+
+    /**
+     * Connect-time prompt for the passphrase of an encrypted key file. The dialog names the key
+     * unambiguously (file name + full path), shows {@code errorMessage} after a failed attempt,
+     * and — when {@code allowRemember} is true — offers to save the passphrase. Returns
+     * {@code null} if cancelled or left blank.
+     */
+    public static KeyPassphraseResult promptKeyPassphrase(Component parent, String keyPath,
+            String errorMessage, boolean allowRemember) {
         JPasswordField pw = new JPasswordField(20);
+        JCheckBox remember = new JCheckBox("Remember this passphrase");
         JPanel form = new JPanel(new GridLayout(0, 1, 0, 4));
-        form.add(new JLabel("Passphrase for key \"" + keyFileName + "\":"));
+        if (errorMessage != null) {
+            JLabel error = new JLabel(errorMessage);
+            error.putClientProperty("FlatLaf.styleClass", "h4");
+            form.add(error);
+        }
+        form.add(new JLabel("Enter the passphrase for SSH key \"" + new File(keyPath).getName() + "\":"));
+        JLabel pathLabel = new JLabel(keyPath);
+        pathLabel.setEnabled(false);
+        form.add(pathLabel);
         form.add(pw);
+        if (allowRemember) {
+            form.add(remember);
+        }
+        form.putClientProperty("initialFocus", pw);
+
         int result = JOptionPane.showConfirmDialog(parent, form, "Key Passphrase",
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
         if (result != JOptionPane.OK_OPTION) {
             return null;
         }
         char[] value = pw.getPassword();
-        return value.length == 0 ? null : value;
+        if (value.length == 0) {
+            return null;
+        }
+        return new KeyPassphraseResult(value, allowRemember && remember.isSelected());
     }
 
     /** Connect-time prompt for a (non-saved) session password. */

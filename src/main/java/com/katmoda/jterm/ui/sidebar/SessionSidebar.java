@@ -21,6 +21,7 @@ import com.katmoda.jterm.session.WslDistroNode;
 import com.katmoda.jterm.terminal.wsl.WslDistributions;
 import com.katmoda.jterm.security.CredentialVault;
 import com.katmoda.jterm.security.VaultException;
+import com.katmoda.jterm.security.VaultKeys;
 import com.katmoda.jterm.security.VaultManager;
 import com.katmoda.jterm.ui.security.MasterPasswordDialog;
 import com.katmoda.jterm.ui.component.HighlightListCombo;
@@ -599,6 +600,9 @@ public final class SessionSidebar extends JPanel {
     }
 
     private void reassignIds(FolderNode folder, Map<String, String> oldCreds, Map<String, String> newCreds) {
+        // Give the folder a fresh id too, so an imported folder never inherits an existing folder's
+        // saved default password / key passphrase (those vault entries are keyed by folder id).
+        folder.setId(UUID.randomUUID().toString());
         for (SessionNode child : folder.getChildren()) {
             if (child instanceof FolderNode sub) {
                 reassignIds(sub, oldCreds, newCreds);
@@ -999,6 +1003,19 @@ public final class SessionSidebar extends JPanel {
                 "(inherit: " + inheritedUser(folder) + ")");
         TabColorPicker tabColor = new TabColorPicker(folder.getTabColorHex(), "Inherit");
 
+        // Per-folder default key path + secrets (key passphrase and default password), inherited by
+        // sessions beneath this folder. Blank inherits; blank secret fields keep any saved value.
+        KeyFileField keyFile = new KeyFileField(folder.getKeyPath());
+        keyFile.setPlaceholder("(inherit: " + describeKeyPath(inheritedFolderKeyPath(folder)) + ")");
+        JPasswordField keyPassphrase = new JPasswordField();
+        keyPassphrase.putClientProperty("JTextField.placeholderText",
+                VaultManager.get().vault().hasPassword(VaultKeys.folderKeyPassphrase(folder.getId()))
+                        ? "(leave blank to keep saved)" : "(none)");
+        JPasswordField defaultPassword = new JPasswordField();
+        defaultPassword.putClientProperty("JTextField.placeholderText",
+                VaultManager.get().vault().hasPassword(VaultKeys.folderPassword(folder.getId()))
+                        ? "(leave blank to keep saved)" : "(none)");
+
         JPanel form = new JPanel(new GridLayout(0, 2, 6, 6));
         form.add(new JLabel("Name:"));
         form.add(name);
@@ -1008,6 +1025,12 @@ public final class SessionSidebar extends JPanel {
         form.add(user);
         form.add(new JLabel("Default tab color:"));
         form.add(tabColor.component());
+        form.add(new JLabel("Default key file:"));
+        form.add(keyFile.component());
+        form.add(new JLabel("Default key passphrase:"));
+        form.add(keyPassphrase);
+        form.add(new JLabel("Default password:"));
+        form.add(defaultPassword);
 
         int result = JOptionPane.showConfirmDialog(this, form, title,
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
@@ -1018,6 +1041,9 @@ public final class SessionSidebar extends JPanel {
         folder.setIconId(iconId[0]);
         folder.setUser(user.getText());
         folder.setTabColorHex(tabColor.hex());
+        folder.setKeyPath(keyFile.path());
+        applyVaultSecret(VaultKeys.folderKeyPassphrase(folder.getId()), keyPassphrase.getPassword());
+        applyVaultSecret(VaultKeys.folderPassword(folder.getId()), defaultPassword.getPassword());
         return true;
     }
 
@@ -1083,6 +1109,7 @@ public final class SessionSidebar extends JPanel {
                 "Delete \"" + node.getName() + "\"?", "Delete",
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
         if (ok == JOptionPane.OK_OPTION) {
+            removeVaultSecrets(node);
             parent.getChildren().remove(node);
             rebuild();
         }
@@ -1114,6 +1141,13 @@ public final class SessionSidebar extends JPanel {
         syncPasswordEnabled.run();
 
         KeyFileField keyFile = new KeyFileField(cfg.getKeyPath());
+        keyFile.setPlaceholder("(inherit: " + describeKeyPath(inheritedKeyPath(cfg)) + ")");
+        // Passphrase for an encrypted key, saved (vault-encrypted) at the session level. Blank keeps
+        // any saved one; with none saved the user is prompted at connect time.
+        JPasswordField keyPassphrase = new JPasswordField();
+        keyPassphrase.putClientProperty("JTextField.placeholderText",
+                VaultManager.get().vault().hasPassword(VaultKeys.sessionKeyPassphrase(cfg.getId()))
+                        ? "(leave blank to keep saved)" : "(prompt on connect)");
 
         String[] iconId = {cfg.getIconId()};
         Icon fallback = IconLibrary.get().icon("builtin/server", 16);
@@ -1158,6 +1192,7 @@ public final class SessionSidebar extends JPanel {
         row(basic, "Icon:", iconBtn);
         row(basic, "Forward ssh-agent:", agent);
         row(basic, "Key file:", keyFile.component());
+        row(basic, "Key passphrase:", keyPassphrase);
         row(basic, "Password auth:", passwordAuth);
         row(basic, "Password:", password);
         row(basic, "Run macro on connect:", macroCombo);
@@ -1200,6 +1235,7 @@ public final class SessionSidebar extends JPanel {
         cfg.setHighlightListId(HighlightListCombo.selectedId(highlightCombo));
         cfg.setTabColorHex(tabColor.hex());
         cfg.setKeyPath(keyFile.path());
+        applyVaultSecret(VaultKeys.sessionKeyPassphrase(cfg.getId()), keyPassphrase.getPassword());
         applyPasswordSettings(cfg, passwordAuth.isSelected(), password.getPassword());
         applyJumpHosts(cfg, jumpHostsForm.results());
 
@@ -1306,6 +1342,80 @@ public final class SessionSidebar extends JPanel {
         }
         java.util.Arrays.fill(entered, '\0');
         return saved;
+    }
+
+    /**
+     * Saves a typed secret (key passphrase / default password) to the vault under {@code vaultKey};
+     * a blank field keeps any already-saved value (cleared explicitly only by deleting the owner).
+     * Clears {@code entered} afterwards.
+     */
+    private void applyVaultSecret(String vaultKey, char[] entered) {
+        if (entered.length > 0 && VaultManager.get().ensureUnlocked(this)) {
+            try {
+                VaultManager.get().vault().setPassword(vaultKey, entered);
+            } catch (VaultException e) {
+                JOptionPane.showMessageDialog(this,
+                        "Could not save the secret:\n" + e.getMessage(),
+                        "jterm", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+        java.util.Arrays.fill(entered, '\0');
+    }
+
+    /**
+     * The key path a blank field on {@code cfg} would inherit: the nearest ancestor folder's value,
+     * then the global default. {@code null} if nothing is set. (Excludes the session's own value.)
+     */
+    private String inheritedKeyPath(SshSessionConfig cfg) {
+        List<FolderNode> ancestors = store.ancestorsOf(cfg);
+        for (int i = ancestors.size() - 1; i >= 0; i--) {
+            String folderKey = ancestors.get(i).getKeyPath();
+            if (folderKey != null && !folderKey.isBlank()) {
+                return folderKey;
+            }
+        }
+        String global = AppSettings.get().getDefaultKeyPath();
+        return (global != null && !global.isBlank()) ? global : null;
+    }
+
+    /** The key path a blank field on {@code folder} would inherit (ancestors, then global). */
+    private String inheritedFolderKeyPath(FolderNode folder) {
+        List<FolderNode> ancestors = store.ancestorsOf(folder);
+        for (int i = ancestors.size() - 1; i >= 0; i--) {
+            String folderKey = ancestors.get(i).getKeyPath();
+            if (folderKey != null && !folderKey.isBlank()) {
+                return folderKey;
+            }
+        }
+        String global = AppSettings.get().getDefaultKeyPath();
+        return (global != null && !global.isBlank()) ? global : null;
+    }
+
+    private static String describeKeyPath(String keyPath) {
+        return (keyPath != null && !keyPath.isBlank()) ? keyPath : "default identities";
+    }
+
+    /**
+     * Best-effort removal of every vault secret owned by {@code node} (and, for a folder, its
+     * descendants): session passwords + key passphrases, folder default password + key passphrase,
+     * and jump-host passwords. Removal never forces a master-password prompt (it only edits the
+     * encrypted map), so it is safe to call on delete even with the vault locked.
+     */
+    private void removeVaultSecrets(SessionNode node) {
+        CredentialVault vault = VaultManager.get().vault();
+        if (node instanceof SshSessionConfig ssh) {
+            vault.removePassword(VaultKeys.sessionPassword(ssh.getId()));
+            vault.removePassword(VaultKeys.sessionKeyPassphrase(ssh.getId()));
+            for (JumpHostConfig jh : ssh.getJumpHosts()) {
+                vault.removePassword(jh.getId());
+            }
+        } else if (node instanceof FolderNode folder) {
+            vault.removePassword(VaultKeys.folderPassword(folder.getId()));
+            vault.removePassword(VaultKeys.folderKeyPassphrase(folder.getId()));
+            for (SessionNode child : folder.getChildren()) {
+                removeVaultSecrets(child);
+            }
+        }
     }
 
     /**
