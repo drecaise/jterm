@@ -36,7 +36,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class BroadcastingTtyConnector implements TtyConnector {
 
-    private final TtyConnector real;
+    private volatile TtyConnector real;
     private BroadcastBus bus;
 
     /** Fired (off-EDT) the first time output is read after each {@link #outputHandled()}. */
@@ -67,6 +67,16 @@ public final class BroadcastingTtyConnector implements TtyConnector {
     /** The wrapped connector, used as the broadcast source identity. */
     public TtyConnector real() {
         return real;
+    }
+
+    /**
+     * Repoint this wrapper at a freshly created connector, keeping the same wrapper object (and so
+     * the same JediTerm widget binding and broadcast registration) across a reconnect/restart. The
+     * field is {@code volatile} so the off-EDT reader thread sees the swap. Used by
+     * {@code TerminalPane.reconnect}.
+     */
+    public void setReal(TtyConnector real) {
+        this.real = real;
     }
 
     /**

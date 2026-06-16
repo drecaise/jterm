@@ -19,6 +19,7 @@
  */
 package com.katmoda.jterm.ui.pane;
 
+import com.jediterm.terminal.TtyConnector;
 import com.jediterm.terminal.model.StyleState;
 import com.jediterm.terminal.model.TerminalTextBuffer;
 import com.jediterm.terminal.ui.JediTermWidget;
@@ -63,5 +64,23 @@ final class JtermJediTermWidget extends JediTermWidget {
             // Best-effort: without it the selection tint refreshes on the next selection instead.
         }
         panel.repaint();
+    }
+
+    /**
+     * Reuse this widget — and its existing {@link TerminalTextBuffer} scrollback — with a new
+     * connector after the previous session ended. {@code setTtyConnector} builds a fresh
+     * {@code TerminalStarter} (the old one is flagged stopped once a session ends) and {@code start}
+     * spawns a new reader thread; neither clears the text buffer, so prior output is retained and
+     * the new session's output appends below it. We first leave any alternate-screen buffer (e.g. a
+     * session dropped while inside vim/htop) so the new output lands in the scrollback-backed
+     * primary buffer rather than a stale alt-screen. Must be called on the EDT.
+     */
+    void restartWith(TtyConnector connector) {
+        if (isSessionRunning()) {
+            stop();
+        }
+        getTerminal().useAlternateBuffer(false);
+        setTtyConnector(connector);
+        start();
     }
 }

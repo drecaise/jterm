@@ -58,6 +58,7 @@ import java.awt.dnd.DropTargetDropEvent;
 import java.awt.dnd.DropTargetEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.util.function.Consumer;
 
 /**
  * One tab's pane layout: a uniform grid of up to {@value #MAX}×{@value #MAX} cells,
@@ -644,10 +645,20 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
 
     /** A factory that synchronously opens a fresh local shell (used for restart). */
     private SessionFactory localFactory() {
-        return onReady -> {
-            TerminalSession session = safeLocalSession();
-            if (session != null) {
-                onReady.accept(session);
+        return new SessionFactory() {
+            @Override
+            public void create(Consumer<TerminalSession> onReady) {
+                create(onReady, () -> { });
+            }
+
+            @Override
+            public void create(Consumer<TerminalSession> onReady, Runnable onError) {
+                TerminalSession session = safeLocalSession();
+                if (session != null) {
+                    onReady.accept(session);
+                } else {
+                    onError.run();
+                }
             }
         };
     }
@@ -665,10 +676,20 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
 
     /** A factory that synchronously opens a fresh shell in {@code distro} (used for restart). */
     private SessionFactory wslFactory(String distro) {
-        return onReady -> {
-            TerminalSession session = safeWslSession(distro);
-            if (session != null) {
-                onReady.accept(session);
+        return new SessionFactory() {
+            @Override
+            public void create(Consumer<TerminalSession> onReady) {
+                create(onReady, () -> { });
+            }
+
+            @Override
+            public void create(Consumer<TerminalSession> onReady, Runnable onError) {
+                TerminalSession session = safeWslSession(distro);
+                if (session != null) {
+                    onReady.accept(session);
+                } else {
+                    onError.run();
+                }
             }
         };
     }
@@ -886,7 +907,13 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         return false;
     }
 
-    /** R/restart on the stopped screen: reopen the same kind of session in the same cell. */
+    /**
+     * R/restart on the stopped screen: reopen the same kind of session in the same cell, reusing the
+     * pane's widget so its scrollback is preserved (see {@link TerminalPane#reconnect}). The dead
+     * session acts as a one-shot token: if a prior R already reconnected (or the pane moved/was
+     * removed) while this create was in flight, the late session is discarded. A failed create never
+     * invokes the callback, so the stopped overlay stays in place and R remains available to retry.
+     */
     private void restartPane(TerminalPane pane) {
         int[] pos = locate(pane);
         if (pos == null) {
@@ -898,19 +925,19 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         }
         int r = pos[0];
         int c = pos[1];
+        TerminalSession dead = pane.session();
         factory.create(session -> {
-            if (session == null || panes[r][c] != pane) {
-                // Pane was removed/replaced while connecting (async SSH); drop the late session.
-                if (session != null && panes[r][c] != pane) {
-                    session.close();
-                }
+            if (session == null) {
                 return;
             }
-            pane.close();
-            placeAt(r, c, session, factory);
-            relayout();
+            if (panes[r][c] != pane || pane.session() != dead) {
+                // Pane moved/replaced, or already reconnected by an earlier R; drop the late session.
+                session.close();
+                return;
+            }
+            pane.reconnect(session);
             focusActive();
-        });
+        }, () -> pane.restoreStoppedScreen());
     }
 
     private void setActiveByContent(GridContent content) {

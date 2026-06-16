@@ -37,6 +37,7 @@ import com.katmoda.jterm.session.FolderNode;
 import com.katmoda.jterm.session.TunnelConfig;
 import com.katmoda.jterm.session.TunnelStore;
 import com.katmoda.jterm.terminal.SessionFactory;
+import com.katmoda.jterm.terminal.TerminalSession;
 import com.katmoda.jterm.terminal.local.LocalSession;
 import com.katmoda.jterm.terminal.TerminalProfile;
 import com.katmoda.jterm.terminal.ssh.SshConnect;
@@ -446,17 +447,27 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
 
     /** A factory that restarts this WSL session (e.g. from the session-stopped screen). */
     private SessionFactory wslFactory(String distro) {
-        return onReady -> {
-            LocalSession session = safeWslSession(distro);
-            if (session != null) {
-                onReady.accept(session);
+        return new SessionFactory() {
+            @Override
+            public void create(Consumer<TerminalSession> onReady) {
+                create(onReady, () -> { });
+            }
+
+            @Override
+            public void create(Consumer<TerminalSession> onReady, Runnable onError) {
+                LocalSession session = safeWslSession(distro);
+                if (session != null) {
+                    onReady.accept(session);
+                } else {
+                    onError.run();
+                }
             }
         };
     }
 
     /** Connect an SSH session off the EDT, then hand the live session to {@code onConnected} on the EDT. */
     @Override
-    public void connectAsync(SshSessionConfig cfg, Consumer<SshSession> onConnected) {
+    public void connectAsync(SshSessionConfig cfg, Consumer<SshSession> onConnected, Runnable onError) {
         // Resolve any passwords on the EDT first — they may unlock the vault or prompt. The
         // target and every jump host are resolved up front so the background connect needs no UI.
         String password = resolvePassword(cfg);
@@ -488,6 +499,7 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
                 } catch (Exception e) {
                     Throwable cause = e.getCause() != null ? e.getCause() : e;
                     ErrorDialog.show(frame, "jterm", "SSH connection failed:", cause);
+                    onError.run();
                 }
             }
         }.execute();

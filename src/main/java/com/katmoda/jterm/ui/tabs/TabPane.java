@@ -70,6 +70,7 @@ import java.awt.event.MouseListener;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 /**
  * A tab strip of {@link PaneGrid}s (one grid per tab), with a trailing "+" new-tab button.
@@ -233,7 +234,17 @@ public final class TabPane extends JPanel {
 
     /** A factory that reconnects this SSH session (async, with re-auth) for restart/duplicate. */
     public SessionFactory sshFactory(SshSessionConfig cfg) {
-        return onReady -> services.connectAsync(cfg, onReady::accept);
+        return new SessionFactory() {
+            @Override
+            public void create(Consumer<TerminalSession> onReady) {
+                create(onReady, () -> { });
+            }
+
+            @Override
+            public void create(Consumer<TerminalSession> onReady, Runnable onError) {
+                services.connectAsync(cfg, onReady::accept, onError);
+            }
+        };
     }
 
     /** Inserts a grid as a new tab right before the "+" placeholder and selects it. */
