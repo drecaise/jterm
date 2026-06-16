@@ -352,7 +352,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         focusActive();
     }
 
-    /** ctrl+UP: close the focused cell; collapse cleared trailing rows/cols. */
+    /** ctrl+UP: close the focused cell; shrink the grid around any row/column it empties. */
     public void closeActivePane() {
         GridContent content = panes[activeRow][activeCol];
         if (content == null) {
@@ -361,7 +361,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         content.closeContent();
         panes[activeRow][activeCol] = null;
         factories[activeRow][activeCol] = null;
-        collapseTrailingEmpty();
+        compactGrid();
         relayout();
         moveActiveToExistingPane();
         focusActive();
@@ -473,7 +473,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         factories[pos[0]][pos[1]] = null;
         activeRow = r;
         activeCol = c;
-        collapseTrailingEmpty();
+        compactGrid();
         relayout();
         focusActive();
     }
@@ -491,7 +491,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         SessionFactory factory = factories[pos[0]][pos[1]];
         panes[pos[0]][pos[1]] = null;
         factories[pos[0]][pos[1]] = null;
-        collapseTrailingEmpty();
+        compactGrid();
         relayout();
         moveActiveToExistingPane();
         focusActive();
@@ -869,7 +869,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
             onEmpty.run();
             return;
         }
-        collapseTrailingEmpty();
+        compactGrid();
         relayout();
         moveActiveToExistingPane();
         focusActive();
@@ -979,37 +979,87 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         return best;
     }
 
-    private void collapseTrailingEmpty() {
-        while (rows > 1 && rowEmpty(rows - 1)) {
-            rows--;
-        }
-        while (cols > 1 && colEmpty(cols - 1)) {
-            cols--;
-        }
-        if (activeRow >= rows) {
-            activeRow = rows - 1;
-        }
-        if (activeCol >= cols) {
-            activeCol = cols - 1;
-        }
-    }
-
-    private boolean rowEmpty(int r) {
-        for (int c = 0; c < cols; c++) {
-            if (panes[r][c] != null) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private boolean colEmpty(int c) {
+    /**
+     * Shrink the grid only when a whole row or column can be <em>freed</em> by rearranging — i.e.
+     * the surviving panes still fit after dropping a row (or column) while keeping the other
+     * dimension. Freeing rows is preferred over columns. When at least one dimension shrinks, the
+     * survivors are re-packed in row-major (reading) order into the smaller grid and the previously
+     * focused pane keeps focus at its new position. When nothing can be freed, panes are left
+     * exactly where they are (so closing one pane in, say, a 2x3 just leaves a re-openable hole
+     * rather than reshuffling the others).
+     *
+     * <p>Only relocates references — never closes a session — so it is safe on both the close path
+     * and the move/detach path. A grid with no panes left collapses to a single empty 1x1 cell.
+     */
+    private void compactGrid() {
+        int n = 0;
         for (int r = 0; r < rows; r++) {
-            if (panes[r][c] != null) {
-                return false;
+            for (int c = 0; c < cols; c++) {
+                if (panes[r][c] != null) {
+                    n++;
+                }
             }
         }
-        return true;
+
+        // Greedily drop a row (preferred) or column as long as the panes still fit in what remains.
+        int newRows = rows;
+        int newCols = cols;
+        boolean changed = true;
+        while (changed) {
+            changed = false;
+            if (newRows > 1 && n <= (newRows - 1) * newCols) {
+                newRows--;
+                changed = true;
+            } else if (newCols > 1 && n <= newRows * (newCols - 1)) {
+                newCols--;
+                changed = true;
+            }
+        }
+        if (newRows == rows && newCols == cols) {
+            return; // no whole row or column can be freed — leave panes in place
+        }
+
+        // Gather survivors in reading order (remembering the focused pane), then re-pack them into
+        // the smaller grid.
+        GridContent activeContent = panes[activeRow][activeCol];
+        GridContent[] keptPanes = new GridContent[MAX * MAX];
+        SessionFactory[] keptFactories = new SessionFactory[MAX * MAX];
+        int k = 0;
+        for (int r = 0; r < rows; r++) {
+            for (int c = 0; c < cols; c++) {
+                if (panes[r][c] != null) {
+                    keptPanes[k] = panes[r][c];
+                    keptFactories[k] = factories[r][c];
+                    k++;
+                }
+            }
+        }
+
+        // Clear every cell (not just in-bounds) so no stale reference survives a reshape.
+        for (int r = 0; r < MAX; r++) {
+            for (int c = 0; c < MAX; c++) {
+                panes[r][c] = null;
+                factories[r][c] = null;
+            }
+        }
+        for (int i = 0; i < k; i++) {
+            panes[i / newCols][i % newCols] = keptPanes[i];
+            factories[i / newCols][i % newCols] = keptFactories[i];
+        }
+        rows = newRows;
+        cols = newCols;
+
+        // Restore focus to the same pane; if it was the cell just closed, moveActiveToExistingPane()
+        // (run by every caller after this) lands focus on a survivor.
+        activeRow = 0;
+        activeCol = 0;
+        if (activeContent != null) {
+            int[] pos = locate(activeContent);
+            if (pos != null) {
+                activeRow = pos[0];
+                activeCol = pos[1];
+            }
+        }
     }
 
     private void moveActiveToExistingPane() {
