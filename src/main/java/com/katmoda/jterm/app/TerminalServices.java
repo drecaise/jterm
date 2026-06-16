@@ -36,7 +36,15 @@ import java.util.function.Consumer;
 public interface TerminalServices {
 
     /** Connect an SSH session off the EDT, then hand the live session to {@code onConnected} on it. */
-    void connectAsync(SshSessionConfig cfg, Consumer<SshSession> onConnected);
+    default void connectAsync(SshSessionConfig cfg, Consumer<SshSession> onConnected) {
+        connectAsync(cfg, onConnected, () -> { });
+    }
+
+    /**
+     * As {@link #connectAsync(SshSessionConfig, Consumer)}, but also runs {@code onError} on the EDT
+     * if the connection fails (after the error is surfaced), so a reconnect caller can restore its UI.
+     */
+    void connectAsync(SshSessionConfig cfg, Consumer<SshSession> onConnected, Runnable onError);
 
     /** A 16px icon for a session icon id (falls back to the built-in server icon). */
     Icon iconFor(String iconId);

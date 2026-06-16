@@ -34,4 +34,13 @@ public interface SessionFactory {
 
     /** Build a fresh session and hand it to {@code onReady} when ready. */
     void create(Consumer<TerminalSession> onReady);
+
+    /**
+     * Like {@link #create(Consumer)}, but also runs {@code onError} on the EDT if creation fails, so
+     * a caller showing transient UI (e.g. the stopped screen's "Reconnecting…" status) can restore
+     * it. The default ignores {@code onError}; factories whose creation can fail override this.
+     */
+    default void create(Consumer<TerminalSession> onReady, Runnable onError) {
+        create(onReady);
+    }
 }

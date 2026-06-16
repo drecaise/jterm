@@ -22,6 +22,7 @@ package com.katmoda.jterm.ui.pane;
 import com.jediterm.core.compatibility.Point;
 import com.jediterm.terminal.TtyConnector;
 import com.jediterm.terminal.model.SelectionUtil;
+import com.katmoda.jterm.broadcast.BroadcastingTtyConnector;
 import com.katmoda.jterm.config.AppSettings;
 import com.katmoda.jterm.dnd.DropRegion;
 import com.katmoda.jterm.dnd.PaneTransferable;
@@ -80,7 +81,7 @@ import java.nio.file.Files;
  */
 public final class TerminalPane extends JPanel implements GridContent {
 
-    private final TerminalSession session;
+    private TerminalSession session;
     private final JtermJediTermWidget widget;
     private final JTermSettingsProvider settingsProvider;
     private final TtyConnector inputConnector;
@@ -98,6 +99,11 @@ public final class TerminalPane extends JPanel implements GridContent {
     private Runnable highlightTeardown;
     private Border savedBorder;
     private boolean stopped;
+    private JPanel stoppedPanel;
+    /** Repopulates the stopped screen's hint lines; used to restore them after a failed reconnect. */
+    private Runnable stoppedHintsPopulator;
+    /** Set once Return/R is taken on the stopped screen, so the action and its status show only once. */
+    private boolean stoppedActionTaken;
     private PaneActivity activity = PaneActivity.NONE;
 
     public TerminalPane(TerminalSession session, ThemeColors theme, TtyConnector connector) {
@@ -217,12 +223,42 @@ public final class TerminalPane extends JPanel implements GridContent {
             return;
         }
         stopped = true;
+        stoppedActionTaken = false;
         titleTimer.stop();
         JPanel panel = buildStoppedPanel(onExit, onRestart);
+        stoppedPanel = panel;
         bottomArea.add(panel, BorderLayout.CENTER);
         revalidate();
         repaint();
         SwingUtilities.invokeLater(panel::requestFocusInWindow);
+    }
+
+    /**
+     * Reuse this pane's widget — and its scrollback — with a freshly created session (the R /
+     * restart action). The old transport is closed, the broadcast wrapper is repointed at the new
+     * connector (keeping the same wrapper object, so broadcast registration and the widget binding
+     * stay intact), the "Session stopped" overlay is removed, and the widget is restarted so the new
+     * session's output appends below the preserved history. Called on the EDT once the new session
+     * is connected.
+     */
+    public void reconnect(TerminalSession newSession) {
+        session.close();
+        this.session = newSession;
+        if (inputConnector instanceof BroadcastingTtyConnector b) {
+            b.setReal(newSession.connector());
+        }
+        stopped = false;
+        if (stoppedPanel != null) {
+            bottomArea.remove(stoppedPanel);
+            stoppedPanel = null;
+        }
+        titleLabel.setText(session.title());
+        titleLabel.setIcon(SessionIcon.forSession(session, 16));
+        titleTimer.start();
+        widget.restartWith(inputConnector);
+        revalidate();
+        repaint();
+        focusTerminal();
     }
 
     private JPanel buildStoppedPanel(Runnable onExit, Runnable onRestart) {
@@ -240,15 +276,28 @@ public final class TerminalPane extends JPanel implements GridContent {
         lines.setOpaque(true);
         lines.setBackground(theme.background());
         lines.setBorder(BorderFactory.createEmptyBorder(6, 8, 8, 8));
-        lines.add(label("<html><b style='color:" + hex(red) + "'>Session stopped</b></html>", mono));
-        lines.add(label(hintLine("&lt;Return&gt;", cyan, " to exit tab"), mono));
-        lines.add(label(hintLine("R", magenta, " to restart session"), mono));
-        lines.add(label(hintLine("S", magenta, " to save terminal output to file"), mono));
+        // Captured so a failed reconnect can swap the transient "Reconnecting…" status back to the
+        // hints (see restoreStoppedScreen).
+        stoppedHintsPopulator = () -> {
+            lines.removeAll();
+            lines.add(label("<html><b style='color:" + hex(red) + "'>Session stopped</b></html>", mono));
+            lines.add(label(hintLine("&lt;Return&gt;", cyan, " to exit tab"), mono));
+            lines.add(label(hintLine("R", magenta, " to restart session"), mono));
+            lines.add(label(hintLine("S", magenta, " to save terminal output to file"), mono));
+            lines.revalidate();
+            lines.repaint();
+        };
+        stoppedHintsPopulator.run();
         panel.add(lines, BorderLayout.CENTER);
 
         panel.setFocusable(true);
-        bindKey(panel, java.awt.event.KeyEvent.VK_ENTER, onExit);
-        bindKey(panel, java.awt.event.KeyEvent.VK_R, onRestart);
+        // Return/R swap the hints for an immediate "Closing…"/"Reconnecting…" status so the
+        // keystroke is visibly acknowledged before the (possibly async) action runs. S keeps the
+        // panel open (it just opens a file chooser), so it isn't wrapped.
+        bindKey(panel, java.awt.event.KeyEvent.VK_ENTER,
+                () -> takeStoppedAction(lines, mono, "Closing…", cyan, onExit));
+        bindKey(panel, java.awt.event.KeyEvent.VK_R,
+                () -> takeStoppedAction(lines, mono, "Reconnecting…", magenta, onRestart));
         bindKey(panel, java.awt.event.KeyEvent.VK_S, this::saveOutput);
         panel.addMouseListener(new MouseAdapter() {
             @Override
@@ -257,6 +306,38 @@ public final class TerminalPane extends JPanel implements GridContent {
             }
         });
         return panel;
+    }
+
+    /**
+     * Replaces the stopped-screen hint lines with a single bold status message, then runs the
+     * action on the next EDT cycle so the status paints first. Guarded by {@link #stoppedActionTaken}
+     * so a second key press (e.g. Return after R) is ignored while the first action is in flight.
+     */
+    private void takeStoppedAction(Box lines, Font mono, String message, Color color, Runnable action) {
+        if (stoppedActionTaken) {
+            return;
+        }
+        stoppedActionTaken = true;
+        lines.removeAll();
+        lines.add(label("<html><b style='color:" + hex(color) + "'>" + message + "</b></html>", mono));
+        lines.revalidate();
+        lines.repaint();
+        SwingUtilities.invokeLater(action);
+    }
+
+    /**
+     * Restores the stopped screen's hints after a reconnect attempt failed (the transient
+     * "Reconnecting…" status is swapped back to "Press R / Return …"), and re-arms the keys so the
+     * user can retry. Called on the EDT by {@code PaneGrid.restartPane}'s error handler. A no-op if
+     * the overlay is gone (already reconnected or the pane was closed).
+     */
+    public void restoreStoppedScreen() {
+        if (!stopped || stoppedPanel == null || stoppedHintsPopulator == null) {
+            return;
+        }
+        stoppedActionTaken = false;
+        stoppedHintsPopulator.run();
+        stoppedPanel.requestFocusInWindow();
     }
 
     /** One indented "    - Press <key> <suffix>" line with the key letter colored. */
