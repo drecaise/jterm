@@ -1,8 +1,28 @@
+/*
+ * jterm — a Java terminal emulator.
+ * Copyright (C) 2026 Mark Moses
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
 package com.katmoda.jterm.ui.sidebar;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.formdev.flatlaf.extras.FlatSVGIcon;
+import com.katmoda.jterm.dnd.FolderTransferable;
 import com.katmoda.jterm.dnd.LocalTransferable;
 import com.katmoda.jterm.dnd.SessionTransferable;
 import com.katmoda.jterm.dnd.WslTransferable;
@@ -147,6 +167,10 @@ public final class SessionSidebar extends JPanel {
                 if (node instanceof SshSessionConfig ssh) {
                     return new SessionTransferable(ssh);
                 }
+                if (node instanceof FolderNode folder
+                        && folder != store.root() && folder != wslFolder) {
+                    return new FolderTransferable(folder); // root / WSL folder stay put
+                }
                 if (node instanceof WslDistroNode wsl) {
                     return new WslTransferable(wsl.distro());
                 }
@@ -155,9 +179,26 @@ public final class SessionSidebar extends JPanel {
 
             @Override
             public boolean canImport(TransferSupport support) {
-                return support.isDrop()
-                        && support.isDataFlavorSupported(SessionTransferable.SESSION_FLAVOR)
-                        && dropTargetFolder(support) != null;
+                if (!support.isDrop()) {
+                    return false;
+                }
+                FolderNode target = dropTargetFolder(support);
+                if (target == null) {
+                    return false;
+                }
+                if (support.isDataFlavorSupported(SessionTransferable.SESSION_FLAVOR)) {
+                    return true;
+                }
+                if (support.isDataFlavorSupported(FolderTransferable.FOLDER_FLAVOR)) {
+                    try {
+                        FolderNode dragged = (FolderNode) support.getTransferable()
+                                .getTransferData(FolderTransferable.FOLDER_FLAVOR);
+                        return canMoveFolder(dragged, target);
+                    } catch (Exception e) {
+                        return false;
+                    }
+                }
+                return false;
             }
 
             @Override
@@ -166,9 +207,15 @@ public final class SessionSidebar extends JPanel {
                     return false;
                 }
                 try {
+                    FolderNode target = dropTargetFolder(support);
+                    if (support.isDataFlavorSupported(FolderTransferable.FOLDER_FLAVOR)) {
+                        FolderNode dragged = (FolderNode) support.getTransferable()
+                                .getTransferData(FolderTransferable.FOLDER_FLAVOR);
+                        return moveFolder(dragged, target);
+                    }
                     SshSessionConfig dragged = (SshSessionConfig) support.getTransferable()
                             .getTransferData(SessionTransferable.SESSION_FLAVOR);
-                    return moveSession(dragged, dropTargetFolder(support));
+                    return moveSession(dragged, target);
                 } catch (Exception e) {
                     return false;
                 }
@@ -414,6 +461,40 @@ public final class SessionSidebar extends JPanel {
         current.getChildren().remove(session);
         target.getChildren().add(session);
         rebuild();
+        return true;
+    }
+
+    /**
+     * Whether {@code dragged} may be re-parented into {@code target} without breaking the tree
+     * invariant. Rejects moving the root or WSL folder, dropping a folder onto itself, a no-op
+     * drop back into the current parent, and — critically — dropping a folder into itself or one
+     * of its own descendants, which would create a cycle and blow up tree traversal / save.
+     */
+    private boolean canMoveFolder(FolderNode dragged, FolderNode target) {
+        if (dragged == null || target == null
+                || dragged == store.root() || dragged == wslFolder) {
+            return false;
+        }
+        if (target == dragged) {
+            return false; // dropping onto itself
+        }
+        if (store.ancestorsOf(target).contains(dragged)) {
+            return false; // target sits below dragged → cycle
+        }
+        FolderNode current = parentFolderOf(dragged);
+        return current != null && target != current; // skip no-op move into current parent
+    }
+
+    /** Reparents {@code dragged} into {@code target}. Returns whether anything changed. */
+    private boolean moveFolder(FolderNode dragged, FolderNode target) {
+        if (!canMoveFolder(dragged, target)) {
+            return false;
+        }
+        FolderNode current = parentFolderOf(dragged);
+        current.getChildren().remove(dragged);
+        target.getChildren().add(dragged);
+        rebuild();
+        selectNode(dragged);
         return true;
     }
 

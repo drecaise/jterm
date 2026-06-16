@@ -1,0 +1,59 @@
+jterm — Third-Party Software Acknowledgements
+=============================================
+
+jterm bundles and builds upon the following open-source libraries. We are
+grateful to their authors and contributors. Each component remains under its
+own license, summarized below.
+
+
+FlatLaf  (com.formdev:flatlaf, com.formdev:flatlaf-extras) — 3.7.1
+    Swing look and feel (light/dark, SVG icon support).
+    License: Apache License 2.0
+    https://www.formdev.com/flatlaf/
+    https://www.apache.org/licenses/LICENSE-2.0
+
+JediTerm  (org.jetbrains.jediterm:jediterm-core, jediterm-ui) — 3.70
+    Terminal emulator engine and Swing widget.
+    License: GNU Lesser General Public License v3.0 (LGPL-3.0)
+    https://github.com/JetBrains/jediterm
+    https://www.gnu.org/licenses/lgpl-3.0.html
+
+pty4j  (org.jetbrains.pty4j:pty4j) — 0.13.12
+    Pseudo-terminal (PTY) process support for local shells.
+    License: Eclipse Public License 1.0 (EPL-1.0)
+    https://github.com/JetBrains/pty4j
+    https://www.eclipse.org/legal/epl-v10.html
+
+Apache MINA SSHD  (org.apache.sshd:sshd-core, sshd-sftp) — 2.18.0
+    SSH client, channels, and SFTP subsystem.
+    License: Apache License 2.0
+    https://mina.apache.org/sshd-project/
+    https://www.apache.org/licenses/LICENSE-2.0
+
+EdDSA-Java  (net.i2p.crypto:eddsa) — 0.3.0
+    Ed25519 signature support for SSH.
+    License: CC0 1.0 Universal (Public Domain Dedication)
+    https://github.com/str4d/ed25519-java
+    https://creativecommons.org/publicdomain/zero/1.0/
+
+Jackson Databind  (com.fasterxml.jackson.core:jackson-databind) — 2.19.0
+    JSON serialization for sessions, icons, keymap, and credentials.
+    License: Apache License 2.0
+    https://github.com/FasterXML/jackson-databind
+    https://www.apache.org/licenses/LICENSE-2.0
+
+java-keyring  (com.github.javakeyring:java-keyring) — 1.0.4
+    OS-native keyring access (Windows Credential Store backend).
+    License: BSD 3-Clause License
+    https://github.com/javakeyring/java-keyring
+    https://opensource.org/licenses/BSD-3-Clause
+
+SLF4J Simple  (org.slf4j:slf4j-simple) — 2.0.13
+    Simple logging backend.
+    License: MIT License
+    https://www.slf4j.org/
+    https://opensource.org/licenses/MIT
+
+
+Full license texts are available at the URLs listed above and from each
+project's source repository.
