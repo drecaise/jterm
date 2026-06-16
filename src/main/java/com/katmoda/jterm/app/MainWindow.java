@@ -60,6 +60,7 @@ import com.katmoda.jterm.ui.tabs.TabPane;
 import com.katmoda.jterm.ui.theme.ThemeManager;
 
 import javax.swing.Icon;
+import javax.swing.JEditorPane;
 import javax.swing.JFrame;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
@@ -72,7 +73,10 @@ import javax.swing.JTextArea;
 import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
+import javax.swing.UIManager;
+import javax.swing.event.HyperlinkEvent;
 import java.awt.BorderLayout;
+import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GraphicsDevice;
@@ -85,7 +89,10 @@ import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -968,9 +975,49 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
                 + "option) any later version.<br><br>"
                 + "This program comes with ABSOLUTELY NO WARRANTY. See the GNU General<br>"
                 + "Public License for more details &lt;https://www.gnu.org/licenses/&gt;.<br><br>"
+                + "Report issues at <a href=\"" + ISSUES_URL + "\">" + ISSUES_URL + "</a><br><br>"
                 + "See <b>Help &rarr; Third-Party Licenses</b> for bundled components.</html>";
         JOptionPane.showMessageDialog(
-                frame, message, "About " + AppInfo.name(), JOptionPane.INFORMATION_MESSAGE);
+                frame, hyperlinkPane(message), "About " + AppInfo.name(),
+                JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    /** Project issue tracker, linked from the About dialog. */
+    private static final String ISSUES_URL = "https://github.com/drecaise/jterm/issues";
+
+    /**
+     * Builds an HTML-rendering component whose {@code <a href>} links open in the system browser.
+     * A {@link JEditorPane} (unlike the {@link JLabel} {@link JOptionPane} uses for HTML strings)
+     * supports hyperlink activation, while still inheriting the dialog's look via the label font.
+     */
+    private static JEditorPane hyperlinkPane(String html) {
+        JEditorPane pane = new JEditorPane("text/html", html);
+        pane.setEditable(false);
+        pane.setOpaque(false);
+        pane.setBorder(null);
+        Font font = UIManager.getFont("Label.font");
+        if (font != null) {
+            pane.putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, Boolean.TRUE);
+            pane.setFont(font);
+        }
+        pane.addHyperlinkListener(e -> {
+            if (e.getEventType() == HyperlinkEvent.EventType.ACTIVATED) {
+                openInBrowser(e.getURL() != null ? e.getURL().toString() : e.getDescription());
+            }
+        });
+        return pane;
+    }
+
+    /** Opens {@code url} in the host's default browser, ignoring failures. */
+    private static void openInBrowser(String url) {
+        try {
+            if (Desktop.isDesktopSupported()
+                    && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+                Desktop.getDesktop().browse(new URI(url));
+            }
+        } catch (IOException | URISyntaxException ignored) {
+            // Best-effort: nothing actionable if the browser can't be launched.
+        }
     }
 
     /**

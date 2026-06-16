@@ -89,6 +89,7 @@ import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.File;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -555,6 +556,16 @@ public final class SessionSidebar extends JPanel {
             return;
         }
 
+        Path target = chooser.getSelectedFile().toPath();
+        if (Files.exists(target)) {
+            int choice = JOptionPane.showConfirmDialog(this,
+                    target.getFileName() + " already exists.\nDo you want to replace it?",
+                    "Export Sessions", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+            if (choice != JOptionPane.YES_OPTION) {
+                return;
+            }
+        }
+
         SessionExport export = new SessionExport();
         export.folder = folder;
         export.root = (folder == store.root());
@@ -562,7 +573,6 @@ public final class SessionSidebar extends JPanel {
             return; // user cancelled the master-password prompt
         }
 
-        Path target = chooser.getSelectedFile().toPath();
         try {
             EXPORT_MAPPER.writeValue(target.toFile(), export);
         } catch (Exception e) {
