@@ -1218,9 +1218,8 @@ public final class SessionSidebar extends JPanel {
         JTextField host = new JTextField(cfg.getHost());
         JTextField port = new JTextField(String.valueOf(cfg.getPort()));
         JTextField user = new JTextField(cfg.getUser());
-        // Blank inherits from the folder chain / global default; show what that resolves to.
-        user.putClientProperty("JTextField.placeholderText",
-                "(inherit: " + store.effectiveUser(cfg) + ")");
+        // Placeholder ("(inherit: …)") is set by refreshInheritedHints below, against the folder
+        // the session will land in (the session may not be in the tree yet — new/duplicate).
         ToggleSwitch agent = new ToggleSwitch(cfg.isAgentForwarding());
 
         ToggleSwitch passwordAuth = new ToggleSwitch(cfg.isPasswordAuth());
@@ -1232,7 +1231,7 @@ public final class SessionSidebar extends JPanel {
         syncPasswordEnabled.run();
 
         KeyFileField keyFile = new KeyFileField(cfg.getKeyPath());
-        keyFile.setPlaceholder("(inherit: " + describeKeyPath(inheritedKeyPath(cfg)) + ")");
+        // Placeholder set by refreshInheritedHints below (resolved against the chosen folder).
         // Passphrase for an encrypted key, saved (vault-encrypted) at the session level. Blank keeps
         // any saved one; with none saved the user is prompted at connect time.
         JPasswordField keyPassphrase = new JPasswordField();
@@ -1266,6 +1265,18 @@ public final class SessionSidebar extends JPanel {
                 break;
             }
         }
+        // The "(inherit: …)" hints depend on which folder the session will live in — resolve them
+        // against the currently selected folder, and re-resolve whenever that selection changes.
+        Runnable refreshInheritedHints = () -> {
+            FolderOption sel = (FolderOption) folderCombo.getSelectedItem();
+            FolderNode dest = sel != null ? sel.folder() : initialFolder;
+            user.putClientProperty("JTextField.placeholderText",
+                    "(inherit: " + inheritedUserInFolder(dest) + ")");
+            user.repaint();
+            keyFile.setPlaceholder("(inherit: " + describeKeyPath(inheritedKeyPathInFolder(dest)) + ")");
+        };
+        folderCombo.addActionListener(a -> refreshInheritedHints.run());
+        refreshInheritedHints.run();
 
         JComboBox<MacroOption> macroCombo = buildMacroCombo(cfg.getMacroId());
         JComboBox<HighlightListCombo.Option> highlightCombo = HighlightListCombo.perSession(
@@ -1454,16 +1465,35 @@ public final class SessionSidebar extends JPanel {
     }
 
     /**
-     * The key path a blank field on {@code cfg} would inherit: the nearest ancestor folder's value,
-     * then the global default. {@code null} if nothing is set. (Excludes the session's own value.)
+     * The username a blank session field would inherit if the session lived in {@code folder}: the
+     * folder's own default, then ancestor folders nearest → root, then the global default, then the
+     * OS user. Used for the new/duplicate/edit dialog, where the session may not be in the tree yet
+     * (so we resolve against the chosen folder rather than the session's tree position).
      */
-    private String inheritedKeyPath(SshSessionConfig cfg) {
-        List<FolderNode> ancestors = store.ancestorsOf(cfg);
-        for (int i = ancestors.size() - 1; i >= 0; i--) {
-            String folderKey = ancestors.get(i).getKeyPath();
-            if (folderKey != null && !folderKey.isBlank()) {
-                return folderKey;
+    private String inheritedUserInFolder(FolderNode folder) {
+        if (folder != null) {
+            String own = folder.getUser();
+            if (own != null && !own.isBlank()) {
+                return own;
             }
+            return inheritedUser(folder); // ancestors → global → OS user
+        }
+        String global = AppSettings.get().getDefaultUsername();
+        return (global != null && !global.isBlank()) ? global : System.getProperty("user.name", "");
+    }
+
+    /**
+     * The key path a blank session field would inherit if the session lived in {@code folder}: the
+     * folder's own value, then ancestors nearest → root, then the global default. {@code null} if
+     * nothing is set. (Companion to {@link #inheritedUserInFolder}.)
+     */
+    private String inheritedKeyPathInFolder(FolderNode folder) {
+        if (folder != null) {
+            String own = folder.getKeyPath();
+            if (own != null && !own.isBlank()) {
+                return own;
+            }
+            return inheritedFolderKeyPath(folder); // ancestors → global
         }
         String global = AppSettings.get().getDefaultKeyPath();
         return (global != null && !global.isBlank()) ? global : null;
