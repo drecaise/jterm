@@ -59,12 +59,12 @@ public final class SftpLauncher {
                                          Consumer<Throwable> onError) {
         ClientSession session = ssh.clientSession();
         open(() -> new Built(SftpClientFactory.instance().createSftpClient(session), () -> { }),
-                ssh.title(), onReady, onError);
+                ssh.title(), ssh.iconId(), onReady, onError);
     }
 
     /** Open SFTP over a fresh, dedicated SSH connection (owned and closed by the pane). */
     public static void openFresh(String host, int port, String user, String password, String keyPath,
-                                 SshConnect.PassphraseProvider passphrases, String hostLabel,
+                                 SshConnect.PassphraseProvider passphrases, String hostLabel, String iconId,
                                  Consumer<GridContent> onReady, Consumer<Throwable> onError) {
         open(() -> {
             SshConnect.Connected conn = SshConnect.open(List.of(),
@@ -77,10 +77,10 @@ public final class SftpLauncher {
                 conn.close();
                 throw e;
             }
-        }, hostLabel, onReady, onError);
+        }, hostLabel, iconId, onReady, onError);
     }
 
-    private static void open(Callable<Built> builder, String hostLabel,
+    private static void open(Callable<Built> builder, String hostLabel, String iconId,
                              Consumer<GridContent> onReady, Consumer<Throwable> onError) {
         new SwingWorker<Built, Void>() {
             @Override
@@ -92,7 +92,7 @@ public final class SftpLauncher {
             protected void done() {
                 try {
                     Built built = get();
-                    onReady.accept(new SftpPane(built.client(), hostLabel, built.onClose()));
+                    onReady.accept(new SftpPane(built.client(), hostLabel, iconId, built.onClose()));
                 } catch (Exception e) {
                     onError.accept(e.getCause() != null ? e.getCause() : e);
                 }

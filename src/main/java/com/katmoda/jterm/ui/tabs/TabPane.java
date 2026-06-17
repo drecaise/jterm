@@ -23,6 +23,7 @@ import com.katmoda.jterm.app.TerminalServices;
 import com.katmoda.jterm.app.TerminalWindow;
 import com.katmoda.jterm.app.WindowManager;
 import com.katmoda.jterm.config.AppSettings;
+import com.katmoda.jterm.dnd.DetachedPane;
 import com.katmoda.jterm.dnd.PaneMoveCoordinator;
 import com.katmoda.jterm.dnd.PaneTransferable;
 import com.katmoda.jterm.dnd.TabTransferable;
@@ -84,9 +85,9 @@ import java.util.function.Consumer;
 public final class TabPane extends JPanel {
 
     /** Detach/adopt a pane from whatever window owns it (searched across all windows). */
-    private static final PaneMoveCoordinator MOVE_COORDINATOR = pane -> {
-        TabPane host = WindowManager.get().hostContaining(pane);
-        return host == null ? null : host.detachPaneFromOwnGrid(pane);
+    private static final PaneMoveCoordinator MOVE_COORDINATOR = content -> {
+        TabPane host = WindowManager.get().hostContaining(content);
+        return host == null ? null : host.detachPaneFromOwnGrid(content);
     };
 
     private final TerminalWindow owner;
@@ -157,7 +158,7 @@ public final class TabPane extends JPanel {
                         return;
                     }
                     dtde.acceptDrop(DnDConstants.ACTION_MOVE);
-                    TerminalPane pane = (TerminalPane) dtde.getTransferable()
+                    GridContent pane = (GridContent) dtde.getTransferable()
                             .getTransferData(PaneTransferable.PANE_FLAVOR);
                     movePaneToNewTab(pane);
                     dtde.dropComplete(true);
@@ -295,12 +296,12 @@ public final class TabPane extends JPanel {
     // ---- pane moves between tabs / windows ----
 
     /** Pull a pane out of its split into a new tab here. No-op for a sole pane within this window. */
-    private void movePaneToNewTab(TerminalPane pane) {
-        TabPane sourceHost = WindowManager.get().hostContaining(pane);
+    private void movePaneToNewTab(GridContent content) {
+        TabPane sourceHost = WindowManager.get().hostContaining(content);
         if (sourceHost == null) {
             return;
         }
-        PaneGrid sourceGrid = sourceHost.gridContaining(pane);
+        PaneGrid sourceGrid = sourceHost.gridContaining(content);
         if (sourceGrid == null) {
             return;
         }
@@ -309,34 +310,34 @@ public final class TabPane extends JPanel {
         if (sourceHost == this && sourceGrid.paneCount() <= 1) {
             return;
         }
-        SessionFactory factory = sourceHost.detachPaneFromOwnGrid(pane);
-        if (factory == null) {
+        DetachedPane detached = sourceHost.detachPaneFromOwnGrid(content);
+        if (detached == null) {
             return;
         }
         PaneGrid grid = newGrid();
         insertGrid(grid);
-        grid.adopt(pane, factory);
+        grid.adopt(detached.content(), detached.factory());
         decorateTab(grid);
         toFront();
     }
 
     /** Detach a pane from this strip's grid (without closing it), closing the tab if it empties. */
-    public SessionFactory detachPaneFromOwnGrid(TerminalPane pane) {
-        PaneGrid grid = gridContaining(pane);
+    public DetachedPane detachPaneFromOwnGrid(GridContent content) {
+        PaneGrid grid = gridContaining(content);
         if (grid == null) {
             return null;
         }
-        SessionFactory factory = grid.detachForMove(pane);
+        DetachedPane detached = grid.detachForMove(content);
         if (grid.paneCount() == 0) {
             closeTabForGrid(grid);
         }
-        return factory;
+        return detached;
     }
 
-    /** The grid in this strip that currently holds {@code pane}, or {@code null}. */
-    public PaneGrid gridContaining(TerminalPane pane) {
+    /** The grid in this strip that currently holds {@code content}, or {@code null}. */
+    public PaneGrid gridContaining(GridContent content) {
         for (int i = 0; i <= lastRealTabIndex(); i++) {
-            if (tabs.getComponentAt(i) instanceof PaneGrid grid && grid.contains(pane)) {
+            if (tabs.getComponentAt(i) instanceof PaneGrid grid && grid.contains(content)) {
                 return grid;
             }
         }

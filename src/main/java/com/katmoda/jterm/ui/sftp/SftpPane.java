@@ -21,7 +21,9 @@ package com.katmoda.jterm.ui.sftp;
 
 import com.formdev.flatlaf.extras.FlatSVGIcon;
 import com.katmoda.jterm.dnd.DropRegion;
+import com.katmoda.jterm.dnd.PaneTransferable;
 import com.katmoda.jterm.ui.ErrorDialog;
+import com.katmoda.jterm.ui.SessionIcon;
 import com.katmoda.jterm.ui.grid.GridContent;
 import com.katmoda.jterm.ui.theme.ThemeColors;
 import org.apache.sshd.sftp.client.SftpClient;
@@ -38,6 +40,7 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
+import javax.swing.JTextField;
 import javax.swing.JToolBar;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingWorker;
@@ -48,11 +51,15 @@ import javax.swing.table.DefaultTableCellRenderer;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.dnd.DnDConstants;
+import java.awt.dnd.DragGestureListener;
+import java.awt.dnd.DragSource;
+import java.awt.dnd.InvalidDnDOperationException;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -79,11 +86,12 @@ public final class SftpPane extends JPanel implements GridContent {
 
     private final SftpClient client;
     private final String hostLabel;
+    private final String iconId;
     private final Runnable onClose;
 
     private final EntryTableModel model = new EntryTableModel();
     private final JTable table = new JTable(model);
-    private final JLabel pathLabel = new JLabel(" ");
+    private final JTextField pathField = new JTextField();
 
     private Runnable onFocus;
     private Runnable onEnded;
@@ -93,20 +101,23 @@ public final class SftpPane extends JPanel implements GridContent {
 
     /**
      * @param client    an open SFTP client (its channel)
-     * @param hostLabel "user@host" shown in the header
+     * @param hostLabel "user@host" shown in the header and bottom connection bar
+     * @param iconId    the connection's icon-library id for the bottom bar (may be {@code null})
      * @param onClose   cleanup run when the pane closes — closes the channel and, for a dedicated
      *                  connection, the whole SSH connection (see {@link SftpLauncher})
      */
-    public SftpPane(SftpClient client, String hostLabel, Runnable onClose) {
+    public SftpPane(SftpClient client, String hostLabel, String iconId, Runnable onClose) {
         super(new BorderLayout());
         this.client = client;
         this.hostLabel = hostLabel;
+        this.iconId = iconId;
         this.onClose = onClose;
 
         add(buildHeader(), BorderLayout.NORTH);
+        add(buildConnectionBar(), BorderLayout.SOUTH);
 
         table.setAutoResizeMode(JTable.AUTO_RESIZE_LAST_COLUMN);
-        table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        table.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         table.setShowGrid(false);
         table.setFillsViewportHeight(true);
         table.getColumnModel().getColumn(0).setCellRenderer(new NameRenderer());
@@ -142,12 +153,49 @@ public final class SftpPane extends JPanel implements GridContent {
         bar.add(Box.createHorizontalGlue());
         bar.add(button("Close SFTP", "close", this::requestClose));
 
-        pathLabel.setBorder(BorderFactory.createEmptyBorder(2, 8, 4, 8));
+        // An editable path field holding just the remote path (the connection is identified by the
+        // bottom bar). Enter navigates; the field is rewritten to the canonical path on a load.
+        pathField.setToolTipText("Type a remote path and press Enter to navigate");
+        pathField.addActionListener(e -> loadDir(pathField.getText().trim()));
+        JPanel pathRow = new JPanel(new BorderLayout());
+        pathRow.setBorder(BorderFactory.createEmptyBorder(2, 8, 4, 8));
+        pathRow.add(pathField, BorderLayout.CENTER);
 
         JPanel header = new JPanel(new BorderLayout());
         header.add(bar, BorderLayout.NORTH);
-        header.add(pathLabel, BorderLayout.SOUTH);
+        header.add(pathRow, BorderLayout.SOUTH);
         return header;
+    }
+
+    /** A bottom bar showing the connection's icon + name, mirroring the terminal pane's title bar. */
+    private JComponent buildConnectionBar() {
+        JLabel label = new JLabel(hostLabel, SessionIcon.forIconId(iconId, 16), JLabel.LEADING);
+        label.setIconTextGap(6);
+        JPanel bar = new JPanel(new BorderLayout());
+        bar.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
+        bar.add(label, BorderLayout.CENTER);
+        installBarDragSource(bar, label);
+        return bar;
+    }
+
+    /**
+     * Makes the connection bar a drag handle that carries this live SFTP pane, so it can be dropped
+     * on the "+" (its own tab), onto another pane, or onto another window — the SFTP channel stays
+     * open across the move. Mirrors {@code TerminalPane.installPaneDragSource}; the table keeps its
+     * own selection behaviour since only the bar is a drag source.
+     */
+    private void installBarDragSource(JComponent... handles) {
+        DragGestureListener listener = dge -> {
+            try {
+                dge.startDrag(null, new PaneTransferable(this));
+            } catch (InvalidDnDOperationException ignored) {
+                // Another drag is already in flight; ignore this gesture.
+            }
+        };
+        DragSource ds = DragSource.getDefaultDragSource();
+        for (JComponent handle : handles) {
+            ds.createDefaultDragGestureRecognizer(handle, DnDConstants.ACTION_MOVE, listener);
+        }
     }
 
     private JButton button(String text, String iconName, Runnable action) {
@@ -190,9 +238,9 @@ public final class SftpPane extends JPanel implements GridContent {
             return new Listing(canonical, entries);
         }, listing -> {
             cwd = listing.path();
-            pathLabel.setText(hostLabel + ":" + listing.path());
+            pathField.setText(listing.path());
             model.setEntries(listing.entries());
-        }, "List directory");
+        }, () -> pathField.setText(cwd), "List directory");
     }
 
     private void goUp() {
@@ -212,13 +260,25 @@ public final class SftpPane extends JPanel implements GridContent {
     }
 
     private void download() {
-        DirEntry sel = selectedEntry();
-        if (sel == null || !sel.getAttributes().isRegularFile()) {
-            JOptionPane.showMessageDialog(this, "Select a file to download.", "SFTP",
+        List<DirEntry> entries = selectedEntries();
+        if (entries.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Select one or more items to download.", "SFTP",
                     JOptionPane.INFORMATION_MESSAGE);
             return;
         }
-        downloadEntry(sel);
+        // A single file keeps the "choose the destination filename" flow; anything else (multiple
+        // items, or a directory) downloads into a chosen folder, recursing as needed.
+        if (entries.size() == 1 && entries.get(0).getAttributes().isRegularFile()) {
+            downloadEntry(entries.get(0));
+            return;
+        }
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Download to folder");
+        chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+        SftpTransfer.download(this, client, cwd, entries, chooser.getSelectedFile().toPath(), null);
     }
 
     private void downloadEntry(DirEntry entry) {
@@ -240,19 +300,17 @@ public final class SftpPane extends JPanel implements GridContent {
 
     private void upload() {
         JFileChooser chooser = new JFileChooser();
-        chooser.setDialogTitle("Upload file");
+        chooser.setDialogTitle("Upload files");
+        chooser.setMultiSelectionEnabled(true);
+        chooser.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
         if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) {
             return;
         }
-        Path local = chooser.getSelectedFile().toPath();
-        String remote = join(cwd, local.getFileName().toString());
-        runAsync(() -> {
-            try (OutputStream out = client.write(remote, SftpClient.OpenMode.Create,
-                    SftpClient.OpenMode.Write, SftpClient.OpenMode.Truncate)) {
-                Files.copy(local, out);
-            }
-            return null;
-        }, ignored -> loadDir(cwd), "Upload");
+        File[] files = chooser.getSelectedFiles();
+        if (files.length == 0) {
+            return;
+        }
+        SftpTransfer.upload(this, client, cwd, List.of(files), () -> loadDir(cwd));
     }
 
     private void newFolder() {
@@ -325,8 +383,30 @@ public final class SftpPane extends JPanel implements GridContent {
         return row >= 0 ? model.entryAt(row) : null;
     }
 
+    /** All selected entries except the ".." navigation row; used for multi-item transfers. */
+    private List<DirEntry> selectedEntries() {
+        List<DirEntry> out = new ArrayList<>();
+        for (int row : table.getSelectedRows()) {
+            DirEntry e = model.entryAt(row);
+            if (!"..".equals(e.getFilename())) {
+                out.add(e);
+            }
+        }
+        return out;
+    }
+
     /** Runs {@code work} off the EDT; on success calls {@code onDone} on the EDT, else shows the error. */
     private <T> void runAsync(Callable<T> work, java.util.function.Consumer<T> onDone, String what) {
+        runAsync(work, onDone, null, what);
+    }
+
+    /**
+     * Runs {@code work} off the EDT; on success calls {@code onDone} on the EDT, else shows the error
+     * and runs {@code onError} (when non-null) so the caller can roll back UI state (e.g. reset the
+     * path field after a failed navigation).
+     */
+    private <T> void runAsync(Callable<T> work, java.util.function.Consumer<T> onDone,
+                              Runnable onError, String what) {
         new SwingWorker<T, Void>() {
             @Override
             protected T doInBackground() throws Exception {
@@ -343,6 +423,9 @@ public final class SftpPane extends JPanel implements GridContent {
                 } catch (Exception e) {
                     Throwable cause = e.getCause() != null ? e.getCause() : e;
                     ErrorDialog.show(SftpPane.this, "SFTP — " + what, what + " failed:", cause);
+                    if (onError != null) {
+                        onError.run();
+                    }
                 }
             }
         }.execute();

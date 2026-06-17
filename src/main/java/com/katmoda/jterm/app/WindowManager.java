@@ -19,8 +19,8 @@
  */
 package com.katmoda.jterm.app;
 
+import com.katmoda.jterm.ui.grid.GridContent;
 import com.katmoda.jterm.ui.grid.PaneGrid;
-import com.katmoda.jterm.ui.pane.TerminalPane;
 import com.katmoda.jterm.ui.tabs.TabPane;
 
 import java.awt.KeyboardFocusManager;
@@ -115,10 +115,10 @@ public final class WindowManager {
         return main;
     }
 
-    /** The tab strip whose grid currently holds {@code pane}, searched across all windows. */
-    public TabPane hostContaining(TerminalPane pane) {
+    /** The tab strip whose grid currently holds {@code content}, searched across all windows. */
+    public TabPane hostContaining(GridContent content) {
         for (TerminalWindow w : windows) {
-            if (w.tabPane().gridContaining(pane) != null) {
+            if (w.tabPane().gridContaining(content) != null) {
                 return w.tabPane();
             }
         }

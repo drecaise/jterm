@@ -40,8 +40,7 @@ public final class SessionIcon {
 
     public static Icon forSession(TerminalSession session, int size) {
         if (session instanceof SshSession ssh) {
-            String id = (ssh.iconId() != null && !ssh.iconId().isBlank()) ? ssh.iconId() : "builtin/server";
-            return IconLibrary.get().icon(id, size);
+            return forIconId(ssh.iconId(), size);
         }
         if (session instanceof LocalSession local && local.iconId() != null) {
             return IconLibrary.get().icon(local.iconId(), size);
@@ -49,5 +48,15 @@ public final class SessionIcon {
         // Plain shell: a light glyph reads on the dark theme's strip, and vice-versa.
         String name = ThemeManager.get().isDark() ? "icons/terminal-light.svg" : "icons/terminal-dark.svg";
         return new FlatSVGIcon(name, size, size);
+    }
+
+    /**
+     * The icon for a saved SSH icon id, falling back to the generic server glyph when the id is
+     * null/blank. Shared by {@link #forSession} and the SFTP browser's connection bar so the two
+     * resolve SSH icons identically.
+     */
+    public static Icon forIconId(String iconId, int size) {
+        String id = (iconId != null && !iconId.isBlank()) ? iconId : "builtin/server";
+        return IconLibrary.get().icon(id, size);
     }
 }
