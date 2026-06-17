@@ -1,0 +1,41 @@
+app-id: com.katmoda.jterm
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+# Provides a JDK at build time; its install.sh copies a JRE into /app at /app/jre.
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.openjdk21
+command: jterm
+
+finish-args:
+  - --share=ipc
+  - --share=network            # SSH/SFTP connections
+  - --socket=x11
+  - --socket=wayland
+  - --socket=ssh-auth          # forwards SSH_AUTH_SOCK so ssh-agent auth works
+  - --device=dri
+  - --filesystem=home          # ~/.ssh keys + known_hosts, app config, SFTP transfers
+  - --talk-name=org.freedesktop.secrets   # libsecret-backed keyring (see note below)
+
+modules:
+  - name: openjdk
+    buildsystem: simple
+    build-commands:
+      - /usr/lib/sdk/openjdk21/install.sh
+
+  - name: jterm
+    buildsystem: simple
+    build-commands:
+      - install -Dm644 jterm.jar /app/share/jterm/jterm.jar
+      - install -Dm755 jterm.sh  /app/bin/jterm
+      - install -Dm644 com.katmoda.jterm.desktop /app/share/applications/com.katmoda.jterm.desktop
+      - install -Dm644 com.katmoda.jterm.svg /app/share/icons/hicolor/scalable/apps/com.katmoda.jterm.svg
+    sources:
+      - type: file
+        path: jterm.jar
+      - type: file
+        path: jterm.sh
+      - type: file
+        path: com.katmoda.jterm.desktop
+      - type: file
+        path: com.katmoda.jterm.svg

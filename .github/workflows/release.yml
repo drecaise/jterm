@@ -1,0 +1,267 @@
+name: Release
+
+# Build downloadable binaries and attach them to a GitHub Release.
+#
+# Runs on:
+#   - a version tag pushed to master (e.g. v1.2.3) -> builds + creates/updates the Release
+#   - manual dispatch (Actions tab -> Run workflow) -> builds only, uploads workflow
+#     artifacts you can download to test; does NOT touch any Release.
+#
+# Artifacts produced:
+#   - jterm-<version>.jar       cross-platform fat jar (needs a JRE 21)
+#   - jterm-<version>.msi       Windows installer (bundles a JRE, via jpackage)
+#   - jterm-<version>.flatpak   Linux single-file bundle (bundles a JRE)
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to create the Release and upload assets
+
+jobs:
+  # Resolve the version once so every job (and the MSI, which needs a strictly
+  # numeric version) agrees on it.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      app_version: ${{ steps.v.outputs.app_version }}
+    steps:
+      - id: v
+        shell: bash
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            version="${GITHUB_REF_NAME#v}"          # v1.2.3 -> 1.2.3
+          else
+            version="0.0.0-SNAPSHOT"                 # manual test build
+          fi
+          # jpackage (MSI on Windows, DMG on macOS) requires N[.N[.N]] with the
+          # major component > 0 -- so strip any -SNAPSHOT suffix and floor it.
+          app="${version%%-*}"
+          case "$app" in ""|0|0.0|0.0.0) app="1.0.0" ;; esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "app_version=$app" >> "$GITHUB_OUTPUT"
+          echo "Resolved version=$version (app=$app)"
+
+  build-jar:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+      - name: Set project version
+        run: mvn -B -q versions:set -DnewVersion=${{ needs.version.outputs.version }} -DgenerateBackupPoms=false
+      - name: Build fat jar
+        run: mvn -B -q package -DskipTests
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jterm-jar
+          path: target/jterm.jar
+          if-no-files-found: error
+
+  build-msi:
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'      # Temurin ships jpackage; WiX is preinstalled on the runner
+          distribution: 'temurin'
+          cache: maven
+      - name: Set project version
+        shell: bash
+        run: mvn -B -q versions:set -DnewVersion=${{ needs.version.outputs.version }} -DgenerateBackupPoms=false
+      - name: Build fat jar
+        shell: bash
+        run: mvn -B -q package -DskipTests
+      # Best-effort .ico from the app SVG (rendered via the project's own classpath, then
+      # assembled with ImageMagick). If anything here fails the MSI still builds with
+      # jpackage's default icon.
+      - name: Render Windows icon
+        shell: bash
+        continue-on-error: true
+        run: |
+          mkdir -p icontmp
+          cat > icontmp/RenderIcon.java <<'JAVA'
+          import com.formdev.flatlaf.extras.FlatSVGIcon;
+          import java.awt.image.BufferedImage;
+          import javax.imageio.ImageIO;
+          import java.io.File;
+          public class RenderIcon {
+            public static void main(String[] a) throws Exception {
+              int size = Integer.parseInt(a[1]);
+              FlatSVGIcon ic = new FlatSVGIcon("icons/app.svg", size, size);
+              BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+              var g = img.createGraphics(); ic.paintIcon(null, g, 0, 0); g.dispose();
+              ImageIO.write(img, "png", new File(a[0]));
+            }
+          }
+          JAVA
+          javac -cp target/jterm.jar -d icontmp icontmp/RenderIcon.java
+          java -cp "icontmp;target/jterm.jar" -Djava.awt.headless=true RenderIcon icontmp/app-256.png 256
+          choco install imagemagick -y --no-progress
+          magick icontmp/app-256.png -define icon:auto-resize=256,128,64,48,32,16 app.ico
+      - name: Build MSI
+        shell: bash
+        run: |
+          mkdir -p staging dist
+          cp target/jterm.jar staging/
+          ICON_ARG=""
+          [ -f app.ico ] && ICON_ARG="--icon app.ico"
+          jpackage \
+            --type msi \
+            --name jterm \
+            --app-version "${{ needs.version.outputs.app_version }}" \
+            --input staging \
+            --main-jar jterm.jar \
+            --main-class com.katmoda.jterm.app.Main \
+            --vendor "Mark Moses" \
+            --description "Tabbed, splittable terminal emulator with SSH sessions" \
+            --win-menu --win-menu-group jterm \
+            --win-shortcut --win-dir-chooser --win-per-user-install \
+            --dest dist \
+            $ICON_ARG
+          # jpackage names the file jterm-<app_version>.msi; give it the display version.
+          src="dist/jterm-${{ needs.version.outputs.app_version }}.msi"
+          dst="dist/jterm-${{ needs.version.outputs.version }}.msi"
+          [ "$src" != "$dst" ] && mv "$src" "$dst" || true
+          ls -la dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jterm-msi
+          path: dist/*.msi
+          if-no-files-found: error
+
+  build-flatpak:
+    needs: [version, build-jar]
+    runs-on: ubuntu-latest
+    container:
+      image: bilelmoussaoui/flatpak-github-actions:freedesktop-24.08
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: jterm-jar
+          path: dist-jar
+      - name: Stage Flatpak sources
+        run: |
+          cp dist-jar/jterm.jar packaging/flatpak/jterm.jar
+          cp src/main/resources/icons/app.svg packaging/flatpak/com.katmoda.jterm.svg
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: jterm-${{ needs.version.outputs.version }}.flatpak
+          manifest-path: packaging/flatpak/com.katmoda.jterm.yml
+          cache-key: flatpak-builder-${{ github.sha }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jterm-flatpak
+          path: jterm-*.flatpak
+          if-no-files-found: error
+
+  build-dmg:
+    needs: version
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'      # Temurin ships jpackage; macOS builds the .dmg natively
+          distribution: 'temurin'
+          cache: maven
+      - name: Set project version
+        run: mvn -B -q versions:set -DnewVersion=${{ needs.version.outputs.version }} -DgenerateBackupPoms=false
+      - name: Build fat jar
+        run: mvn -B -q package -DskipTests
+      # Best-effort .icns from the app SVG (rendered via the project's own classpath, then
+      # assembled with the macOS iconutil). If anything here fails the DMG still builds.
+      - name: Render macOS icon
+        continue-on-error: true
+        run: |
+          mkdir -p icontmp jterm.iconset
+          cat > icontmp/RenderIcon.java <<'JAVA'
+          import com.formdev.flatlaf.extras.FlatSVGIcon;
+          import java.awt.image.BufferedImage;
+          import javax.imageio.ImageIO;
+          import java.io.File;
+          public class RenderIcon {
+            public static void main(String[] a) throws Exception {
+              int size = Integer.parseInt(a[1]);
+              FlatSVGIcon ic = new FlatSVGIcon("icons/app.svg", size, size);
+              BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+              var g = img.createGraphics(); ic.paintIcon(null, g, 0, 0); g.dispose();
+              ImageIO.write(img, "png", new File(a[0]));
+            }
+          }
+          JAVA
+          javac -cp target/jterm.jar -d icontmp icontmp/RenderIcon.java
+          render() { java -cp "icontmp:target/jterm.jar" -Djava.awt.headless=true RenderIcon "$1" "$2"; }
+          render jterm.iconset/icon_16x16.png 16
+          render jterm.iconset/icon_16x16@2x.png 32
+          render jterm.iconset/icon_32x32.png 32
+          render jterm.iconset/icon_32x32@2x.png 64
+          render jterm.iconset/icon_128x128.png 128
+          render jterm.iconset/icon_128x128@2x.png 256
+          render jterm.iconset/icon_256x256.png 256
+          render jterm.iconset/icon_256x256@2x.png 512
+          render jterm.iconset/icon_512x512.png 512
+          render jterm.iconset/icon_512x512@2x.png 1024
+          iconutil -c icns jterm.iconset -o app.icns
+      - name: Build DMG
+        run: |
+          mkdir -p staging dist
+          cp target/jterm.jar staging/
+          ICON_ARG=""
+          [ -f app.icns ] && ICON_ARG="--icon app.icns"
+          jpackage \
+            --type dmg \
+            --name jterm \
+            --app-version "${{ needs.version.outputs.app_version }}" \
+            --input staging \
+            --main-jar jterm.jar \
+            --main-class com.katmoda.jterm.app.Main \
+            --vendor "Mark Moses" \
+            --description "Tabbed, splittable terminal emulator with SSH sessions" \
+            --dest dist \
+            $ICON_ARG
+          # jpackage names the file jterm-<app_version>.dmg; give it the display version.
+          src="dist/jterm-${{ needs.version.outputs.app_version }}.dmg"
+          dst="dist/jterm-${{ needs.version.outputs.version }}.dmg"
+          [ "$src" != "$dst" ] && mv "$src" "$dst" || true
+          ls -la dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jterm-dmg
+          path: dist/*.dmg
+          if-no-files-found: error
+
+  # Only on a tag: gather the four artifacts and publish them on the Release.
+  release:
+    if: github.ref_type == 'tag'
+    needs: [version, build-jar, build-msi, build-flatpak, build-dmg]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Collect release assets
+        run: |
+          mkdir -p release
+          cp artifacts/jterm-jar/jterm.jar "release/jterm-${{ needs.version.outputs.version }}.jar"
+          cp artifacts/jterm-msi/*.msi release/
+          cp artifacts/jterm-flatpak/*.flatpak release/
+          cp artifacts/jterm-dmg/*.dmg release/
+          ls -la release
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true

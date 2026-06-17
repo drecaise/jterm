@@ -19,8 +19,13 @@ mvn -q compile                       # compile
 mvn -q exec:java                     # run from classes (launches the Swing GUI)
 mvn -q package -DskipTests           # build the shaded fat jar → target/jterm.jar
 java -jar target/jterm.jar           # run the jar
-mvn -Pinstaller package              # native installer via jpackage (target/dist)
 ```
+
+Native installers (Windows `.msi`, macOS `.dmg`) and the Linux `.flatpak` are built by the
+`Release` GitHub Actions workflow (`.github/workflows/release.yml`) — on a `v*.*.*` tag push it
+attaches all three plus the fat jar to a GitHub Release; manual dispatch builds them as
+downloadable workflow artifacts. jpackage is driven directly from the workflow (the old
+`-Pinstaller` Maven profile was removed); the Flatpak manifest lives in `packaging/flatpak/`.
 
 There is **no test suite** yet (`-DskipTests` is just defensive). Verification is done by
 building + launching. There is a real display (`DISPLAY=:0`, Wayland), so the GUI launches,
