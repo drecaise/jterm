@@ -23,6 +23,7 @@ import com.jediterm.terminal.TtyConnector;
 import com.katmoda.jterm.broadcast.BroadcastBus;
 import com.katmoda.jterm.broadcast.BroadcastingTtyConnector;
 import com.katmoda.jterm.dnd.DropRegion;
+import com.katmoda.jterm.dnd.DetachedPane;
 import com.katmoda.jterm.dnd.LocalTransferable;
 import com.katmoda.jterm.dnd.PaneMoveCoordinator;
 import com.katmoda.jterm.dnd.PaneTransferable;
@@ -423,14 +424,10 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         return n;
     }
 
-    /** This grid's only cell if it holds exactly one and it's a terminal, else {@code null}.
-     *  (Only terminals are draggable into another grid; an SFTP tab merely reorders.) */
-    public TerminalPane solePane() {
-        if (paneCount() != 1) {
-            return null;
-        }
-        GridContent only = firstContent();
-        return (only instanceof TerminalPane tp) ? tp : null;
+    /** This grid's only cell if it holds exactly one pane (any kind), else {@code null}. Used to let
+     *  a single-pane tab — terminal or SFTP — be dragged by its header into another grid. */
+    public GridContent solePane() {
+        return paneCount() == 1 ? firstContent() : null;
     }
 
     private GridContent firstContent() {
@@ -484,8 +481,8 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
      * factory so an adopting grid can keep restart working. The grid collapses around the gap; the
      * caller (e.g. the move coordinator) decides whether an emptied tab should close.
      */
-    public SessionFactory detachForMove(TerminalPane pane) {
-        int[] pos = locate(pane);
+    public DetachedPane detachForMove(GridContent content) {
+        int[] pos = locate(content);
         if (pos == null) {
             return null;
         }
@@ -496,11 +493,11 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         relayout();
         moveActiveToExistingPane();
         focusActive();
-        return factory;
+        return new DetachedPane(content, factory);
     }
 
     /** Adopt an existing pane into this (fresh, single-cell) grid at (0,0). */
-    public void adopt(TerminalPane pane, SessionFactory factory) {
+    public void adopt(GridContent pane, SessionFactory factory) {
         placeExistingPaneAt(0, 0, pane, factory);
         relayout();
         focusActive();
@@ -508,7 +505,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
 
     /** Adopt an existing pane as a split relative to {@code target} (column/row by drop region). */
     public void adoptAsSplit(GridContent target, DropRegion region,
-                             TerminalPane pane, SessionFactory factory) {
+                             GridContent pane, SessionFactory factory) {
         int[] pos = locate(target);
         if (pos != null) {
             activeRow = pos[0];
@@ -767,7 +764,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
                 try {
                     if (dtde.isDataFlavorSupported(PaneTransferable.PANE_FLAVOR)) {
                         dtde.acceptDrop(DnDConstants.ACTION_MOVE);
-                        TerminalPane dragged = (TerminalPane) dtde.getTransferable()
+                        GridContent dragged = (GridContent) dtde.getTransferable()
                                 .getTransferData(PaneTransferable.PANE_FLAVOR);
                         dropPaneOnPane(dragged, content, region);
                         dtde.dropComplete(true);
@@ -816,7 +813,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
      * A pane was dropped on {@code target}. If it already lives in this grid, rearrange (swap);
      * otherwise it came from another tab — detach it from its source grid and bring it in as a split.
      */
-    private void dropPaneOnPane(TerminalPane dragged, GridContent target, DropRegion region) {
+    private void dropPaneOnPane(GridContent dragged, GridContent target, DropRegion region) {
         if (dragged == null) {
             return;
         }
@@ -825,9 +822,9 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
                 swapPanes(dragged, target);
             }
         } else if (moveCoordinator != null) {
-            SessionFactory factory = moveCoordinator.detachFromOwner(dragged);
-            if (factory != null) {
-                adoptAsSplit(target, region, dragged, factory);
+            DetachedPane detached = moveCoordinator.detachFromOwner(dragged);
+            if (detached != null) {
+                adoptAsSplit(target, region, detached.content(), detached.factory());
             }
         }
     }
@@ -836,7 +833,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
      * A pane was dropped on an empty cell. Same-grid → move it there; from another tab → detach and
      * fill the cell (falling back to the active cell if the cell is no longer available).
      */
-    private void dropPaneOnEmptyCell(TerminalPane dragged, int r, int c) {
+    private void dropPaneOnEmptyCell(GridContent dragged, int r, int c) {
         if (dragged == null) {
             return;
         }
@@ -847,14 +844,14 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         if (moveCoordinator == null) {
             return;
         }
-        SessionFactory factory = moveCoordinator.detachFromOwner(dragged);
-        if (factory == null) {
+        DetachedPane detached = moveCoordinator.detachFromOwner(dragged);
+        if (detached == null) {
             return;
         }
         if (r >= 0 && r < rows && c >= 0 && c < cols && panes[r][c] == null) {
-            placeExistingPaneAt(r, c, dragged, factory);
+            placeExistingPaneAt(r, c, detached.content(), detached.factory());
         } else {
-            replaceActiveWithPane(dragged, factory);
+            replaceActiveWithPane(detached.content(), detached.factory());
         }
         relayout();
         focusActive();
@@ -1209,7 +1206,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
                 try {
                     if (dtde.isDataFlavorSupported(PaneTransferable.PANE_FLAVOR)) {
                         dtde.acceptDrop(DnDConstants.ACTION_MOVE);
-                        TerminalPane dragged = (TerminalPane) dtde.getTransferable()
+                        GridContent dragged = (GridContent) dtde.getTransferable()
                                 .getTransferData(PaneTransferable.PANE_FLAVOR);
                         dropPaneOnEmptyCell(dragged, r, c);
                         dtde.dropComplete(true);

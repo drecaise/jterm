@@ -19,8 +19,8 @@
  */
 package com.katmoda.jterm.dnd;
 
+import com.katmoda.jterm.ui.grid.GridContent;
 import com.katmoda.jterm.ui.grid.PaneGrid;
-import com.katmoda.jterm.ui.pane.TerminalPane;
 
 import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.Transferable;
@@ -37,7 +37,7 @@ public final class TabTransferable implements Transferable {
     public static final DataFlavor TAB_FLAVOR = createFlavor();
 
     private final PaneGrid grid;
-    private final TerminalPane solePane;
+    private final GridContent solePane;
 
     public TabTransferable(PaneGrid grid) {
         this.grid = grid;

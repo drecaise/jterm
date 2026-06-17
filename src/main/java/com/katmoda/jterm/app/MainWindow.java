@@ -372,7 +372,7 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         String effectiveKeyPath = sessionStore.effectiveKeyPath(cfg);
         String label = (!effectiveUser.isBlank() ? effectiveUser + "@" : "") + cfg.getHost();
         SftpLauncher.openFresh(cfg.getHost(), cfg.getPort(), effectiveUser, password,
-                effectiveKeyPath, keyPassphraseProvider(cfg, effectiveKeyPath), label,
+                effectiveKeyPath, keyPassphraseProvider(cfg, effectiveKeyPath), label, cfg.getIconId(),
                 this::placeSftp,
                 cause -> ErrorDialog.show(frame, "SFTP", "SFTP connection failed:", cause));
     }
