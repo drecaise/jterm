@@ -29,7 +29,8 @@ modules:
       - install -Dm644 jterm.jar /app/share/jterm/jterm.jar
       - install -Dm755 jterm.sh  /app/bin/jterm
       - install -Dm644 com.katmoda.jterm.desktop /app/share/applications/com.katmoda.jterm.desktop
-      - install -Dm644 com.katmoda.jterm.svg /app/share/icons/hicolor/scalable/apps/com.katmoda.jterm.svg
+      - install -Dm644 com.katmoda.jterm-128.png /app/share/icons/hicolor/128x128/apps/com.katmoda.jterm.png
+      - install -Dm644 com.katmoda.jterm-256.png /app/share/icons/hicolor/256x256/apps/com.katmoda.jterm.png
     sources:
       - type: file
         path: jterm.jar
@@ -38,4 +39,6 @@ modules:
       - type: file
         path: com.katmoda.jterm.desktop
       - type: file
-        path: com.katmoda.jterm.svg
+        path: com.katmoda.jterm-128.png
+      - type: file
+        path: com.katmoda.jterm-256.png

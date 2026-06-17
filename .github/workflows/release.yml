@@ -60,10 +60,35 @@ jobs:
         run: mvn -B -q versions:set -DnewVersion=${{ needs.version.outputs.version }} -DgenerateBackupPoms=false
       - name: Build fat jar
         run: mvn -B -q package -DskipTests
+      # Render square PNG icons for the Flatpak build: the source app.svg is 176x166 and
+      # Flatpak rejects non-square icons. RenderIcon draws into a square size x size canvas.
+      - name: Render square icons
+        run: |
+          mkdir -p out
+          cp target/jterm.jar out/
+          cat > RenderIcon.java <<'JAVA'
+          import com.formdev.flatlaf.extras.FlatSVGIcon;
+          import java.awt.image.BufferedImage;
+          import javax.imageio.ImageIO;
+          import java.io.File;
+          public class RenderIcon {
+            public static void main(String[] a) throws Exception {
+              int size = Integer.parseInt(a[1]);
+              FlatSVGIcon ic = new FlatSVGIcon("icons/app.svg", size, size);
+              BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+              var g = img.createGraphics(); ic.paintIcon(null, g, 0, 0); g.dispose();
+              ImageIO.write(img, "png", new File(a[0]));
+            }
+          }
+          JAVA
+          javac -cp target/jterm.jar -d . RenderIcon.java
+          for sz in 128 256; do
+            java -cp ".:target/jterm.jar" -Djava.awt.headless=true RenderIcon "out/com.katmoda.jterm-$sz.png" "$sz"
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: jterm-jar
-          path: target/jterm.jar
+          path: out          # jterm.jar + the square icon PNGs, at the artifact root
           if-no-files-found: error
 
   build-msi:
@@ -155,7 +180,8 @@ jobs:
       - name: Stage Flatpak sources
         run: |
           cp dist-jar/jterm.jar packaging/flatpak/jterm.jar
-          cp src/main/resources/icons/app.svg packaging/flatpak/com.katmoda.jterm.svg
+          cp dist-jar/com.katmoda.jterm-128.png packaging/flatpak/
+          cp dist-jar/com.katmoda.jterm-256.png packaging/flatpak/
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           bundle: jterm-${{ needs.version.outputs.version }}.flatpak
