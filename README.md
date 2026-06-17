@@ -14,6 +14,12 @@ light/dark theming that follows the host OS style.
   (built-in library + import your own PNG/JPG/GIF/SVG).
 - **Drag-and-drop** a session (or the Local Terminal entry) onto a pane to split-and-open:
   drop on the top 60% adds a column, the bottom 40% adds a row.
+- **SFTP file browser** — open an SFTP pane on any SSH session to browse the remote
+  filesystem, edit the path directly, and upload/download multiple files at once.
+- **SSH tunnels** — named local, remote, and dynamic (SOCKS) port forwards per session.
+- **Detach & re-attach tabs** — pop a tab out into its own window, and attach it back.
+- **Reconnect** a disconnected session (retaining its scrollback) and **save session output**
+  to a file from the pane title-bar menu.
 - **Broadcast mode** — type once, send to multiple panes; per-pane checkboxes to opt out.
 - **SSH auth**: ssh-agent (with forwarding) + on-disk keys, plus optional **password auth**.
   Saved passwords are stored in an **encrypted vault** unlocked by a master password that is
@@ -32,7 +38,8 @@ light/dark theming that follows the host OS style.
   - **macOS**: the built-in `security` CLI (login Keychain).
   - **Windows**: Windows Credential Manager (used automatically).
 - For SSH agent auth, a running **ssh-agent** with your keys (`ssh-add -l`). On Linux/macOS
-  the agent socket (`$SSH_AUTH_SOCK`) is used; Windows agent (named pipe) is not yet supported.
+  the agent socket (`$SSH_AUTH_SOCK`) is used; on Windows both the native OpenSSH agent
+  (named pipe) and **PuTTY Pageant** are supported.
 
 ## Building
 
@@ -56,17 +63,31 @@ mvn exec:java
 
 ## Installing
 
-### Native installer (all platforms)
+### Pre-built binaries (recommended)
 
-`jpackage` (bundled with the JDK) builds a native installer for the OS you run it on
-(`.deb`/`.rpm` on Linux, `.dmg`/`.pkg` on macOS, `.msi`/`.exe` on Windows):
+Each [GitHub Release](https://github.com/drecaise/jterm/releases) ships downloadable binaries:
 
-```bash
-mvn -Pinstaller package
-# output under target/dist/
-```
+| Platform | Asset | Install / run |
+|----------|-------|---------------|
+| Windows | `jterm-<version>.msi` | Run the installer |
+| macOS | `jterm-<version>.dmg` | Open the disk image, drag to Applications |
+| Linux | `jterm-<version>.flatpak` | `flatpak install jterm-<version>.flatpak` |
+| Any OS | `jterm-<version>.jar` | `java -jar jterm-<version>.jar` (needs a JRE 21) |
 
-### Linux / GNOME desktop integration
+The MSI, DMG and Flatpak bundle their own Java runtime, so end users don't need a separate
+JDK/JRE; only the bare `.jar` requires one.
+
+> The macOS `.dmg` is currently **unsigned**, so Gatekeeper will block the first launch —
+> right-click the app and choose *Open* to run it.
+
+These assets are built automatically by the `Release` GitHub Actions workflow
+([`.github/workflows/release.yml`](.github/workflows/release.yml)) whenever a `v*.*.*` tag is
+pushed; a manual workflow run builds the same artifacts for testing without publishing a release.
+
+### Linux / GNOME desktop integration (running the bare jar)
+
+If you run the bare `.jar` directly (rather than installing the Flatpak, which already
+integrates with the desktop), you can install a desktop entry and icon yourself.
 
 GNOME Shell (on Wayland via XWayland, and on Xorg) does **not** use a window's X11 icon for
 the dash / overview / Alt-Tab. Instead it matches a window to a `.desktop` file by its
@@ -103,6 +124,7 @@ State is stored as JSON in the per-OS config directory:
 | File | Contents |
 |------|----------|
 | `sessions.json` | Saved folders and SSH sessions |
+| `tunnels.json` | Saved SSH port-forwarding tunnels (local / remote / dynamic) |
 | `icons.json` | Imported custom icons (files copied into `<config>/icons/`) |
 | `keymap.json` | Keyboard shortcuts (created with defaults on first run; edit to customize) |
 | `credentials.json` | SSH passwords, **AES-GCM encrypted** under your master password (no plaintext) |
@@ -122,8 +144,16 @@ Defaults (editable in `keymap.json`):
 | Split into a new row | `Ctrl+↓` |
 | Close the focused pane | `Ctrl+↑` |
 | Open a local shell in the active pane | `Ctrl+Shift+T` |
+| Open SFTP browser | `Ctrl+F` |
+| Tunneling… | `Ctrl+Shift+P` |
 | Toggle broadcast input | `Ctrl+Shift+B` |
-| Toggle light/dark theme | `Ctrl+Shift+D` |
+| Toggle light/dark theme | `Ctrl+Shift+L` |
+| Duplicate session | `Ctrl+Shift+D` |
+| Move session up / down | `Ctrl+Shift+↑` / `Ctrl+Shift+↓` |
+| Move tab left / right | `Ctrl+Shift+←` / `Ctrl+Shift+→` |
+| Duplicate tab | `Ctrl+Shift+K` |
+| Detach tab to new window | `Ctrl+Shift+O` |
+| Attach tab to main window | `Ctrl+Shift+I` |
 
 ## SSH authentication
 

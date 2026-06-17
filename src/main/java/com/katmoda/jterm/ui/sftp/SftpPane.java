@@ -84,34 +84,42 @@ public final class SftpPane extends JPanel implements GridContent {
     private static final DateTimeFormatter MODIFIED_FMT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault());
 
-    private final SftpClient client;
+    private SftpClient client;
     private final String hostLabel;
     private final String iconId;
-    private final Runnable onClose;
+    private Runnable onClose;
+    private final Callable<SftpLauncher.SftpConnection> reconnector;
 
     private final EntryTableModel model = new EntryTableModel();
     private final JTable table = new JTable(model);
     private final JTextField pathField = new JTextField();
+    private JLabel connectionLabel;
 
     private Runnable onFocus;
     private Runnable onEnded;
     private Border savedBorder;
     private String cwd = ".";
     private boolean closed;
+    /** True while a reconnect is in flight, so concurrent operation failures don't each spawn one. */
+    private boolean reconnecting;
 
     /**
-     * @param client    an open SFTP client (its channel)
-     * @param hostLabel "user@host" shown in the header and bottom connection bar
-     * @param iconId    the connection's icon-library id for the bottom bar (may be {@code null})
-     * @param onClose   cleanup run when the pane closes — closes the channel and, for a dedicated
-     *                  connection, the whole SSH connection (see {@link SftpLauncher})
+     * @param client      an open SFTP client (its channel)
+     * @param hostLabel   "user@host" shown in the header and bottom connection bar
+     * @param iconId      the connection's icon-library id for the bottom bar (may be {@code null})
+     * @param onClose     cleanup run when the pane closes — closes the channel and, for a dedicated
+     *                    connection, the whole SSH connection (see {@link SftpLauncher})
+     * @param reconnector rebuilds the connection after a drop; returns a fresh client + matching
+     *                    cleanup (see {@link SftpLauncher})
      */
-    public SftpPane(SftpClient client, String hostLabel, String iconId, Runnable onClose) {
+    public SftpPane(SftpClient client, String hostLabel, String iconId, Runnable onClose,
+                    Callable<SftpLauncher.SftpConnection> reconnector) {
         super(new BorderLayout());
         this.client = client;
         this.hostLabel = hostLabel;
         this.iconId = iconId;
         this.onClose = onClose;
+        this.reconnector = reconnector;
 
         add(buildHeader(), BorderLayout.NORTH);
         add(buildConnectionBar(), BorderLayout.SOUTH);
@@ -171,11 +179,20 @@ public final class SftpPane extends JPanel implements GridContent {
     private JComponent buildConnectionBar() {
         JLabel label = new JLabel(hostLabel, SessionIcon.forIconId(iconId, 16), JLabel.LEADING);
         label.setIconTextGap(6);
+        this.connectionLabel = label;
         JPanel bar = new JPanel(new BorderLayout());
         bar.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
         bar.add(label, BorderLayout.CENTER);
         installBarDragSource(bar, label);
         return bar;
+    }
+
+    /** Flip the bottom bar to a transient "Reconnecting…" status, or back to the host label. */
+    private void setBarStatus(String status) {
+        if (connectionLabel == null) {
+            return;
+        }
+        connectionLabel.setText(status != null ? status : hostLabel);
     }
 
     /**
@@ -407,6 +424,16 @@ public final class SftpPane extends JPanel implements GridContent {
      */
     private <T> void runAsync(Callable<T> work, java.util.function.Consumer<T> onDone,
                               Runnable onError, String what) {
+        runAsync(work, onDone, onError, what, false);
+    }
+
+    /**
+     * Core of {@link #runAsync}. {@code retried} guards the single auto-reconnect: a connection drop
+     * detected on the first attempt rebuilds the connection and re-runs {@code work} once with
+     * {@code retried=true}, so a second failure surfaces normally instead of looping.
+     */
+    private <T> void runAsync(Callable<T> work, java.util.function.Consumer<T> onDone,
+                              Runnable onError, String what, boolean retried) {
         new SwingWorker<T, Void>() {
             @Override
             protected T doInBackground() throws Exception {
@@ -422,7 +449,73 @@ public final class SftpPane extends JPanel implements GridContent {
                     onDone.accept(get());
                 } catch (Exception e) {
                     Throwable cause = e.getCause() != null ? e.getCause() : e;
+                    // A dropped connection on the first attempt: transparently reconnect and retry once.
+                    if (!retried && connectionLost() && !reconnecting) {
+                        reconnectThenRetry(work, onDone, onError, what);
+                        return;
+                    }
                     ErrorDialog.show(SftpPane.this, "SFTP — " + what, what + " failed:", cause);
+                    if (onError != null) {
+                        onError.run();
+                    }
+                }
+            }
+        }.execute();
+    }
+
+    /**
+     * True when the failure was a dropped link rather than an ordinary error (permission denied,
+     * missing file, …). Decided from client/session state, not by parsing exception messages.
+     */
+    private boolean connectionLost() {
+        return !client.isOpen()
+                || client.getClientSession() == null
+                || !client.getClientSession().isOpen();
+    }
+
+    /**
+     * Rebuilds the connection off the EDT (showing a "Reconnecting…" status), then re-runs the failed
+     * operation once. On a reconnect failure, restores the bar and surfaces the original operation's
+     * error via the normal failure path (the retried run with a still-dead client falls through to the
+     * error dialog).
+     */
+    private <T> void reconnectThenRetry(Callable<T> work, java.util.function.Consumer<T> onDone,
+                                        Runnable onError, String what) {
+        reconnecting = true;
+        setBarStatus("Reconnecting…");
+        new SwingWorker<SftpLauncher.SftpConnection, Void>() {
+            @Override
+            protected SftpLauncher.SftpConnection doInBackground() throws Exception {
+                return reconnector.call();
+            }
+
+            @Override
+            protected void done() {
+                reconnecting = false;
+                setBarStatus(null);
+                if (closed) {
+                    return;
+                }
+                try {
+                    SftpLauncher.SftpConnection conn = get();
+                    SftpClient oldClient = client;
+                    Runnable oldClose = onClose;
+                    client = conn.client();
+                    onClose = conn.onClose();
+                    // Release the dead connection: close its (stale) channel, then tear down whatever
+                    // that path owned — the old dedicated SSH connection for a fresh open, a no-op for
+                    // the shared-session path.
+                    try {
+                        oldClient.close();
+                    } catch (IOException ignored) {
+                    }
+                    if (oldClose != null) {
+                        oldClose.run();
+                    }
+                    runAsync(work, onDone, onError, what, true);
+                } catch (Exception e) {
+                    Throwable cause = e.getCause() != null ? e.getCause() : e;
+                    ErrorDialog.show(SftpPane.this, "SFTP — Reconnect", "Reconnect failed:", cause);
                     if (onError != null) {
                         onError.run();
                     }

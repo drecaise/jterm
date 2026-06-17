@@ -80,6 +80,11 @@ final class JtermJediTermWidget extends JediTermWidget {
             stop();
         }
         getTerminal().useAlternateBuffer(false);
+        // The reused TerminalPanel keeps the cursor-visibility state from the dead session. If that
+        // session (or a TUI it was running) had hidden the cursor via DECTCEM (?25l) and dropped
+        // before restoring it, the cursor would stay invisible because a fresh shell never re-enables
+        // it. Force it back on so the reconnected session always shows a cursor.
+        getTerminal().setCursorVisible(true);
         setTtyConnector(connector);
         start();
     }

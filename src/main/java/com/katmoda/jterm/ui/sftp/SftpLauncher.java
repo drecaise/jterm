@@ -51,48 +51,61 @@ public final class SftpLauncher {
     private SftpLauncher() {
     }
 
-    private record Built(SftpClient client, Runnable onClose) {
+    /**
+     * An open SFTP connection: the client (its channel) plus the cleanup that tears down whatever
+     * this launcher path owns (the SSH connection for a dedicated open, a no-op when sharing a
+     * terminal's session). Returned by the builder and by the pane's reconnector.
+     */
+    public record SftpConnection(SftpClient client, Runnable onClose) {
     }
 
     /** Open SFTP on an existing terminal's live, authenticated SSH session (no re-auth). */
     public static void openOnLiveSession(SshSession ssh, Consumer<GridContent> onReady,
                                          Consumer<Throwable> onError) {
         ClientSession session = ssh.clientSession();
-        open(() -> new Built(SftpClientFactory.instance().createSftpClient(session), () -> { }),
-                ssh.title(), ssh.iconId(), onReady, onError);
+        // Reconnect by opening a fresh SFTP channel on the same (terminal-owned) session. Best-effort:
+        // succeeds when only the SFTP channel dropped; throws if the whole session has died, which the
+        // pane surfaces as an ordinary error since the terminal owns that connection's lifecycle.
+        Callable<SftpConnection> builder =
+                () -> new SftpConnection(SftpClientFactory.instance().createSftpClient(session), () -> { });
+        open(builder, builder, ssh.title(), ssh.iconId(), onReady, onError);
     }
 
     /** Open SFTP over a fresh, dedicated SSH connection (owned and closed by the pane). */
     public static void openFresh(String host, int port, String user, String password, String keyPath,
                                  SshConnect.PassphraseProvider passphrases, String hostLabel, String iconId,
                                  Consumer<GridContent> onReady, Consumer<Throwable> onError) {
-        open(() -> {
+        // A full reconnect: re-auth a fresh dedicated connection and open SFTP on it. Used both for the
+        // initial open and for the pane's reconnector (this path owns the credentials).
+        Callable<SftpConnection> builder = () -> {
             SshConnect.Connected conn = SshConnect.open(List.of(),
                     new SshConnect.HostHop(host, port, user, password, keyPath),
                     passphrases != null ? passphrases : SshConnect.PassphraseProvider.NONE);
             try {
                 SftpClient client = SftpClientFactory.instance().createSftpClient(conn.session());
-                return new Built(client, conn::close);
+                return new SftpConnection(client, conn::close);
             } catch (Exception e) {
                 conn.close();
                 throw e;
             }
-        }, hostLabel, iconId, onReady, onError);
+        };
+        open(builder, builder, hostLabel, iconId, onReady, onError);
     }
 
-    private static void open(Callable<Built> builder, String hostLabel, String iconId,
+    private static void open(Callable<SftpConnection> builder, Callable<SftpConnection> reconnector,
+                             String hostLabel, String iconId,
                              Consumer<GridContent> onReady, Consumer<Throwable> onError) {
-        new SwingWorker<Built, Void>() {
+        new SwingWorker<SftpConnection, Void>() {
             @Override
-            protected Built doInBackground() throws Exception {
+            protected SftpConnection doInBackground() throws Exception {
                 return builder.call();
             }
 
             @Override
             protected void done() {
                 try {
-                    Built built = get();
-                    onReady.accept(new SftpPane(built.client(), hostLabel, iconId, built.onClose()));
+                    SftpConnection built = get();
+                    onReady.accept(new SftpPane(built.client(), hostLabel, iconId, built.onClose(), reconnector));
                 } catch (Exception e) {
                     onError.accept(e.getCause() != null ? e.getCause() : e);
                 }

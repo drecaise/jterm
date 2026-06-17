@@ -98,12 +98,14 @@ Auth order is publickey (agent → on-disk keys) then password — MINA tries th
 `SshSession.connect` just registers identities and optionally `addPasswordIdentity`.
 
 - **ssh-agent**: MINA's bundled `UnixAgentFactory` needs Apache APR/tomcat-native (not
-  bundled) and reads the socket from *client properties*, not env. So this repo uses a
-  custom `terminal.ssh.agent.JdkUnixAgentFactory` + `JdkAgentProxy` — a JDK-native
-  Unix-domain-socket agent client (`UnixDomainSocketAddress`) reusing MINA's
-  `AbstractAgentProxy` protocol layer. `SshSession.installAgent` also sets the
-  `SSH_AUTH_SOCK` client property (with a login-shell fallback for desktop launches).
-  **Windows is skipped** (its agent is a named pipe, not a socket) — a known follow-up.
+  bundled) and reads the socket from *client properties*, not env. So this repo uses a custom
+  `terminal.ssh.agent.JdkAgentFactory`, and `terminal.ssh.agent.AgentSupport` picks the
+  per-OS agent source(s): on Linux/macOS a JDK-native Unix-domain-socket client
+  (`JdkAgentProxy` over `UnixDomainSocketAddress`) reusing MINA's `AbstractAgentProxy`
+  protocol layer; on Windows the OpenSSH named-pipe agent (`WindowsPipeAgentProxy`) and/or
+  PuTTY **Pageant** (`PageantAgentProxy`), fronted by `CompositeSshAgent` when more than one
+  is live. `SshSession.installAgent` also sets the `SSH_AUTH_SOCK` client property (with a
+  login-shell fallback for desktop launches).
 - **Host keys**: `terminal.ssh.JtermKnownHostsVerifier` (TOFU + changed-key warning) against
   `~/.ssh/known_hosts`.
 - **Vault**: `security.CredentialVault` stores SSH passwords AES-GCM-encrypted under a random
