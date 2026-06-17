@@ -30,6 +30,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.Callable;
 
 /**
  * An interactive SSH shell session backed by Apache MINA SSHD.
@@ -56,10 +57,11 @@ public final class SshSession implements TerminalSession {
     private final TerminalProfile profile;
     private final String highlightListId;
     private final String tabColorHex;
+    private final Callable<SshConnect.Connected> freshConnectionDialer;
 
     private SshSession(SshConnect.Connected connection, ChannelShell channel,
                        String title, String iconId, TerminalProfile profile, String highlightListId,
-                       String tabColorHex) {
+                       String tabColorHex, Callable<SshConnect.Connected> freshConnectionDialer) {
         this.connection = connection;
         this.channel = channel;
         this.title = title;
@@ -67,7 +69,19 @@ public final class SshSession implements TerminalSession {
         this.profile = profile;
         this.highlightListId = highlightListId;
         this.tabColorHex = tabColorHex;
+        this.freshConnectionDialer = freshConnectionDialer;
         this.connector = new SshTtyConnector(channel, title, profile.charset());
+    }
+
+    /**
+     * Dials a <em>fresh, dedicated</em> authenticated connection to this session's host (no shell
+     * channel), reusing the credentials resolved when this session was first opened — so it needs no
+     * UI and won't re-prompt. Used by the SFTP browser to reconnect after the shared session has
+     * died (the SFTP browser then owns and closes the returned connection). May be {@code null} for
+     * sessions created without a dialer.
+     */
+    public Callable<SshConnect.Connected> freshConnectionDialer() {
+        return freshConnectionDialer;
     }
 
     /**
@@ -117,10 +131,11 @@ public final class SshSession implements TerminalSession {
                                      String displayName, String iconId,
                                      TerminalProfile profile, String highlightListId,
                                      String tabColorHex) throws IOException {
-        SshConnect.Connected connection = SshConnect.open(
-                jumpHosts != null ? jumpHosts : List.of(),
-                new SshConnect.HostHop(host, port, user, password, keyPath),
-                passphrases != null ? passphrases : SshConnect.PassphraseProvider.NONE);
+        List<SshConnect.HostHop> hops = jumpHosts != null ? jumpHosts : List.of();
+        SshConnect.PassphraseProvider pp =
+                passphrases != null ? passphrases : SshConnect.PassphraseProvider.NONE;
+        SshConnect.HostHop target = new SshConnect.HostHop(host, port, user, password, keyPath);
+        SshConnect.Connected connection = SshConnect.open(hops, target, pp);
         try {
             ChannelShell channel = connection.session().createShellChannel();
             channel.setPtyType(profile.terminalType());
@@ -133,8 +148,11 @@ public final class SshSession implements TerminalSession {
 
             String label = displayName != null && !displayName.isBlank()
                     ? displayName : user + "@" + host;
+            // A dialer for a fresh dedicated connection to the same target with the same resolved
+            // credentials — used by the SFTP browser to reconnect independently of this shell.
+            Callable<SshConnect.Connected> dialer = () -> SshConnect.open(hops, target, pp);
             return new SshSession(connection, channel, label, iconId, profile, highlightListId,
-                    tabColorHex);
+                    tabColorHex, dialer);
         } catch (IOException e) {
             connection.close();
             throw e;

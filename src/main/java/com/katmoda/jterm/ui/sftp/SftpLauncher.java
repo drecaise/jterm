@@ -63,12 +63,27 @@ public final class SftpLauncher {
     public static void openOnLiveSession(SshSession ssh, Consumer<GridContent> onReady,
                                          Consumer<Throwable> onError) {
         ClientSession session = ssh.clientSession();
-        // Reconnect by opening a fresh SFTP channel on the same (terminal-owned) session. Best-effort:
-        // succeeds when only the SFTP channel dropped; throws if the whole session has died, which the
-        // pane surfaces as an ordinary error since the terminal owns that connection's lifecycle.
+        // Initial open reuses the terminal's live session — no re-auth, and the pane doesn't own it.
         Callable<SftpConnection> builder =
                 () -> new SftpConnection(SftpClientFactory.instance().createSftpClient(session), () -> { });
-        open(builder, builder, ssh.title(), ssh.iconId(), onReady, onError);
+        // On reconnect the shared session is typically gone (its death is what dropped us), so we can't
+        // open a new channel on it. Instead dial a fresh dedicated connection to the same host with the
+        // terminal's already-resolved credentials; the pane then owns and closes that connection.
+        Callable<SshConnect.Connected> dialer = ssh.freshConnectionDialer();
+        Callable<SftpConnection> reconnector = () -> {
+            if (dialer == null) {
+                throw new IllegalStateException("This SFTP session can't reconnect (no connection details).");
+            }
+            SshConnect.Connected conn = dialer.call();
+            try {
+                SftpClient client = SftpClientFactory.instance().createSftpClient(conn.session());
+                return new SftpConnection(client, conn::close);
+            } catch (Exception e) {
+                conn.close();
+                throw e;
+            }
+        };
+        open(builder, reconnector, ssh.title(), ssh.iconId(), onReady, onError);
     }
 
     /** Open SFTP over a fresh, dedicated SSH connection (owned and closed by the pane). */

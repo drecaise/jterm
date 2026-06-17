@@ -74,11 +74,16 @@ Rejected alternatives:
   - `openFresh`: reconnector re-runs `SshConnect.open(...) + createSftpClient`,
     returning the new client and a fresh `conn::close`. Full reconnect — this
     path owns the credentials/closure.
-  - `openOnLiveSession`: reconnector calls `createSftpClient(session)` on the
-    terminal's existing `ClientSession`, returning the new client and a no-op
-    close. Best-effort: succeeds when the SSH session is still alive (e.g. only
-    the SFTP channel dropped); throws when the whole session has died (the
-    terminal owns that lifecycle), which surfaces as a normal error.
+  - `openOnLiveSession`: the **initial** open reuses the terminal's live
+    `ClientSession` (no re-auth, pane doesn't own it). The **reconnector** dials
+    a *fresh dedicated* connection instead — because when the shared session
+    dies (the usual cause of the drop) there is no live session to open a new
+    channel on (MINA throws "session is being closed"). `SshSession` carries a
+    `freshConnectionDialer` (`Callable<SshConnect.Connected>`) built in
+    `SshSession.connect` from the credentials resolved at first connect, so the
+    redial needs no UI and won't re-prompt. The reconnector opens SFTP on that
+    fresh connection and owns/closes it. After a reconnect the shared-session
+    pane is effectively self-owned, exactly like the dedicated path.
 
 #### `SftpPane`
 - `client` and `onClose` become mutable fields.
