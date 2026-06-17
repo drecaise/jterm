@@ -802,6 +802,21 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
             if (e.getID() != KeyEvent.KEY_PRESSED || shortcutCaptureActive) {
                 return false; // let the shortcut editor capture keys while it's recording
             }
+            // A stopped pane claims bare Return / R / S so those actions work wherever focus sits in
+            // the pane (e.g. on the dead terminal), not only on the small "Session stopped" strip.
+            // Restricted to no Ctrl/Alt/Meta so real shortcuts (Ctrl+R, …) are untouched; only fires
+            // while the active pane is genuinely stopped, so live typing is unaffected.
+            if ((e.getModifiersEx() & (KeyEvent.CTRL_DOWN_MASK | KeyEvent.ALT_DOWN_MASK | KeyEvent.META_DOWN_MASK)) == 0) {
+                int kc = e.getKeyCode();
+                if (kc == KeyEvent.VK_R || kc == KeyEvent.VK_S || kc == KeyEvent.VK_ENTER) {
+                    TabPane stoppedHost = WindowManager.get().focusedTabPane();
+                    PaneGrid stoppedGrid = stoppedHost != null ? stoppedHost.currentGrid() : null;
+                    if (stoppedGrid != null && stoppedGrid.activePane() instanceof TerminalPane p
+                            && p.isStopped() && p.handleStoppedKey(kc)) {
+                        return true; // consume so JediTerm / menu accelerators don't also fire
+                    }
+                }
+            }
             KeyStroke stroke = KeyStroke.getKeyStrokeForEvent(e);
             TermAction action = keymap.actionFor(stroke);
             if (action == null) {

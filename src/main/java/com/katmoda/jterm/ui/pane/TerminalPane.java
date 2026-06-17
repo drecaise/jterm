@@ -39,12 +39,15 @@ import com.katmoda.jterm.ui.theme.ThemeColors;
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
+import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComponent;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
+import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
 import javax.swing.JSeparator;
 import javax.swing.KeyStroke;
 import javax.swing.SwingConstants;
@@ -56,6 +59,7 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Font;
+import java.awt.Insets;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.awt.dnd.DnDConstants;
@@ -71,6 +75,9 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
+import java.util.EnumSet;
 
 /**
  * A single terminal cell: a JediTerm widget driving one {@link TerminalSession}.
@@ -104,6 +111,14 @@ public final class TerminalPane extends JPanel implements GridContent {
     private Runnable stoppedHintsPopulator;
     /** Set once Return/R is taken on the stopped screen, so the action and its status show only once. */
     private boolean stoppedActionTaken;
+    // Stopped-screen state shared by the strip's key bindings and the global dispatcher path
+    // (handleStoppedKey), so both funnel through one implementation. Populated by buildStoppedPanel.
+    private Box stoppedLines;
+    private Font stoppedFont;
+    private Color stoppedCyan;
+    private Color stoppedMagenta;
+    private Runnable stoppedOnExit;
+    private Runnable stoppedOnRestart;
     private PaneActivity activity = PaneActivity.NONE;
 
     public TerminalPane(TerminalSession session, ThemeColors theme, TtyConnector connector) {
@@ -136,6 +151,8 @@ public final class TerminalPane extends JPanel implements GridContent {
         this.broadcastBar.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
         this.broadcastBar.add(broadcastCheck, BorderLayout.WEST);
         this.broadcastBar.add(titleLabel, BorderLayout.CENTER);
+        this.broadcastBar.add(buildMenuButton(), BorderLayout.EAST);
+        installPaneMenuTrigger();
         // The bar sits permanently at the bottom; the session-stopped panel (when shown) stacks
         // above it in the same container so the two never fight over BorderLayout.SOUTH.
         this.bottomArea = new JPanel(new BorderLayout());
@@ -273,6 +290,14 @@ public final class TerminalPane extends JPanel implements GridContent {
         Font mono = new Font(session.profile().fontFamily(), Font.PLAIN, session.profile().fontSize());
 
         Box lines = Box.createVerticalBox();
+        // Stash everything handleStoppedKey needs so the global dispatcher can drive the same
+        // actions as the strip's own key bindings (see handleStoppedKey).
+        this.stoppedLines = lines;
+        this.stoppedFont = mono;
+        this.stoppedCyan = cyan;
+        this.stoppedMagenta = magenta;
+        this.stoppedOnExit = onExit;
+        this.stoppedOnRestart = onRestart;
         lines.setOpaque(true);
         lines.setBackground(theme.background());
         lines.setBorder(BorderFactory.createEmptyBorder(6, 8, 8, 8));
@@ -291,21 +316,52 @@ public final class TerminalPane extends JPanel implements GridContent {
         panel.add(lines, BorderLayout.CENTER);
 
         panel.setFocusable(true);
-        // Return/R swap the hints for an immediate "Closing…"/"Reconnecting…" status so the
-        // keystroke is visibly acknowledged before the (possibly async) action runs. S keeps the
-        // panel open (it just opens a file chooser), so it isn't wrapped.
-        bindKey(panel, java.awt.event.KeyEvent.VK_ENTER,
-                () -> takeStoppedAction(lines, mono, "Closing…", cyan, onExit));
-        bindKey(panel, java.awt.event.KeyEvent.VK_R,
-                () -> takeStoppedAction(lines, mono, "Reconnecting…", magenta, onRestart));
-        bindKey(panel, java.awt.event.KeyEvent.VK_S, this::saveOutput);
+        // Both the strip's bindings (when it holds focus) and the window's global dispatcher (when
+        // focus is on the dead terminal) funnel through handleStoppedKey, so the once-only guard and
+        // the transient "Closing…"/"Reconnecting…" status behave identically either way.
+        bindKey(panel, java.awt.event.KeyEvent.VK_ENTER, () -> handleStoppedKey(java.awt.event.KeyEvent.VK_ENTER));
+        bindKey(panel, java.awt.event.KeyEvent.VK_R, () -> handleStoppedKey(java.awt.event.KeyEvent.VK_R));
+        bindKey(panel, java.awt.event.KeyEvent.VK_S, () -> handleStoppedKey(java.awt.event.KeyEvent.VK_S));
         panel.addMouseListener(new MouseAdapter() {
             @Override
             public void mousePressed(MouseEvent e) {
                 panel.requestFocusInWindow();
             }
         });
+        // Mark this pane active when the strip gains focus (mirroring the terminal panel's listener),
+        // so the global dispatcher's activePane() lookup resolves to this pane even if the user only
+        // clicked the strip rather than the terminal area above it.
+        panel.addFocusListener(new FocusAdapter() {
+            @Override
+            public void focusGained(FocusEvent e) {
+                if (onFocus != null) {
+                    onFocus.run();
+                }
+            }
+        });
         return panel;
+    }
+
+    /**
+     * Performs the stopped-screen action for a bare key (Return / R / S), returning whether it was
+     * handled. Called both by the strip's own key bindings and by the window's global key dispatcher
+     * (so the keys work wherever focus sits in a stopped pane). Safe to call when not stopped.
+     */
+    public boolean handleStoppedKey(int keyCode) {
+        if (!stopped) {
+            return false;
+        }
+        switch (keyCode) {
+            case java.awt.event.KeyEvent.VK_ENTER ->
+                    takeStoppedAction(stoppedLines, stoppedFont, "Closing…", stoppedCyan, stoppedOnExit);
+            case java.awt.event.KeyEvent.VK_R ->
+                    takeStoppedAction(stoppedLines, stoppedFont, "Reconnecting…", stoppedMagenta, stoppedOnRestart);
+            case java.awt.event.KeyEvent.VK_S -> saveOutput();
+            default -> {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -365,7 +421,66 @@ public final class TerminalPane extends JPanel implements GridContent {
         });
     }
 
-    /** Writes the terminal's full scrollback + screen to a user-chosen file. */
+    // ---- pane action menu ----
+
+    /**
+     * The small "⋮" overflow button on the title bar that opens the pane action menu. Rendered as a
+     * borderless toolbar button (FlatLaf) so it stays unobtrusive; it is not a drag source, so it
+     * doesn't interfere with the title bar's pane-move gesture.
+     */
+    private JButton buildMenuButton() {
+        JButton button = new JButton("⋮");
+        button.setToolTipText("Pane actions");
+        button.setFocusable(false);
+        button.setMargin(new Insets(0, 4, 0, 4));
+        button.putClientProperty("JButton.buttonType", "toolBarButton");
+        button.addActionListener(e -> buildPaneMenu().show(button, 0, button.getHeight()));
+        return button;
+    }
+
+    /**
+     * Makes a right-click anywhere on the title bar open the same pane action menu as the "⋮" button.
+     * The popup is checked on both press and release because the platform's popup trigger differs.
+     */
+    private void installPaneMenuTrigger() {
+        MouseAdapter popup = new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+                maybeShow(e);
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                maybeShow(e);
+            }
+
+            private void maybeShow(MouseEvent e) {
+                if (e.isPopupTrigger()) {
+                    buildPaneMenu().show(e.getComponent(), e.getX(), e.getY());
+                }
+            }
+        };
+        broadcastBar.addMouseListener(popup);
+        titleLabel.addMouseListener(popup);
+    }
+
+    /**
+     * Builds this pane's action menu fresh each time it is shown (cheap, and avoids stale state).
+     * Currently holds only "Save output to file…"; further per-pane actions slot in here.
+     */
+    private JPopupMenu buildPaneMenu() {
+        JPopupMenu menu = new JPopupMenu();
+        JMenuItem save = new JMenuItem("Save output to file…");
+        save.addActionListener(e -> saveOutput());
+        menu.add(save);
+        return menu;
+    }
+
+    /**
+     * Writes the terminal's full scrollback + screen to a user-chosen file. Shared by the live
+     * title-bar menu and the stopped-session screen's S key. Prompts before overwriting an existing
+     * file, and restricts the saved file to the owner since scrollback may contain typed secrets.
+     */
     private void saveOutput() {
         String text = TerminalBufferText.collect(widget);
         JFileChooser chooser = new JFileChooser();
@@ -374,11 +489,31 @@ public final class TerminalPane extends JPanel implements GridContent {
         if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) {
             return;
         }
+        Path target = chooser.getSelectedFile().toPath();
+        if (Files.exists(target)) {
+            int choice = JOptionPane.showConfirmDialog(this,
+                    target.getFileName() + " already exists.\nDo you want to replace it?",
+                    "Save terminal output", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+            if (choice != JOptionPane.YES_OPTION) {
+                return;
+            }
+        }
         try {
-            Files.writeString(chooser.getSelectedFile().toPath(), text, StandardCharsets.UTF_8);
+            Files.writeString(target, text, StandardCharsets.UTF_8);
+            restrictToOwner(target);
         } catch (IOException ex) {
             JOptionPane.showMessageDialog(this, "Could not save output:\n" + ex.getMessage(),
                     "jterm", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    /** Restricts a just-written file to owner read/write (0600); a no-op on non-POSIX filesystems. */
+    private static void restrictToOwner(Path file) {
+        try {
+            Files.setPosixFilePermissions(file,
+                    EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
+        } catch (Exception ignored) {
+            // Non-POSIX filesystem (e.g. Windows) — rely on the user profile's ACLs.
         }
     }
 
