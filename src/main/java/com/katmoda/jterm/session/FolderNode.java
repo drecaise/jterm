@@ -41,6 +41,11 @@ public final class FolderNode implements SessionNode {
     private String tabColorHex;
     private String keyPath;
 
+    // Per-folder default keep-alive setting, three-state like the session value: null = inherit
+    // (fall back to an ancestor folder, then the global default), 0 = explicitly off, > 0 =
+    // explicitly on at that interval in seconds.
+    private Integer keepAliveSeconds;
+
     public FolderNode() {
     }
 
@@ -119,5 +124,17 @@ public final class FolderNode implements SessionNode {
 
     public void setKeyPath(String keyPath) {
         this.keyPath = (keyPath != null && !keyPath.isBlank()) ? keyPath.trim() : null;
+    }
+
+    /**
+     * Per-folder default keep-alive setting: {@code null} = inherit, {@code 0} = explicitly off,
+     * {@code > 0} = explicitly on at that interval in seconds.
+     */
+    public Integer getKeepAliveSeconds() {
+        return keepAliveSeconds;
+    }
+
+    public void setKeepAliveSeconds(Integer keepAliveSeconds) {
+        this.keepAliveSeconds = (keepAliveSeconds == null) ? null : Math.max(0, keepAliveSeconds);
     }
 }

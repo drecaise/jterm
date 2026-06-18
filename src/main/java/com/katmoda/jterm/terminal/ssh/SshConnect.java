@@ -27,6 +27,7 @@ import org.apache.sshd.client.keyverifier.RejectAllServerKeyVerifier;
 import org.apache.sshd.client.session.ClientSession;
 import org.apache.sshd.common.NamedResource;
 import org.apache.sshd.common.config.keys.FilePasswordProvider;
+import org.apache.sshd.core.CoreModuleProperties;
 import org.apache.sshd.common.keyprovider.FileKeyPairProvider;
 import org.apache.sshd.common.session.SessionContext;
 import org.apache.sshd.common.util.net.SshdSocketAddress;
@@ -129,7 +130,7 @@ public final class SshConnect {
      * connecting through it.</p>
      */
     public static Connected open(List<HostHop> jumpHosts, HostHop target) throws IOException {
-        return open(jumpHosts, target, PassphraseProvider.NONE);
+        return open(jumpHosts, target, PassphraseProvider.NONE, 0);
     }
 
     /**
@@ -138,7 +139,25 @@ public final class SshConnect {
      */
     public static Connected open(List<HostHop> jumpHosts, HostHop target,
                                  PassphraseProvider passphrases) throws IOException {
+        return open(jumpHosts, target, passphrases, 0);
+    }
+
+    /**
+     * As {@link #open(List, HostHop, PassphraseProvider)}, but when {@code keepAliveSeconds > 0}
+     * the SSH-protocol heartbeat ({@code keepalive@openssh.com} via {@code SSH_MSG_IGNORE}) is
+     * enabled at that interval on the client before it starts, guarding against NAT/firewall idle
+     * drops and detecting a dead peer. A value of {@code 0} leaves heartbeats off.
+     */
+    public static Connected open(List<HostHop> jumpHosts, HostHop target,
+                                 PassphraseProvider passphrases, int keepAliveSeconds)
+            throws IOException {
         SshClient client = SshClient.setUpDefaultClient();
+        // Set the heartbeat on the client (created fresh per open) before start(), so it is active
+        // from session setup — more reliable than mutating the session post-auth. The request type
+        // defaults to keepalive@openssh.com.
+        if (keepAliveSeconds > 0) {
+            CoreModuleProperties.HEARTBEAT_INTERVAL.set(client, Duration.ofSeconds(keepAliveSeconds));
+        }
 
         // OpenSSH known_hosts policy: TOFU for unknown hosts, warn on changed keys. The verifier
         // is told each hop's real host before connecting so proxied hops (reached via a local

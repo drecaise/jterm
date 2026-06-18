@@ -29,6 +29,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.Charset;
+import java.time.Duration;
 import java.util.EnumSet;
 
 /**
@@ -43,6 +44,12 @@ final class SshTtyConnector implements TtyConnector {
     private final Charset charset;
     private final OutputStream toRemote;
     private final InputStreamReader fromRemote;
+
+    // Timestamp of the last user-driven write, used to idle-gate keep-alive NUL injection. Only
+    // real input (keystrokes, broadcast, pasted text) through write(...) updates this; an injected
+    // keep-alive NUL deliberately does not, so idleness keeps being measured from the last user
+    // action and the NUL re-fires each interval while the session stays idle.
+    private volatile long lastActivityNanos = System.nanoTime();
 
     SshTtyConnector(ChannelShell channel, String name, Charset charset) {
         this.channel = channel;
@@ -60,8 +67,30 @@ final class SshTtyConnector implements TtyConnector {
 
     @Override
     public void write(byte[] bytes) throws IOException {
-        toRemote.write(bytes);
-        toRemote.flush();
+        lastActivityNanos = System.nanoTime();
+        // Share the lock with sendKeepAlive so the scheduler thread and the EDT never interleave a
+        // write on toRemote.
+        synchronized (toRemote) {
+            toRemote.write(bytes);
+            toRemote.flush();
+        }
+    }
+
+    /** Whether no user write has occurred for at least {@code d}. */
+    boolean idleFor(Duration d) {
+        return System.nanoTime() - lastActivityNanos >= d.toNanos();
+    }
+
+    /**
+     * Injects a single NUL byte into the shell input to reset a server-side {@code TMOUT} idle
+     * countdown. The shell's {@code read} wakes and readline discards NUL, so nothing is echoed and
+     * nothing lands on the command line. Deliberately does not update {@link #lastActivityNanos}.
+     */
+    void sendKeepAlive() throws IOException {
+        synchronized (toRemote) {
+            toRemote.write(0);
+            toRemote.flush();
+        }
     }
 
     @Override

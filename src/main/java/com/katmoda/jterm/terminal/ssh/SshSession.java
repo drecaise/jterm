@@ -31,6 +31,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.Callable;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * An interactive SSH shell session backed by Apache MINA SSHD.
@@ -49,6 +53,17 @@ public final class SshSession implements TerminalSession {
     /** UTF-8 character type requested when the client conveys no UTF-8 locale (e.g. on Windows). */
     private static final String DEFAULT_UTF8_LOCALE = "C.UTF-8";
 
+    /**
+     * Shared daemon scheduler driving idle-gated keep-alive NUL injection for every session with a
+     * keep-alive interval. One thread suffices — each tick is a tiny non-blocking write.
+     */
+    private static final ScheduledExecutorService KEEPALIVE =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "ssh-keepalive");
+                t.setDaemon(true);
+                return t;
+            });
+
     private final SshConnect.Connected connection;
     private final ChannelShell channel;
     private final SshTtyConnector connector;
@@ -58,6 +73,9 @@ public final class SshSession implements TerminalSession {
     private final String highlightListId;
     private final String tabColorHex;
     private final Callable<SshConnect.Connected> freshConnectionDialer;
+
+    // Repeating idle-gated keep-alive task; null when keep-alive is disabled. Cancelled in close().
+    private volatile ScheduledFuture<?> keepAliveFuture;
 
     private SshSession(SshConnect.Connected connection, ChannelShell channel,
                        String title, String iconId, TerminalProfile profile, String highlightListId,
@@ -123,6 +141,9 @@ public final class SshSession implements TerminalSession {
      * @param profile         terminal type, charset and font settings for this session
      * @param highlightListId output-highlighting override id (may be {@code null} to inherit)
      * @param tabColorHex     custom tab color {@code "#RRGGBB"} (may be {@code null} for the default)
+     * @param keepAliveSeconds keep-alive interval in seconds, or {@code 0} to disable. When &gt; 0
+     *                        it both enables the SSH-protocol heartbeat and drives idle-gated NUL
+     *                        injection into the shell to defeat a server-side {@code TMOUT}.
      */
     public static SshSession connect(String host, int port, String user, boolean agentForwarding,
                                      String password, String keyPath,
@@ -130,12 +151,12 @@ public final class SshSession implements TerminalSession {
                                      SshConnect.PassphraseProvider passphrases,
                                      String displayName, String iconId,
                                      TerminalProfile profile, String highlightListId,
-                                     String tabColorHex) throws IOException {
+                                     String tabColorHex, int keepAliveSeconds) throws IOException {
         List<SshConnect.HostHop> hops = jumpHosts != null ? jumpHosts : List.of();
         SshConnect.PassphraseProvider pp =
                 passphrases != null ? passphrases : SshConnect.PassphraseProvider.NONE;
         SshConnect.HostHop target = new SshConnect.HostHop(host, port, user, password, keyPath);
-        SshConnect.Connected connection = SshConnect.open(hops, target, pp);
+        SshConnect.Connected connection = SshConnect.open(hops, target, pp, keepAliveSeconds);
         try {
             ChannelShell channel = connection.session().createShellChannel();
             channel.setPtyType(profile.terminalType());
@@ -151,8 +172,10 @@ public final class SshSession implements TerminalSession {
             // A dialer for a fresh dedicated connection to the same target with the same resolved
             // credentials — used by the SFTP browser to reconnect independently of this shell.
             Callable<SshConnect.Connected> dialer = () -> SshConnect.open(hops, target, pp);
-            return new SshSession(connection, channel, label, iconId, profile, highlightListId,
-                    tabColorHex, dialer);
+            SshSession session = new SshSession(connection, channel, label, iconId, profile,
+                    highlightListId, tabColorHex, dialer);
+            session.startKeepAlive(keepAliveSeconds);
+            return session;
         } catch (IOException e) {
             connection.close();
             throw e;
@@ -188,6 +211,29 @@ public final class SshSession implements TerminalSession {
                 && localeValue.toUpperCase(Locale.ROOT).replace("-", "").contains("UTF8");
     }
 
+    /**
+     * If {@code keepAliveSeconds > 0}, schedules a repeating task that injects a NUL into the shell
+     * whenever the session is alive and has been idle for at least the interval (so a user actively
+     * typing — including mid-password — is never disturbed). The SSH-protocol heartbeat is handled
+     * separately on the client (see {@link SshConnect}).
+     */
+    private void startKeepAlive(int keepAliveSeconds) {
+        if (keepAliveSeconds <= 0) {
+            return;
+        }
+        Duration interval = Duration.ofSeconds(keepAliveSeconds);
+        keepAliveFuture = KEEPALIVE.scheduleWithFixedDelay(() -> {
+            try {
+                if (isAlive() && connector.idleFor(interval)) {
+                    connector.sendKeepAlive();
+                }
+            } catch (IOException ignored) {
+                // Transient write failure; the next tick retries, and a truly dead session is
+                // reaped by isAlive() / channel close.
+            }
+        }, keepAliveSeconds, keepAliveSeconds, TimeUnit.SECONDS);
+    }
+
     @Override
     public TtyConnector connector() {
         return connector;
@@ -215,6 +261,10 @@ public final class SshSession implements TerminalSession {
 
     @Override
     public void close() {
+        ScheduledFuture<?> ka = keepAliveFuture;
+        if (ka != null) {
+            ka.cancel(false);
+        }
         try {
             channel.close(false);
         } catch (Exception ignored) {

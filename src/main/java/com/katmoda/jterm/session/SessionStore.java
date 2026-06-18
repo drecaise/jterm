@@ -184,6 +184,28 @@ public final class SessionStore {
     }
 
     /**
+     * Resolves the effective keep-alive interval (seconds; {@code 0} = off) for {@code cfg} via the
+     * inheritance cascade: the session's own value, then ancestor folders nearest → root, then the
+     * global default. A {@code null} at the session/folder level means "inherit" (keep walking up);
+     * an explicit {@code 0} means off and stops the walk, so a session can disable keep-alive even
+     * when a parent enables it.
+     */
+    public int effectiveKeepAliveSeconds(SshSessionConfig cfg) {
+        Integer own = cfg.getKeepAliveSeconds();
+        if (own != null) {
+            return Math.max(0, own);
+        }
+        List<FolderNode> ancestors = ancestorsOf(cfg);
+        for (int i = ancestors.size() - 1; i >= 0; i--) {
+            Integer folderValue = ancestors.get(i).getKeepAliveSeconds();
+            if (folderValue != null) {
+                return Math.max(0, folderValue);
+            }
+        }
+        return Math.max(0, AppSettings.get().getDefaultKeepAliveSeconds());
+    }
+
+    /**
      * The credential-vault keys to consult, in priority order, for {@code cfg}'s SSH key
      * passphrase: the session level, then ancestor folders nearest → root, then the global
      * default. The first key the vault actually holds wins.

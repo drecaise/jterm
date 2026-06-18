@@ -478,6 +478,7 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         String effectiveUser = sessionStore.effectiveUser(cfg);
         String effectiveTabColorHex = sessionStore.effectiveTabColorHex(cfg);
         String effectiveKeyPath = sessionStore.effectiveKeyPath(cfg);
+        int effectiveKeepAlive = sessionStore.effectiveKeepAliveSeconds(cfg);
         SshConnect.PassphraseProvider passphrases = keyPassphraseProvider(cfg, effectiveKeyPath);
         new SwingWorker<SshSession, Void>() {
             @Override
@@ -487,7 +488,7 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
                 return SshSession.connect(cfg.getHost(), cfg.getPort(), effectiveUser,
                         cfg.isAgentForwarding(), password, effectiveKeyPath, jumpHosts, passphrases,
                         cfg.getName(), cfg.getIconId(), profile, cfg.getHighlightListId(),
-                        effectiveTabColorHex);
+                        effectiveTabColorHex, effectiveKeepAlive);
             }
 
             @Override

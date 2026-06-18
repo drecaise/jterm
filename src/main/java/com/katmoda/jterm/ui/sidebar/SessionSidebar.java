@@ -46,6 +46,7 @@ import com.katmoda.jterm.security.VaultManager;
 import com.katmoda.jterm.ui.security.MasterPasswordDialog;
 import com.katmoda.jterm.ui.component.HighlightListCombo;
 import com.katmoda.jterm.ui.component.JumpHostsForm;
+import com.katmoda.jterm.ui.component.KeepAliveField;
 import com.katmoda.jterm.ui.component.KeyFileField;
 import com.katmoda.jterm.ui.component.TabColorPicker;
 import com.katmoda.jterm.ui.component.TerminalSettingsForm;
@@ -1098,6 +1099,8 @@ public final class SessionSidebar extends JPanel {
         // sessions beneath this folder. Blank inherits; blank secret fields keep any saved value.
         KeyFileField keyFile = new KeyFileField(folder.getKeyPath());
         keyFile.setPlaceholder("(inherit: " + describeKeyPath(inheritedFolderKeyPath(folder)) + ")");
+        KeepAliveField keepAlive =
+                new KeepAliveField(folder.getKeepAliveSeconds(), inheritedKeepAlive(folder));
         JPasswordField keyPassphrase = new JPasswordField();
         keyPassphrase.putClientProperty("JTextField.placeholderText",
                 VaultManager.get().vault().hasPassword(VaultKeys.folderKeyPassphrase(folder.getId()))
@@ -1118,6 +1121,8 @@ public final class SessionSidebar extends JPanel {
         form.add(tabColor.component());
         form.add(new JLabel("Default key file:"));
         form.add(keyFile.component());
+        form.add(new JLabel("Keep connection alive:"));
+        form.add(keepAlive.component());
         form.add(new JLabel("Default key passphrase:"));
         form.add(keyPassphrase);
         form.add(new JLabel("Default password:"));
@@ -1133,6 +1138,7 @@ public final class SessionSidebar extends JPanel {
         folder.setUser(user.getText());
         folder.setTabColorHex(tabColor.hex());
         folder.setKeyPath(keyFile.path());
+        folder.setKeepAliveSeconds(keepAlive.value());
         applyVaultSecret(VaultKeys.folderKeyPassphrase(folder.getId()), keyPassphrase.getPassword());
         applyVaultSecret(VaultKeys.folderPassword(folder.getId()), defaultPassword.getPassword());
         return true;
@@ -1230,6 +1236,12 @@ public final class SessionSidebar extends JPanel {
         passwordAuth.addActionListener(a -> syncPasswordEnabled.run());
         syncPasswordEnabled.run();
 
+        // Keep-alive: a three-state dropdown (Inherit / Disabled / Enabled) + interval spinner.
+        // The Inherit row shows what it resolves to in the chosen folder (refreshed below when the
+        // folder selection changes).
+        KeepAliveField keepAlive = new KeepAliveField(cfg.getKeepAliveSeconds(),
+                inheritedKeepAliveInFolder(initialFolder));
+
         KeyFileField keyFile = new KeyFileField(cfg.getKeyPath());
         // Placeholder set by refreshInheritedHints below (resolved against the chosen folder).
         // Passphrase for an encrypted key, saved (vault-encrypted) at the session level. Blank keeps
@@ -1274,6 +1286,7 @@ public final class SessionSidebar extends JPanel {
                     "(inherit: " + inheritedUserInFolder(dest) + ")");
             user.repaint();
             keyFile.setPlaceholder("(inherit: " + describeKeyPath(inheritedKeyPathInFolder(dest)) + ")");
+            keepAlive.setInheritedHint(inheritedKeepAliveInFolder(dest));
         };
         folderCombo.addActionListener(a -> refreshInheritedHints.run());
         refreshInheritedHints.run();
@@ -1293,6 +1306,7 @@ public final class SessionSidebar extends JPanel {
         row(basic, "User:", user);
         row(basic, "Icon:", iconBtn);
         row(basic, "Forward ssh-agent:", agent);
+        row(basic, "Keep connection alive:", keepAlive.component());
         row(basic, "Key file:", keyFile.component());
         row(basic, "Key passphrase:", keyPassphrase);
         row(basic, "Password auth:", passwordAuth);
@@ -1322,6 +1336,7 @@ public final class SessionSidebar extends JPanel {
         cfg.setHost(host.getText().trim());
         cfg.setUser(user.getText().trim());
         cfg.setAgentForwarding(agent.isSelected());
+        cfg.setKeepAliveSeconds(keepAlive.value());
         cfg.setIconId(iconId[0]);
         try {
             cfg.setPort(Integer.parseInt(port.getText().trim()));
@@ -1510,6 +1525,38 @@ public final class SessionSidebar extends JPanel {
         }
         String global = AppSettings.get().getDefaultKeyPath();
         return (global != null && !global.isBlank()) ? global : null;
+    }
+
+    /**
+     * The keep-alive interval (seconds; {@code 0} = off) an "inherit" setting on {@code folder}
+     * would resolve to: the nearest ancestor folder's explicit value, then the global default.
+     * (Excludes the folder's own value — companion to {@link #inheritedUser(FolderNode)}.)
+     */
+    private int inheritedKeepAlive(FolderNode folder) {
+        List<FolderNode> ancestors = store.ancestorsOf(folder);
+        for (int i = ancestors.size() - 1; i >= 0; i--) {
+            Integer value = ancestors.get(i).getKeepAliveSeconds();
+            if (value != null) {
+                return Math.max(0, value);
+            }
+        }
+        return Math.max(0, AppSettings.get().getDefaultKeepAliveSeconds());
+    }
+
+    /**
+     * The keep-alive interval an "inherit" session field would resolve to if the session lived in
+     * {@code folder}: the folder's own explicit value, then ancestors nearest → root, then the
+     * global default. (Companion to {@link #inheritedKeyPathInFolder}.)
+     */
+    private int inheritedKeepAliveInFolder(FolderNode folder) {
+        if (folder != null) {
+            Integer own = folder.getKeepAliveSeconds();
+            if (own != null) {
+                return Math.max(0, own);
+            }
+            return inheritedKeepAlive(folder); // ancestors → global
+        }
+        return Math.max(0, AppSettings.get().getDefaultKeepAliveSeconds());
     }
 
     private static String describeKeyPath(String keyPath) {

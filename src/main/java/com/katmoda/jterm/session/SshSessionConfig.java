@@ -67,6 +67,13 @@ public final class SshSessionConfig implements SessionNode {
     // Jump (bastion) hosts to tunnel through, in connection order; empty = connect directly.
     private List<JumpHostConfig> jumpHosts = new ArrayList<>();
 
+    // Keep-alive setting, three-state: null = inherit (from the folder chain, then the global
+    // default), 0 = explicitly off, > 0 = explicitly on at that interval in seconds. When the
+    // resolved value is > 0 it drives both the SSH-protocol heartbeat (against NAT/firewall idle
+    // drops) and an idle-gated NUL injection into the shell input (against a server-side read-only
+    // bash TMOUT). Missing from old sessions.json deserializes to null (inherit).
+    private Integer keepAliveSeconds = null;
+
     public SshSessionConfig() {
     }
 
@@ -231,5 +238,17 @@ public final class SshSessionConfig implements SessionNode {
 
     public void setJumpHosts(List<JumpHostConfig> jumpHosts) {
         this.jumpHosts = (jumpHosts != null) ? jumpHosts : new ArrayList<>();
+    }
+
+    /**
+     * Keep-alive setting: {@code null} = inherit (folder chain → global default), {@code 0} =
+     * explicitly off, {@code > 0} = explicitly on at that interval in seconds.
+     */
+    public Integer getKeepAliveSeconds() {
+        return keepAliveSeconds;
+    }
+
+    public void setKeepAliveSeconds(Integer keepAliveSeconds) {
+        this.keepAliveSeconds = (keepAliveSeconds == null) ? null : Math.max(0, keepAliveSeconds);
     }
 }

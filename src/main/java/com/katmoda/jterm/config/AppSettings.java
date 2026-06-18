@@ -95,6 +95,11 @@ public final class AppSettings {
     // vault rather than here — see security.VaultKeys.
     private String defaultKeyPath = "";
 
+    // Global default keep-alive interval in seconds, inherited by folders/sessions that leave their
+    // keep-alive set to "inherit". 0 (the default) means off, so existing installs are unaffected;
+    // > 0 enables keep-alive at that interval.
+    private int defaultKeepAliveSeconds = 0;
+
     public AppSettings() {
     }
 
@@ -270,6 +275,15 @@ public final class AppSettings {
 
     public void setDefaultKeyPath(String defaultKeyPath) {
         this.defaultKeyPath = (defaultKeyPath != null) ? defaultKeyPath.trim() : "";
+    }
+
+    /** The global default keep-alive interval in seconds; {@code 0} means off. */
+    public int getDefaultKeepAliveSeconds() {
+        return defaultKeepAliveSeconds;
+    }
+
+    public void setDefaultKeepAliveSeconds(int defaultKeepAliveSeconds) {
+        this.defaultKeepAliveSeconds = Math.max(0, defaultKeepAliveSeconds);
     }
 
     /** The application-wide default terminal profile (used by the local terminal). */

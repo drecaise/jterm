@@ -36,8 +36,10 @@ import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
+import javax.swing.JSpinner;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
+import javax.swing.SpinnerNumberModel;
 import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.FlowLayout;
@@ -121,6 +123,16 @@ public final class PreferencesDialog {
         defaultPassword.putClientProperty("JTextField.placeholderText",
                 vault.hasPassword(VaultKeys.GLOBAL_PASSWORD)
                         ? "(leave blank to keep saved)" : "(none)");
+        // Global keep-alive default (two-state — it's the root of the inheritance chain): an
+        // on/off toggle plus an interval spinner enabled only when on. 0 = off.
+        int defaultKeepAlive = settings.getDefaultKeepAliveSeconds();
+        ToggleSwitch keepAlive = new ToggleSwitch(defaultKeepAlive > 0);
+        JSpinner keepAliveInterval = new JSpinner(new SpinnerNumberModel(
+                defaultKeepAlive > 0 ? defaultKeepAlive : 300, 30, 86400, 30));
+        Runnable syncKeepAlive = () -> keepAliveInterval.setEnabled(keepAlive.isSelected());
+        keepAlive.addActionListener(a -> syncKeepAlive.run());
+        syncKeepAlive.run();
+
         JPanel sessionDefaults = new JPanel(new GridBagLayout());
         int sdRow = 0;
         addFieldRow(sessionDefaults, sdRow++, "Default username:", defaultUser);
@@ -128,6 +140,8 @@ public final class PreferencesDialog {
         addWideFieldRow(sessionDefaults, sdRow++, "Default key file:", defaultKeyFile.component());
         addFieldRow(sessionDefaults, sdRow++, "Default key passphrase:", defaultKeyPassphrase);
         addFieldRow(sessionDefaults, sdRow++, "Default password:", defaultPassword);
+        addToggleRow(sessionDefaults, sdRow++, "Keep connection alive:", keepAlive);
+        addFieldRow(sessionDefaults, sdRow++, "Keep-alive interval (s):", keepAliveInterval);
         addHint(sessionDefaults, sdRow++, "Used by folders and sessions that don't set their own."
                 + " Passphrase and password are stored encrypted in the credential vault."
                 + " Applies to newly opened sessions.");
@@ -156,6 +170,8 @@ public final class PreferencesDialog {
         settings.setDefaultUsername(defaultUser.getText());
         settings.setDefaultTabColorHex(defaultTabColor.hex());
         settings.setDefaultKeyPath(defaultKeyFile.path());
+        settings.setDefaultKeepAliveSeconds(
+                keepAlive.isSelected() ? (Integer) keepAliveInterval.getValue() : 0);
         applyVaultSecret(parent, VaultKeys.GLOBAL_KEY_PASSPHRASE, defaultKeyPassphrase.getPassword());
         applyVaultSecret(parent, VaultKeys.GLOBAL_PASSWORD, defaultPassword.getPassword());
         settings.save();
