@@ -10,7 +10,9 @@ name: Release
 # Artifacts produced:
 #   - jterm-<version>.jar       cross-platform fat jar (needs a JRE 21)
 #   - jterm-<version>.msi       Windows installer (bundles a JRE, via jpackage)
+#   - jterm-<version>.dmg       macOS installer (bundles a JRE, via jpackage)
 #   - jterm-<version>.flatpak   Linux single-file bundle (bundles a JRE)
+#   - jterm-<version>.snap      Linux snap, classic confinement (bundles a JRE)
 
 on:
   push:
@@ -269,10 +271,45 @@ jobs:
           path: dist/*.dmg
           if-no-files-found: error
 
-  # Only on a tag: gather the four artifacts and publish them on the Release.
+  build-snap:
+    needs: [version, build-jar]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: jterm-jar
+          path: dist-jar
+      - name: Stage snap sources
+        run: |
+          cp dist-jar/jterm.jar packaging/snap/jterm.jar
+          cp dist-jar/com.katmoda.jterm-256.png packaging/snap/
+      # Snap accepts the full version string (incl. -SNAPSHOT) -- no numeric
+      # flooring needed, unlike jpackage.
+      - name: Set snap version
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          sed -i "s/^version: .*/version: '${VERSION}'/" packaging/snap/snapcraft.yaml
+      - uses: snapcore/action-build@v1
+        id: snapcraft
+        with:
+          path: packaging/snap
+      - name: Rename snap
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          mv "${{ steps.snapcraft.outputs.snap }}" "jterm-${VERSION}.snap"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jterm-snap
+          path: jterm-*.snap
+          if-no-files-found: error
+
+  # Only on a tag: gather the five artifacts and publish them on the Release.
   release:
     if: github.ref_type == 'tag'
-    needs: [version, build-jar, build-msi, build-flatpak, build-dmg]
+    needs: [version, build-jar, build-msi, build-flatpak, build-dmg, build-snap]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -285,6 +322,7 @@ jobs:
           cp artifacts/jterm-msi/*.msi release/
           cp artifacts/jterm-flatpak/*.flatpak release/
           cp artifacts/jterm-dmg/*.dmg release/
+          cp artifacts/jterm-snap/*.snap release/
           ls -la release
       - uses: softprops/action-gh-release@v2
         with:

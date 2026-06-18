@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=jterm
+GenericName=Terminal
+Comment=Tabbed, splittable terminal emulator with SSH sessions
+Exec=jterm
+Icon=com.katmoda.jterm
+Terminal=false
+Categories=System;TerminalEmulator;Utility;
+Keywords=terminal;shell;ssh;console;
+StartupNotify=true
+StartupWMClass=jterm

@@ -1,0 +1,36 @@
+name: jterm                      # snap names are lowercase, no dots (can't be com.katmoda.jterm)
+title: jterm
+base: core24                     # Ubuntu 24.04 userspace; ships openjdk-21
+version: '0.0.0'                 # placeholder; CI rewrites this before building (see release.yml)
+summary: Tabbed, splittable terminal emulator with SSH sessions
+description: |
+  jterm is a Java desktop terminal emulator: tabbed windows, a splittable pane
+  grid, a saved-sessions sidebar with SSH sessions, drag-and-drop launching,
+  input broadcast, light/dark theming, and SSH with ssh-agent + key + password
+  auth backed by an encrypted credential vault.
+grade: stable
+# Classic confinement: jterm needs ssh-agent ($SSH_AUTH_SOCK), read+write
+# ~/.ssh/known_hosts, ~/.config/jterm, and the secret-tool keyring CLI -- none of
+# which work under strict confinement. This mirrors the Flatpak's broad
+# --filesystem=home + --socket=ssh-auth access.
+confinement: classic
+license: GPL-3.0-or-later
+
+apps:
+  jterm:
+    command: bin/jterm
+    desktop: share/applications/com.katmoda.jterm.desktop
+
+parts:
+  jterm:
+    plugin: dump
+    source: .                    # CI stages jterm.jar + the icon PNG into this dir
+    stage-packages:
+      - openjdk-21-jre           # full (non-headless) JRE: Swing/AWT need X11 libs
+    build-attributes:
+      - enable-patchelf          # relocate the bundled JRE's libs for a classic snap
+    organize:
+      jterm.jar: share/jterm/jterm.jar
+      jterm-launch.sh: bin/jterm
+      com.katmoda.jterm.desktop: share/applications/com.katmoda.jterm.desktop
+      com.katmoda.jterm-256.png: share/icons/hicolor/256x256/apps/com.katmoda.jterm.png
