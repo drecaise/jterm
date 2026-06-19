@@ -83,3 +83,30 @@ Local Terminal** entry) onto an existing pane. Where you drop decides the split:
 
 SSH sessions connect in the background and then appear in the new split; local terminals open
 immediately. See [Sessions sidebar](sessions-sidebar.md) for more on launching sessions.
+
+## Rearranging panes and tabs
+
+Every pane has a **title bar** along its bottom edge showing its icon and name. That bar is a
+**drag handle**: grab it and drop the live pane somewhere else. The terminal keeps its
+scrollback, working directory, and connection — nothing is restarted.
+
+**Drag a pane by its title bar onto…**
+
+- the **+** button on the tab strip → pulls the pane **out into its own new tab**. (If the pane
+  is already the only one in its tab, this does nothing.)
+- **another pane** in the same tab → the two panes **swap** positions.
+- an **empty cell** in the same tab → the pane **moves** into that cell.
+
+A single-pane tab is just a one-pane grid, so you can also rearrange whole tabs:
+
+**Drag a tab by its header onto a pane in *another* tab** (single-pane tabs only) → its terminal
+joins that tab as a **split** (top ~60% → new column, bottom ~40% → new row, just like a session
+drop), or fills an **empty cell** if you drop it there. The now-empty source tab closes.
+
+When you pull a pane out of a tab whose broadcast is on, the moved pane **leaves that broadcast**
+and joins its new tab. Pulling a pane out can leave its old tab's grid smaller — jterm collapses
+any empty trailing row or column so the layout stays rectangular.
+
+!!! note
+    Dragging a tab still **reorders** it when you drop it back on the tab strip, exactly as
+    before. Only single-pane tabs can be dragged into another tab's grid.
