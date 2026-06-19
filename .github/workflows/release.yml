@@ -32,13 +32,20 @@ jobs:
       version: ${{ steps.v.outputs.version }}
       app_version: ${{ steps.v.outputs.app_version }}
     steps:
+      - uses: actions/checkout@v7
       - id: v
         shell: bash
         run: |
           if [ "${{ github.ref_type }}" = "tag" ]; then
             version="${GITHUB_REF_NAME#v}"          # v1.2.3 -> 1.2.3
           else
-            version="0.0.0-SNAPSHOT"                 # manual test build
+            # Manual test build: use the pom.xml version, ensuring a single
+            # -SNAPSHOT suffix (don't double it if pom.xml already has one).
+            pom_version="$(grep -m1 '<version>' pom.xml | sed -E 's#.*<version>(.*)</version>.*#\1#')"
+            case "$pom_version" in
+              *-SNAPSHOT) version="$pom_version" ;;
+              *)          version="${pom_version}-SNAPSHOT" ;;
+            esac
           fi
           # jpackage (MSI on Windows, DMG on macOS) requires N[.N[.N]] with the
           # major component > 0 -- so strip any -SNAPSHOT suffix and floor it.
@@ -52,8 +59,8 @@ jobs:
     needs: version
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
         with:
           java-version: '21'
           distribution: 'temurin'
@@ -87,7 +94,7 @@ jobs:
           for sz in 128 256; do
             java -cp ".:target/jterm.jar" -Djava.awt.headless=true RenderIcon "out/com.katmoda.jterm-$sz.png" "$sz"
           done
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: jterm-jar
           path: out          # jterm.jar + the square icon PNGs, at the artifact root
@@ -97,8 +104,8 @@ jobs:
     needs: version
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
         with:
           java-version: '21'      # Temurin ships jpackage; WiX is preinstalled on the runner
           distribution: 'temurin'
@@ -161,7 +168,7 @@ jobs:
           dst="dist/jterm-${{ needs.version.outputs.version }}.msi"
           [ "$src" != "$dst" ] && mv "$src" "$dst" || true
           ls -la dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: jterm-msi
           path: dist/*.msi
@@ -174,8 +181,8 @@ jobs:
       image: bilelmoussaoui/flatpak-github-actions:freedesktop-24.08
       options: --privileged
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           name: jterm-jar
           path: dist-jar
@@ -189,7 +196,7 @@ jobs:
           bundle: jterm-${{ needs.version.outputs.version }}.flatpak
           manifest-path: packaging/flatpak/com.katmoda.jterm.yml
           cache-key: flatpak-builder-${{ github.sha }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: jterm-flatpak
           path: jterm-*.flatpak
@@ -199,8 +206,8 @@ jobs:
     needs: version
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
         with:
           java-version: '21'      # Temurin ships jpackage; macOS builds the .dmg natively
           distribution: 'temurin'
@@ -265,7 +272,7 @@ jobs:
           dst="dist/jterm-${{ needs.version.outputs.version }}.dmg"
           [ "$src" != "$dst" ] && mv "$src" "$dst" || true
           ls -la dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: jterm-dmg
           path: dist/*.dmg
@@ -275,8 +282,8 @@ jobs:
     needs: [version, build-jar]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           name: jterm-jar
           path: dist-jar
@@ -300,7 +307,7 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           mv "${{ steps.snapcraft.outputs.snap }}" "jterm-${VERSION}.snap"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: jterm-snap
           path: jterm-*.snap
@@ -312,7 +319,7 @@ jobs:
     needs: [version, build-jar, build-msi, build-flatpak, build-dmg, build-snap]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
       - name: Collect release assets
@@ -324,7 +331,7 @@ jobs:
           cp artifacts/jterm-dmg/*.dmg release/
           cp artifacts/jterm-snap/*.snap release/
           ls -la release
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: release/*
           generate_release_notes: true
