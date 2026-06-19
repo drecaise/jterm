@@ -29,6 +29,7 @@ import com.katmoda.jterm.ui.theme.ThemeColors;
 import org.apache.sshd.sftp.client.SftpClient;
 import org.apache.sshd.sftp.client.SftpClient.DirEntry;
 
+import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.Icon;
@@ -42,6 +43,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.JTextField;
 import javax.swing.JToolBar;
+import javax.swing.KeyStroke;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingWorker;
 import javax.swing.UIManager;
@@ -55,6 +57,8 @@ import java.awt.dnd.DnDConstants;
 import java.awt.dnd.DragGestureListener;
 import java.awt.dnd.DragSource;
 import java.awt.dnd.InvalidDnDOperationException;
+import java.awt.event.KeyAdapter;
+import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.File;
@@ -100,6 +104,11 @@ public final class SftpPane extends JPanel implements GridContent {
     private Border savedBorder;
     private String cwd = ".";
     private boolean closed;
+
+    /** Accumulated keystrokes for type-to-select, reset after {@link #TYPE_AHEAD_RESET_MS} of idle. */
+    private final StringBuilder typeAhead = new StringBuilder();
+    private long lastTypeAhead;
+    private static final long TYPE_AHEAD_RESET_MS = 1000;
     /** True while a reconnect is in flight, so concurrent operation failures don't each spawn one. */
     private boolean reconnecting;
 
@@ -137,6 +146,27 @@ public final class SftpPane extends JPanel implements GridContent {
             public void mouseClicked(MouseEvent e) {
                 if (e.getClickCount() == 2) {
                     openSelected();
+                }
+            }
+        });
+        // Enter opens the selected entry (descend into a folder / download a file). Override JTable's
+        // default Enter binding, which otherwise just moves the selection to the next row.
+        table.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)
+                .put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "jterm.open");
+        table.getActionMap().put("jterm.open", new AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                openSelected();
+            }
+        });
+        // Type-to-select, like a file manager: jump to the first entry whose name starts with the
+        // typed prefix; repeating a single letter cycles through its matches.
+        table.addKeyListener(new KeyAdapter() {
+            @Override
+            public void keyTyped(KeyEvent e) {
+                char c = e.getKeyChar();
+                if (c >= 0x20 && c != 0x7f) {
+                    typeAheadSelect(c);
                 }
             }
         });
@@ -262,6 +292,47 @@ public final class SftpPane extends JPanel implements GridContent {
 
     private void goUp() {
         loadDir(join(cwd, ".."));
+    }
+
+    /**
+     * Move the selection to match the typed character(s). Prefixes accumulate while typing quickly
+     * (reset after {@link #TYPE_AHEAD_RESET_MS} idle); pressing the same single key again cycles to
+     * the next entry starting with that letter. Matches the real filename, not the glyph-prefixed
+     * cell text.
+     */
+    private void typeAheadSelect(char c) {
+        int rows = model.getRowCount();
+        if (rows == 0) {
+            return;
+        }
+        char lc = Character.toLowerCase(c);
+        long now = System.currentTimeMillis();
+        if (now - lastTypeAhead > TYPE_AHEAD_RESET_MS) {
+            typeAhead.setLength(0);
+        }
+        lastTypeAhead = now;
+
+        int start;
+        if (typeAhead.length() == 0) {
+            typeAhead.append(lc);
+            start = 0;
+        } else if (typeAhead.length() == 1 && typeAhead.charAt(0) == lc) {
+            // Same single key again → cycle from just past the current selection.
+            start = table.getSelectedRow() + 1;
+        } else {
+            typeAhead.append(lc);
+            start = 0;
+        }
+
+        String prefix = typeAhead.toString();
+        for (int i = 0; i < rows; i++) {
+            int row = (start + i) % rows;
+            if (model.entryAt(row).getFilename().toLowerCase().startsWith(prefix)) {
+                table.setRowSelectionInterval(row, row);
+                table.scrollRectToVisible(table.getCellRect(row, 0, true));
+                return;
+            }
+        }
     }
 
     private void openSelected() {
