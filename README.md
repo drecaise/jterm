@@ -5,6 +5,9 @@ JediTerm + pty4j). It supports tabbed windows, a splittable pane grid, a saved-s
 sidebar with SSH connections, drag-and-drop session launching, input broadcast, and
 light/dark theming that follows the host OS style.
 
+📖 **[User Manual](https://drecaise.github.io/jterm/)** — task-oriented guide to using the
+application. This README is the quick reference for building and installing.
+
 ## Features
 
 - **Tabs** and a **uniform pane grid** — split any tab into up to 3 columns × 3 rows

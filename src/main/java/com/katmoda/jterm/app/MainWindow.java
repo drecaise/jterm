@@ -55,6 +55,7 @@ import com.katmoda.jterm.ui.tunnel.TunnelManagerDialog;
 import com.katmoda.jterm.ui.preferences.PreferencesDialog;
 import com.katmoda.jterm.ui.preferences.ShortcutsDialog;
 import com.katmoda.jterm.ui.security.MasterPasswordDialog;
+import com.katmoda.jterm.ui.sidebar.FolderOpenMode;
 import com.katmoda.jterm.ui.sidebar.OpenMode;
 import com.katmoda.jterm.ui.sidebar.SessionSidebar;
 import com.katmoda.jterm.ui.tabs.TabPane;
@@ -132,7 +133,8 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
 
     public void show() {
         sidebar = new SessionSidebar(sessionStore, this::openSshSession,
-                this::openLocalInCurrent, this::openWslSession, this::openSftpForConfig);
+                this::openLocalInCurrent, this::openWslSession, this::openSftpForConfig,
+                this::openFolderSessions);
 
         split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, sidebar, tabPane);
         split.setDividerLocation(AppSettings.get().getSidebarWidth());
@@ -343,6 +345,48 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
                 default -> { }
             }
         });
+    }
+
+    /**
+     * Open every SSH session under {@code folder} (recursively). In {@code SEPARATE_TABS} each
+     * session gets its own tab; in {@code SPLIT_TABS} they are packed into split-pane grids of up
+     * to {@link PaneGrid#MAX}² panes, spilling into additional tabs. Connecting more than 9 hosts
+     * at once is confirmed first, since each may prompt for credentials.
+     */
+    private void openFolderSessions(FolderNode folder, FolderOpenMode mode) {
+        List<SshSessionConfig> sessions = SessionStore.collectSshSessions(folder);
+        if (sessions.isEmpty()) {
+            JOptionPane.showMessageDialog(frame, "This folder has no SSH connections.",
+                    "Open Folder", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        if (sessions.size() > 9) {
+            int ok = JOptionPane.showConfirmDialog(frame,
+                    "Open " + sessions.size() + " connections from \"" + folder.getName() + "\"?",
+                    "Open Folder", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
+            if (ok != JOptionPane.OK_OPTION) {
+                return;
+            }
+        }
+        if (mode == FolderOpenMode.SEPARATE_TABS) {
+            for (SshSessionConfig cfg : sessions) {
+                tabPane.addSshTab(cfg);
+            }
+            return;
+        }
+        int perTab = PaneGrid.MAX * PaneGrid.MAX;
+        int tabCount = (sessions.size() + perTab - 1) / perTab;
+        List<PaneGrid> grids = new ArrayList<>();
+        for (int t = 0; t < tabCount; t++) {
+            String title = tabCount > 1 ? folder.getName() + " (" + (t + 1) + ")" : folder.getName();
+            grids.add(tabPane.addSplitTab(title));
+        }
+        for (int i = 0; i < sessions.size(); i++) {
+            SshSessionConfig cfg = sessions.get(i);
+            PaneGrid grid = grids.get(i / perTab);
+            connectAsync(cfg, session ->
+                    grid.placeSessionInBestSplit(session, tabPane.sshFactory(cfg)));
+        }
     }
 
     // ---- SFTP browser ----
@@ -892,6 +936,16 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
                     sidebar.duplicateSelected();
                 }
             }
+            case DUPLICATE_PANE_SPLIT -> {
+                if (grid != null) {
+                    grid.duplicateActivePane(false);
+                }
+            }
+            case DUPLICATE_PANE_TAB -> {
+                if (grid != null) {
+                    grid.duplicateActivePane(true);
+                }
+            }
             case MOVE_TAB_LEFT -> {
                 if (active != null) {
                     active.moveSelectedTab(-1);
@@ -953,6 +1007,9 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         terminal.add(menuItem("Split Column", TermAction.SPLIT_COLUMN));
         terminal.add(menuItem("Split Row", TermAction.SPLIT_ROW));
         terminal.add(menuItem("Close Pane", TermAction.CLOSE_PANE));
+        terminal.addSeparator();
+        terminal.add(menuItem("Duplicate Pane to Split", TermAction.DUPLICATE_PANE_SPLIT));
+        terminal.add(menuItem("Duplicate Pane to Tab", TermAction.DUPLICATE_PANE_TAB));
 
         JMenu ssh = new JMenu("SSH");
         ssh.add(menuItem("Open SFTP Browser", TermAction.OPEN_SFTP));
@@ -973,6 +1030,10 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         preferences.add(prefsDialog);
 
         JMenu help = new JMenu("Help");
+        JMenuItem manual = new JMenuItem("User Manual…");
+        manual.addActionListener(e -> openInBrowser(MANUAL_URL));
+        help.add(manual);
+        help.addSeparator();
         JMenuItem about = new JMenuItem("About " + AppInfo.name() + "…");
         about.addActionListener(e -> showAboutDialog());
         help.add(about);
@@ -1012,6 +1073,9 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
 
     /** Project issue tracker, linked from the About dialog. */
     private static final String ISSUES_URL = "https://github.com/drecaise/jterm/issues";
+
+    /** Online user manual, linked from the Help menu. */
+    private static final String MANUAL_URL = "https://drecaise.github.io/jterm/";
 
     /**
      * Builds an HTML-rendering component whose {@code <a href>} links open in the system browser.

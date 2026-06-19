@@ -1,2 +1,5 @@
 target
 dependency-reduced-pom.xml
+
+# MkDocs build output (user manual)
+site/

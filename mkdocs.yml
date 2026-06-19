@@ -1,0 +1,80 @@
+site_name: jterm User Manual
+site_description: User manual for jterm — a cross-platform Java terminal emulator with tabs, a splittable pane grid, saved SSH sessions, SFTP, tunnels and broadcast input.
+site_author: Mark Moses
+repo_url: https://github.com/drecaise/jterm
+repo_name: drecaise/jterm
+edit_uri: edit/main/docs/
+copyright: Copyright &copy; 2026 Mark Moses — GPL-3.0-or-later
+
+docs_dir: docs
+
+theme:
+  name: material
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.instant
+    - navigation.tracking
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+plugins:
+  - search
+  - exclude:
+      glob:
+        - "superpowers/*"
+        - "superpowers/**"
+        - "licensing.md"
+        - "SCREENSHOTS.md"
+        - "maintaining-the-docs.md"
+        - "img/README.md"
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.keys
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Tabs & panes: tabs-and-panes.md
+  - Sessions sidebar: sessions-sidebar.md
+  - SSH sessions: ssh-sessions.md
+  - SSH auth & vault: ssh-auth-and-vault.md
+  - SFTP file browser: sftp.md
+  - Port forwarding (tunnels): tunnels.md
+  - Broadcast input: broadcast.md
+  - Macros: macros.md
+  - Keyboard shortcuts: shortcuts.md
+  - Preferences: preferences.md
+  - Reconnect & save output: reconnect-and-output.md
+  - Configuration files: config-files.md
+  - Troubleshooting: troubleshooting.md

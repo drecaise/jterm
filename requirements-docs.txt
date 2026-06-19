@@ -1,0 +1,6 @@
+# Dependencies for building the jterm user manual (MkDocs site).
+#   pip install -r requirements-docs.txt
+#   mkdocs serve      # live preview at http://127.0.0.1:8000
+#   mkdocs build --strict
+mkdocs-material==9.5.39
+mkdocs-exclude==1.0.2
