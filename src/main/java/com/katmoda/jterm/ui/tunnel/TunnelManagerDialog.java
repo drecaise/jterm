@@ -78,14 +78,17 @@ public final class TunnelManagerDialog extends JDialog {
         list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         list.setCellRenderer(new TunnelRenderer());
         list.addListSelectionListener(e -> updateButtons());
-        // Show the tunnel icon (not the inherited app icon) in the title bar. FlatLaf defaults
-        // the title-bar icon off for dialogs, so opt in via the client property as well.
-        setIconImages(TunnelEditDialog.tunnelIconImages());
-        getRootPane().putClientProperty(FlatClientProperties.TITLE_BAR_SHOW_ICON, true);
         reload();
         setContentPane(buildContent());
         updateButtons();
         pack();
+        // Show the tunnel icon (not the inherited app icon) in the title bar. FlatLaf defaults
+        // the title-bar icon off for dialogs, so opt in via the client property as well. Both
+        // calls must run after pack() realizes the dialog: with FlatLaf window decorations the
+        // TITLE_BAR_SHOW_ICON property change reaches FlatTitlePane.updateIcon(), which
+        // dereferences the dialog's Window — null until the dialog has been realized (NPE).
+        setIconImages(TunnelEditDialog.tunnelIconImages());
+        getRootPane().putClientProperty(FlatClientProperties.TITLE_BAR_SHOW_ICON, true);
         setMinimumSize(new Dimension(520, 340));
         setLocationRelativeTo(owner);
     }
