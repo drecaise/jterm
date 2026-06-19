@@ -27,11 +27,15 @@ import com.pty4j.PtyProcess;
 import com.pty4j.PtyProcessBuilder;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * A local shell running in a pseudo-terminal via pty4j. Created by keyboard
@@ -68,7 +72,12 @@ public final class LocalSession implements TerminalSession {
         env.put("TERM", profile.terminalType());
         env.putIfAbsent("TERM_PROGRAM", "jterm");
 
-        PtyProcess process = new PtyProcessBuilder(defaultShellCommand())
+        // Inside a Flatpak sandbox a directly-spawned shell runs against the runtime's
+        // minimal filesystem (host files appear "missing", system shell config is wrong),
+        // so escape to the host via flatpak-spawn --host.
+        String[] command = isFlatpak() ? flatpakHostShellCommand(profile, dir) : defaultShellCommand();
+
+        PtyProcess process = new PtyProcessBuilder(command)
                 .setEnvironment(env)
                 .setDirectory(dir)
                 .setInitialColumns(80)
@@ -97,6 +106,79 @@ public final class LocalSession implements TerminalSession {
                 .start();
 
         return new LocalSession(process, distro, profile, "builtin/wsl");
+    }
+
+    /** True when running inside a Flatpak sandbox. */
+    private static boolean isFlatpak() {
+        String id = System.getenv("FLATPAK_ID");
+        return (id != null && !id.isBlank()) || Files.exists(Path.of("/.flatpak-info"));
+    }
+
+    /**
+     * Builds a command that runs the user's real <em>host</em> login shell via
+     * {@code flatpak-spawn --host}. The host environment is cleared and rebuilt by the
+     * login shell ({@code -l}); only the essentials are seeded so the sandbox's PATH/SHELL
+     * don't leak through. {@code $HOME} is shared with the host, so the path maps 1:1.
+     */
+    private static String[] flatpakHostShellCommand(TerminalProfile profile, String dir) {
+        String shell = hostLoginShell();
+        String home = System.getProperty("user.home", "/");
+        String user = System.getProperty("user.name", "");
+
+        List<String> cmd = new ArrayList<>();
+        cmd.add("flatpak-spawn");
+        cmd.add("--host");
+        cmd.add("--clear-env");
+        cmd.add("--directory=" + dir);
+        cmd.add("--env=TERM=" + profile.terminalType());
+        cmd.add("--env=TERM_PROGRAM=jterm");
+        cmd.add("--env=HOME=" + home);
+        if (!user.isBlank()) {
+            cmd.add("--env=USER=" + user);
+            cmd.add("--env=LOGNAME=" + user);
+        }
+        cmd.add("--env=SHELL=" + shell);
+        // Pass through display/session vars (if present) so GUI apps launched from the
+        // terminal work. With --socket=x11/wayland the sandbox values match the host's.
+        for (String key : new String[]{"DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "XDG_RUNTIME_DIR"}) {
+            String value = System.getenv(key);
+            if (value != null && !value.isBlank()) {
+                cmd.add("--env=" + key + "=" + value);
+            }
+        }
+        cmd.add("--");
+        cmd.add(shell);
+        cmd.add("-l");
+        return cmd.toArray(new String[0]);
+    }
+
+    /**
+     * Resolves the host user's login shell from the host passwd database (the sandbox's
+     * {@code $SHELL} is the runtime's, not the host's). Falls back to {@code /bin/bash}.
+     */
+    private static String hostLoginShell() {
+        String user = System.getProperty("user.name");
+        if (user != null && !user.isBlank()) {
+            try {
+                Process p = new ProcessBuilder("flatpak-spawn", "--host", "getent", "passwd", user)
+                        .redirectErrorStream(false)
+                        .start();
+                String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+                p.waitFor(3, TimeUnit.SECONDS);
+                // passwd line: name:passwd:uid:gid:gecos:home:shell
+                int nl = out.indexOf('\n');
+                String line = (nl >= 0 ? out.substring(0, nl) : out).trim();
+                int idx = line.lastIndexOf(':');
+                if (idx >= 0 && idx < line.length() - 1) {
+                    String shell = line.substring(idx + 1).trim();
+                    if (!shell.isBlank()) {
+                        return shell;
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return "/bin/bash";
     }
 
     private static String[] defaultShellCommand() {

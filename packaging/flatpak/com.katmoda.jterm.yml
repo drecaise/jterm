@@ -16,6 +16,7 @@ finish-args:
   - --device=dri
   - --filesystem=home          # ~/.ssh keys + known_hosts, app config, SFTP transfers
   - --talk-name=org.freedesktop.secrets   # libsecret-backed keyring (see note below)
+  - --talk-name=org.freedesktop.Flatpak   # flatpak-spawn --host: run the local terminal's shell on the host, not in the sandbox
 
 modules:
   - name: openjdk
