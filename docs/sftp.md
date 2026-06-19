@@ -25,7 +25,9 @@ grid is already full.
 ## Reconnection
 
 If an SFTP browser detects that its connection has dropped, it can **reconnect automatically**.
-When it shares a connection with a terminal pane, reconnecting one restores the other too.
+When it was opened on a terminal pane's connection and that connection drops, the SFTP browser
+reconnects on its own dedicated connection — the terminal pane is unaffected and reconnects
+separately.
 
 See [SSH sessions](ssh-sessions.md) and [SSH auth & vault](ssh-auth-and-vault.md) for connection
 and credential details.
