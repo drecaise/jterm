@@ -46,6 +46,31 @@ whole trailing row or column empty, the grid **collapses** it so the layout stay
     *Duplicate Pane to Split* / *Duplicate Pane to Tab* open another instance of whatever the
     focused pane is running (a fresh local shell, or a new connection to the same SSH session).
 
+## Font size
+
+You can zoom an individual pane's terminal font without affecting any other pane:
+
+| Action | Shortcut |
+|--------|----------|
+| Increase font size | ++ctrl++ + scroll-wheel up, ++ctrl+num-plus++, or ++ctrl+equal++ |
+| Decrease font size | ++ctrl++ + scroll-wheel down, ++ctrl+num-minus++, or ++ctrl+minus++ |
+| Reset to the configured size | ++ctrl+num0++ or ++ctrl+0++ |
+
+Ctrl + scroll-wheel zooms the pane **under the pointer**; the keyboard shortcuts zoom the
+**focused** pane. The numpad bindings are configurable in **Preferences → Keyboard Shortcuts…**;
+the main-row keys and the scroll-wheel gesture are built in.
+
+The adjustment is **per pane and temporary** — it is never written to your saved session or
+preferences:
+
+- a **new** pane (a split, a duplicated pane, or a new tab) always opens at its configured font
+  size, ignoring any zooming you've done elsewhere;
+- if a session **drops and you reconnect** it in the same pane, the pane keeps the size you'd
+  zoomed it to.
+
+To change the *default* font size for new panes, use **Preferences** (see
+[Preferences](preferences.md)).
+
 ## Drag-and-drop to split
 
 You can open a session directly into a split by **dragging** it from the sidebar (or the **Open

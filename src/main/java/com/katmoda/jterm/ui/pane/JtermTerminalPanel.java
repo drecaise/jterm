@@ -28,6 +28,8 @@ import com.katmoda.jterm.config.AppSettings;
 
 import javax.swing.SwingUtilities;
 import java.awt.event.MouseEvent;
+import java.awt.event.MouseWheelEvent;
+import java.util.function.IntConsumer;
 
 /**
  * A {@link TerminalPanel} that adds "paste on right click" behaviour.
@@ -41,10 +43,30 @@ import java.awt.event.MouseEvent;
 final class JtermTerminalPanel extends TerminalPanel {
 
     private final String pasteActionName;
+    private final IntConsumer onCtrlWheelZoom;
 
-    JtermTerminalPanel(SettingsProvider settingsProvider, TerminalTextBuffer textBuffer, StyleState styleState) {
+    JtermTerminalPanel(SettingsProvider settingsProvider, TerminalTextBuffer textBuffer, StyleState styleState,
+                       IntConsumer onCtrlWheelZoom) {
         super(settingsProvider, textBuffer, styleState);
         this.pasteActionName = settingsProvider.getPasteActionPresentation().getName();
+        this.onCtrlWheelZoom = onCtrlWheelZoom;
+    }
+
+    /**
+     * Ctrl + scroll-wheel zooms this pane's font instead of scrolling the buffer. JediTerm scrolls
+     * via a {@code MouseWheelListener} it registers in {@code init(JScrollBar)}, so consuming the
+     * event here — before {@code super} dispatches to that listener — cleanly suppresses the scroll.
+     * Wheel-up ({@code rotation < 0}) increases the size. We bow out when a mouse-aware remote
+     * program is capturing the wheel so its own handling keeps working.
+     */
+    @Override
+    protected void processMouseWheelEvent(MouseWheelEvent e) {
+        if (e.isControlDown() && !isRemoteMouseAction(e)) {
+            onCtrlWheelZoom.accept(-e.getWheelRotation());
+            e.consume();
+            return;
+        }
+        super.processMouseWheelEvent(e);
     }
 
     /**

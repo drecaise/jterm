@@ -37,7 +37,9 @@ final class JtermJediTermWidget extends JediTermWidget {
     @Override
     protected TerminalPanel createTerminalPanel(SettingsProvider settingsProvider,
                                                 StyleState styleState, TerminalTextBuffer textBuffer) {
-        return new JtermTerminalPanel(settingsProvider, textBuffer, styleState);
+        // Referencing `this` here is safe: the callback only fires on a later Ctrl+wheel event,
+        // long after this constructor-time call returns.
+        return new JtermTerminalPanel(settingsProvider, textBuffer, styleState, this::zoomFont);
     }
 
     @Override
@@ -62,6 +64,36 @@ final class JtermJediTermWidget extends JediTermWidget {
             reset.invoke(panel);
         } catch (Exception ignored) {
             // Best-effort: without it the selection tint refreshes on the next selection instead.
+        }
+        panel.repaint();
+    }
+
+    /** Grows/shrinks this pane's font by {@code steps} points and re-lays-out the grid. EDT only. */
+    void zoomFont(int steps) {
+        ((JTermSettingsProvider) mySettingsProvider).adjustFontSize(steps);
+        reinitFont();
+    }
+
+    /** Restores this pane's font to its configured size and re-lays-out the grid. EDT only. */
+    void resetFont() {
+        ((JTermSettingsProvider) mySettingsProvider).resetFontSize();
+        reinitFont();
+    }
+
+    /**
+     * Rebuilds JediTerm's derived (normal/bold/italic) fonts from the settings provider's current
+     * font and recomputes the cell grid — which also notifies the pty of the new row/column count
+     * via the panel's resize path. {@code reinitFontAndResize} is protected, so we invoke it with
+     * the same best-effort reflection used by {@link #recolor()}.
+     */
+    private void reinitFont() {
+        TerminalPanel panel = getTerminalPanel();
+        try {
+            var reinit = TerminalPanel.class.getDeclaredMethod("reinitFontAndResize");
+            reinit.setAccessible(true);
+            reinit.invoke(panel);
+        } catch (Exception ignored) {
+            // Best-effort: without it the font size won't change until the next natural resize.
         }
         panel.repaint();
     }

@@ -38,9 +38,15 @@ import java.awt.Font;
  */
 public final class JTermSettingsProvider extends DefaultSettingsProvider {
 
+    /** Clamp bounds for live, per-pane font-size adjustment (see {@link #setFontSize(int)}). */
+    public static final int MIN_FONT_SIZE = 6;
+    public static final int MAX_FONT_SIZE = 72;
+
     private ThemeColors theme;
     private ColorPalette palette;
-    private final Font font;
+    private Font font;
+    /** The configured size the pane started at; {@link #resetFontSize()} returns to it. */
+    private final int baseFontSize;
 
     public JTermSettingsProvider(ThemeColors theme) {
         this(theme, null, 0);
@@ -59,6 +65,7 @@ public final class JTermSettingsProvider extends DefaultSettingsProvider {
         String family = (fontFamily != null && !fontFamily.isBlank())
                 ? fontFamily : settings.getDefaultFontFamily();
         this.font = resolveFont(family, size);
+        this.baseFontSize = font.getSize();
     }
 
     /** Uses the requested family when it's installed; otherwise auto-picks a monospaced font. */
@@ -103,6 +110,31 @@ public final class JTermSettingsProvider extends DefaultSettingsProvider {
     public void setTheme(ThemeColors theme) {
         this.theme = theme;
         this.palette = new AnsiPalette(theme);
+    }
+
+    /**
+     * Grows/shrinks the live font by {@code delta} points (clamped). Per-pane and transient: this
+     * mutates only the in-memory font, so the new size is picked up by {@link #getTerminalFont()}
+     * on the next {@code reinitFontAndResize} but is never persisted.
+     */
+    public void adjustFontSize(int delta) {
+        setFontSize(font.getSize() + delta);
+    }
+
+    /** Sets the live font size, preserving family/style, clamped to [{@value #MIN_FONT_SIZE}, {@value #MAX_FONT_SIZE}]. */
+    public void setFontSize(int size) {
+        int clamped = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, size));
+        this.font = font.deriveFont((float) clamped);
+    }
+
+    /** Returns the font size to the configured value the pane was created with. */
+    public void resetFontSize() {
+        setFontSize(baseFontSize);
+    }
+
+    /** The current live font size in points. */
+    public int fontSize() {
+        return font.getSize();
     }
 
     @Override

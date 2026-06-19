@@ -44,7 +44,10 @@ public enum TermAction {
     MOVE_TAB_RIGHT("move-tab-right", "Move Tab Right", "control shift RIGHT"),
     DUPLICATE_TAB("duplicate-tab", "Duplicate Tab", "control shift K"),
     DETACH_TAB("detach-tab", "Detach Tab to New Window", "control shift O"),
-    ATTACH_TAB("attach-tab", "Attach Tab to Main Window", "control shift I");
+    ATTACH_TAB("attach-tab", "Attach Tab to Main Window", "control shift I"),
+    FONT_INCREASE("font-increase", "Increase Font Size", "control ADD"),
+    FONT_DECREASE("font-decrease", "Decrease Font Size", "control SUBTRACT"),
+    FONT_RESET("font-reset", "Reset Font Size", "control NUMPAD0");
 
     private final String id;
     private final String label;

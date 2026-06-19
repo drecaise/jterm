@@ -872,11 +872,37 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
                     runMacroOnActivePane(macro);
                     return true;
                 }
+                // Built-in main-row aliases for the numpad font shortcuts (Ctrl+= / Ctrl+- / Ctrl+0).
+                // The numpad strokes above are the configurable defaults; these convenience aliases
+                // are recognised in addition and aren't shown in the keymap editor.
+                TermAction alias = mainRowFontAlias(e);
+                if (alias != null) {
+                    handle(alias);
+                    return true;
+                }
                 return false;
             }
             handle(action);
             return true; // consume so JediTerm / menu accelerators don't also fire
         });
+    }
+
+    /**
+     * Maps the main-row font shortcuts (Ctrl+= / Ctrl++ to increase, Ctrl+- to decrease, Ctrl+0 to
+     * reset) to their font actions, or {@code null} if {@code e} isn't one. These are fixed aliases
+     * for the configurable numpad bindings; we match on key code so a US-layout Ctrl+= works without
+     * Shift. Only fires with Ctrl held and no Alt/Meta, so it won't shadow other shortcuts.
+     */
+    private static TermAction mainRowFontAlias(KeyEvent e) {
+        if (!e.isControlDown() || e.isAltDown() || e.isMetaDown()) {
+            return null;
+        }
+        return switch (e.getKeyCode()) {
+            case KeyEvent.VK_EQUALS, KeyEvent.VK_PLUS -> TermAction.FONT_INCREASE;
+            case KeyEvent.VK_MINUS -> TermAction.FONT_DECREASE;
+            case KeyEvent.VK_0 -> TermAction.FONT_RESET;
+            default -> null;
+        };
     }
 
     /**
@@ -969,6 +995,21 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
             case ATTACH_TAB -> {
                 if (active != null) {
                     active.attachSelectedToMain();
+                }
+            }
+            case FONT_INCREASE -> {
+                if (grid != null && grid.activePane() instanceof TerminalPane p) {
+                    p.increaseFontSize();
+                }
+            }
+            case FONT_DECREASE -> {
+                if (grid != null && grid.activePane() instanceof TerminalPane p) {
+                    p.decreaseFontSize();
+                }
+            }
+            case FONT_RESET -> {
+                if (grid != null && grid.activePane() instanceof TerminalPane p) {
+                    p.resetFontSize();
                 }
             }
         }

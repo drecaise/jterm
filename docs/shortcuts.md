@@ -25,6 +25,15 @@ focus. The menus show the same accelerators for discoverability.
 | Toggle light/dark theme | ++ctrl+shift+l++ |
 | Duplicate session | ++ctrl+shift+d++ |
 | Move session up / down | ++ctrl+shift+up++ / ++ctrl+shift+down++ |
+| Increase pane font size | ++ctrl+num-plus++ |
+| Decrease pane font size | ++ctrl+num-minus++ |
+| Reset pane font size | ++ctrl+num0++ |
+
+!!! note "Font-size keys"
+    The increase/decrease/reset bindings shown above are the **numeric keypad** keys (these are
+    the editable defaults). The main-row ++ctrl+equal++, ++ctrl+minus++ and ++ctrl+0++ also work
+    as built-in aliases, and ++ctrl++ + scroll-wheel zooms the pane under the pointer. See
+    [Font size](tabs-and-panes.md#font-size).
 
 !!! note "macOS"
     On macOS, ++ctrl++ in the table corresponds to the platform's primary modifier as bound in

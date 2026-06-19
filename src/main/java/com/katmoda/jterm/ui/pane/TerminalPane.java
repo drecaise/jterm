@@ -698,6 +698,24 @@ public final class TerminalPane extends JPanel implements GridContent {
         widget.recolor();
     }
 
+    /**
+     * Live font-size zoom for this pane (Ctrl+scroll / Ctrl+numpad-plus-minus). The override lives in
+     * this pane's settings provider, so it is transient — never persisted — yet survives a session
+     * reconnect (the pane and its provider are reused), while a new pane starts at its configured size.
+     */
+    public void increaseFontSize() {
+        widget.zoomFont(+1);
+    }
+
+    public void decreaseFontSize() {
+        widget.zoomFont(-1);
+    }
+
+    /** Restores this pane's font to its configured size. */
+    public void resetFontSize() {
+        widget.resetFont();
+    }
+
     /** Move keyboard focus into the terminal. */
     public void focusTerminal() {
         widget.getTerminalPanel().requestFocusInWindow();
