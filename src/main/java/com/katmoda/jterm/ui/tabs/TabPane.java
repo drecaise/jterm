@@ -216,6 +216,23 @@ public final class TabPane extends JPanel {
         services.connectAsync(cfg, session -> grid.placeSessionInActive(session, sshFactory(cfg)));
     }
 
+    /** Opens an already-built session in a fresh tab (used when duplicating a pane to a new tab). */
+    public void openSessionInNewTab(TerminalSession session, SessionFactory factory) {
+        PaneGrid grid = newGrid();
+        insertGrid(grid);
+        grid.initEmpty();
+        grid.placeSessionInActive(session, factory);
+    }
+
+    /** Creates an empty tab titled {@code title} and returns its grid, for bulk split-pane fills. */
+    public PaneGrid addSplitTab(String title) {
+        PaneGrid grid = newGrid();
+        int at = insertGrid(grid);
+        tabs.setTitleAt(at, title);
+        grid.initEmpty();
+        return grid;
+    }
+
     public PaneGrid newGrid() {
         PaneGrid grid = new PaneGrid();
         wireGrid(grid);
@@ -231,6 +248,7 @@ public final class TabPane extends JPanel {
         grid.setOnActivity(() -> decorateTab(grid));
         grid.setOnEmpty(() -> closeTabForGrid(grid));
         grid.setMoveCoordinator(MOVE_COORDINATOR);
+        grid.setOnOpenSessionInNewTab(this::openSessionInNewTab);
     }
 
     /** A factory that reconnects this SSH session (async, with re-auth) for restart/duplicate. */

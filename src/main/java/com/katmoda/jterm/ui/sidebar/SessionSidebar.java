@@ -123,6 +123,7 @@ public final class SessionSidebar extends JPanel {
     private final Consumer<OpenMode> onOpenLocal;
     private final BiConsumer<String, OpenMode> onOpenWsl;
     private final Consumer<SshSessionConfig> onOpenSftp;
+    private final BiConsumer<FolderNode, FolderOpenMode> onOpenFolder;
 
     /**
      * The pinned, non-editable "WSL" folder of runtime-detected WSL2 distributions, or
@@ -138,13 +139,15 @@ public final class SessionSidebar extends JPanel {
                           BiConsumer<SshSessionConfig, OpenMode> onOpenSsh,
                           Consumer<OpenMode> onOpenLocal,
                           BiConsumer<String, OpenMode> onOpenWsl,
-                          Consumer<SshSessionConfig> onOpenSftp) {
+                          Consumer<SshSessionConfig> onOpenSftp,
+                          BiConsumer<FolderNode, FolderOpenMode> onOpenFolder) {
         super(new BorderLayout());
         this.store = store;
         this.onOpenSsh = onOpenSsh;
         this.onOpenLocal = onOpenLocal;
         this.onOpenWsl = onOpenWsl;
         this.onOpenSftp = onOpenSftp;
+        this.onOpenFolder = onOpenFolder;
         this.wslFolder = isWindows() ? new FolderNode("WSL") : null;
 
         this.model = new DefaultTreeModel(buildRoot());
@@ -914,6 +917,15 @@ public final class SessionSidebar extends JPanel {
             menu.add(newFolder);
             menu.add(newSsh);
             if (node instanceof FolderNode folder) {
+                if (!SessionStore.collectSshSessions(folder).isEmpty()) {
+                    JMenuItem openSplit = new JMenuItem("Open All in Split Panes");
+                    openSplit.addActionListener(a -> onOpenFolder.accept(folder, FolderOpenMode.SPLIT_TABS));
+                    JMenuItem openTabs = new JMenuItem("Open All in Separate Tabs");
+                    openTabs.addActionListener(a -> onOpenFolder.accept(folder, FolderOpenMode.SEPARATE_TABS));
+                    menu.addSeparator();
+                    menu.add(openSplit);
+                    menu.add(openTabs);
+                }
                 JMenuItem export = new JMenuItem("Export Sessions…");
                 export.addActionListener(a -> exportFolder(folder));
                 JMenuItem importInto = new JMenuItem("Import Sessions…");

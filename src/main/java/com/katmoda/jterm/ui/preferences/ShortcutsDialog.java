@@ -23,17 +23,15 @@ import com.katmoda.jterm.keymap.Keymap;
 import com.katmoda.jterm.keymap.TermAction;
 
 import javax.swing.BorderFactory;
-import javax.swing.Box;
-import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
 import javax.swing.KeyStroke;
 import javax.swing.SwingConstants;
 import java.awt.BorderLayout;
-import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.KeyEventDispatcher;
@@ -72,8 +70,22 @@ public final class ShortcutsDialog extends JDialog {
 
         setContentPane(buildContent());
         pack();
-        setMinimumSize(new Dimension(380, getHeight()));
+        clampToScreen();
+        setMinimumSize(new Dimension(380, 240));
         setLocationRelativeTo(owner);
+    }
+
+    /**
+     * Caps the packed height to what fits on screen so the dialog stays usable on short displays;
+     * the row list scrolls when it can't show every shortcut at once.
+     */
+    private void clampToScreen() {
+        java.awt.Rectangle screen = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment()
+                .getMaximumWindowBounds();
+        int maxHeight = (int) (screen.height * 0.85);
+        if (getHeight() > maxHeight) {
+            setSize(getWidth(), maxHeight);
+        }
     }
 
     /** Shows the modal editor. */
@@ -127,15 +139,21 @@ public final class ShortcutsDialog extends JDialog {
         hint.setEnabled(false);
         hint.setBorder(BorderFactory.createEmptyBorder(0, 12, 6, 12));
 
-        JPanel content = new JPanel();
-        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
-        rows.setAlignmentX(Component.LEFT_ALIGNMENT);
-        hint.setAlignmentX(Component.LEFT_ALIGNMENT);
-        buttonBar.setAlignmentX(Component.LEFT_ALIGNMENT);
-        content.add(rows);
-        content.add(hint);
-        content.add(Box.createVerticalGlue());
-        content.add(buttonBar);
+        // The row list scrolls; the hint and button bar stay pinned so they're always reachable
+        // even when the dialog is shorter than the full list of shortcuts.
+        JScrollPane scroll = new JScrollPane(rows,
+                JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
+                JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.setBorder(BorderFactory.createEmptyBorder());
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+
+        JPanel footer = new JPanel(new BorderLayout());
+        footer.add(hint, BorderLayout.NORTH);
+        footer.add(buttonBar, BorderLayout.SOUTH);
+
+        JPanel content = new JPanel(new BorderLayout());
+        content.add(scroll, BorderLayout.CENTER);
+        content.add(footer, BorderLayout.SOUTH);
         return content;
     }
 

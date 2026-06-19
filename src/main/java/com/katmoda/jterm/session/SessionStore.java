@@ -118,6 +118,23 @@ public final class SessionStore {
         return false;
     }
 
+    /** All SSH sessions under {@code folder}, recursively, in depth-first tree order. */
+    public static List<SshSessionConfig> collectSshSessions(FolderNode folder) {
+        List<SshSessionConfig> out = new ArrayList<>();
+        collectSshSessions(folder, out);
+        return out;
+    }
+
+    private static void collectSshSessions(FolderNode folder, List<SshSessionConfig> out) {
+        for (SessionNode child : folder.getChildren()) {
+            if (child instanceof SshSessionConfig ssh) {
+                out.add(ssh);
+            } else if (child instanceof FolderNode sub) {
+                collectSshSessions(sub, out);
+            }
+        }
+    }
+
     /**
      * Resolves the effective SSH username for {@code cfg} via the inheritance cascade: the
      * session's own value, then ancestor folders nearest → root, then the global default, and

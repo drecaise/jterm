@@ -59,6 +59,7 @@ import java.awt.dnd.DropTargetDropEvent;
 import java.awt.dnd.DropTargetEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 /**
@@ -94,6 +95,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     private Runnable onActiveChanged;
     private Runnable onActivity;
     private Runnable onEmpty;
+    private BiConsumer<TerminalSession, SessionFactory> onOpenSessionInNewTab;
 
     public PaneGrid() {
         super(new GridLayout(1, 1));
@@ -122,6 +124,11 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     /** Fired when a pane's background-activity state changes, so the owning tab can re-decorate. */
     public void setOnActivity(Runnable onActivity) {
         this.onActivity = onActivity;
+    }
+
+    /** Fired to open an already-built session in a fresh tab (used when duplicating a pane). */
+    public void setOnOpenSessionInNewTab(BiConsumer<TerminalSession, SessionFactory> handler) {
+        this.onOpenSessionInNewTab = handler;
     }
 
     /**
@@ -402,6 +409,71 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         } else {
             placeSessionInActive(session, factory);
         }
+    }
+
+    /**
+     * Open the given session in the best available split: the empty in-bounds cell nearest the
+     * active pane if there is one, else a new column, else a new row. Mirrors
+     * {@link #openContentInBestSplit} but builds a fresh pane from {@code session}/{@code factory}.
+     * Returns {@code false} when the grid is full (3×3 with no empties) so the caller can open a
+     * new tab instead.
+     */
+    public boolean placeSessionInBestSplit(TerminalSession session, SessionFactory factory) {
+        if (session == null) {
+            return true;
+        }
+        int[] empty = nearestEmptyCell();
+        if (empty != null) {
+            placeAt(empty[0], empty[1], session, factory);
+        } else if (cols < MAX) {
+            int newCol = cols;
+            cols++;
+            placeAt(activeRow, newCol, session, factory);
+        } else if (rows < MAX) {
+            int newRow = rows;
+            rows++;
+            placeAt(newRow, activeCol, session, factory);
+        } else {
+            return false;
+        }
+        relayout();
+        focusActive();
+        return true;
+    }
+
+    /**
+     * Re-open the session held by {@code pane} (a fresh, independent instance via its restart
+     * factory) either in a new split within this grid or in a new tab. No-op if the pane is gone
+     * or has no factory (e.g. an SFTP browser). When duplicating into a split and the grid is
+     * full, falls back to a new tab so the duplicate is never lost.
+     */
+    public void duplicatePane(GridContent pane, boolean toNewTab) {
+        int[] pos = locate(pane);
+        if (pos == null) {
+            return;
+        }
+        duplicateCell(pos[0], pos[1], toNewTab);
+    }
+
+    /** Duplicate the active cell's session (keyboard entry point); see {@link #duplicatePane}. */
+    public void duplicateActivePane(boolean toNewTab) {
+        duplicateCell(activeRow, activeCol, toNewTab);
+    }
+
+    private void duplicateCell(int r, int c, boolean toNewTab) {
+        SessionFactory factory = factories[r][c];
+        if (factory == null) {
+            return;
+        }
+        factory.create(session -> {
+            if (toNewTab) {
+                if (onOpenSessionInNewTab != null) {
+                    onOpenSessionInNewTab.accept(session, factory);
+                }
+            } else if (!placeSessionInBestSplit(session, factory) && onOpenSessionInNewTab != null) {
+                onOpenSessionInNewTab.accept(session, factory);
+            }
+        });
     }
 
     // ---- pane move (drag a pane/tab into this grid) ----
@@ -719,6 +791,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         if (content instanceof TerminalPane pane) {
             pane.setOnContentEnded(() -> handleSessionEnd(pane));
             pane.setOnBroadcastToggle(this::updateBorders);
+            pane.setDuplicateHandler(toNewTab -> duplicatePane(pane, toNewTab));
             // A freshly placed/adopted pane has no unseen output yet.
             pane.setActivity(PaneActivity.NONE);
             if (pane.inputConnector() instanceof BroadcastingTtyConnector b) {

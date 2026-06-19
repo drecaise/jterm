@@ -78,6 +78,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.EnumSet;
+import java.util.function.Consumer;
 
 /**
  * A single terminal cell: a JediTerm widget driving one {@link TerminalSession}.
@@ -103,6 +104,8 @@ public final class TerminalPane extends JPanel implements GridContent {
     private Runnable onFocus;
     private Runnable onSessionEnd;
     private Runnable onBroadcastToggle;
+    /** Re-opens this pane's session elsewhere; the flag picks a new split (false) or a new tab (true). */
+    private Consumer<Boolean> duplicateHandler;
     private Runnable highlightTeardown;
     private Border savedBorder;
     private boolean stopped;
@@ -220,6 +223,11 @@ public final class TerminalPane extends JPanel implements GridContent {
     /** Fired when this pane's broadcast checkbox is toggled, so the grid can re-decorate borders. */
     public void setOnBroadcastToggle(Runnable onBroadcastToggle) {
         this.onBroadcastToggle = onBroadcastToggle;
+    }
+
+    /** Wires the "Open in New Split Pane / New Tab" menu items to the grid's duplicate logic. */
+    public void setDuplicateHandler(Consumer<Boolean> duplicateHandler) {
+        this.duplicateHandler = duplicateHandler;
     }
 
     // ---- session-stopped screen ----
@@ -470,6 +478,15 @@ public final class TerminalPane extends JPanel implements GridContent {
      */
     private JPopupMenu buildPaneMenu() {
         JPopupMenu menu = new JPopupMenu();
+        if (duplicateHandler != null) {
+            JMenuItem splitItem = new JMenuItem("Duplicate in New Split Pane");
+            splitItem.addActionListener(e -> duplicateHandler.accept(false));
+            menu.add(splitItem);
+            JMenuItem tabItem = new JMenuItem("Duplicate in New Tab");
+            tabItem.addActionListener(e -> duplicateHandler.accept(true));
+            menu.add(tabItem);
+            menu.addSeparator();
+        }
         JMenuItem save = new JMenuItem("Save output to file…");
         save.addActionListener(e -> saveOutput());
         menu.add(save);

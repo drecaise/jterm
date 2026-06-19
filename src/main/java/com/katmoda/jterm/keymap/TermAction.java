@@ -36,6 +36,8 @@ public enum TermAction {
     TOGGLE_BROADCAST("toggle-broadcast", "Toggle Broadcast", "control shift B"),
     TOGGLE_THEME("toggle-theme", "Toggle Light/Dark", "control shift L"),
     DUPLICATE_SESSION("duplicate-session", "Duplicate Session", "control shift D"),
+    DUPLICATE_PANE_SPLIT("duplicate-pane-split", "Duplicate Pane to Split", "control alt D"),
+    DUPLICATE_PANE_TAB("duplicate-pane-tab", "Duplicate Pane to Tab", "control alt shift D"),
     MOVE_SESSION_UP("move-session-up", "Move Session Up", "control shift UP"),
     MOVE_SESSION_DOWN("move-session-down", "Move Session Down", "control shift DOWN"),
     MOVE_TAB_LEFT("move-tab-left", "Move Tab Left", "control shift LEFT"),
