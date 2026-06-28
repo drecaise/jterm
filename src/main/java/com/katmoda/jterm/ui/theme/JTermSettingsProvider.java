@@ -137,6 +137,17 @@ public final class JTermSettingsProvider extends DefaultSettingsProvider {
         return font.getSize();
     }
 
+    /**
+     * Scrollback size, in lines. JediTerm's default is 5000; we use a smaller value to test flood
+     * performance — a smaller cyclic buffer means less churn (trimming/copying) as fast output
+     * pushes lines into history, so a high-volume burst (e.g. {@code cat /dev/urandom}) drains
+     * sooner after it's interrupted. Trade-off: less retained scrollback history.
+     */
+    @Override
+    public int getBufferMaxLinesCount() {
+        return 1000;
+    }
+
     @Override
     public ColorPalette getTerminalColorPalette() {
         return palette;

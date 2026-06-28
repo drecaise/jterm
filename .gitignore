@@ -1,4 +1,5 @@
 target
+packaging/flatpak/jterm.jar
 dependency-reduced-pom.xml
 
 # MkDocs build output (user manual)
