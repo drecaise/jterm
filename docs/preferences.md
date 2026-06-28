@@ -1,6 +1,6 @@
 # Preferences
 
-Open **Preferences → Preferences…** for the main settings dialog. It has four tabs. (The theme
+Open **Preferences → Preferences…** for the main settings dialog. It has five tabs. (The theme
 toggle and the keyboard-shortcut editor live in the **Preferences** menu too — see
 [Keyboard shortcuts](shortcuts.md).)
 
@@ -49,6 +49,30 @@ Define named **highlight lists** — rules that colour matching text as it appea
 (for example, flagging `ERROR` red or `WARN` yellow). Pick the **active list (global default)**
 at the top; individual sessions can override which list they use. Highlighting applies to
 **newly opened** terminals.
+
+## Colors
+
+![Preferences — Colors](img/preferences-colors.png)
+
+Retune the terminal **palette** — what colours the terminal actually draws with. Each theme has
+its own palette; pick which one you're editing with the **Scheme** selector (**Dark** / **Light**),
+which starts on your active theme.
+
+You can edit:
+
+- **Foreground** / **Background** — the default text and background colours.
+- **Selection text** / **Selection background** — colours for selected text.
+- **ANSI colors** — the 16-colour palette programs use, laid out as a grid of the eight named
+  colours (Black, Red, Green, Yellow, Blue, Magenta, Cyan, White) in a **Normal** and a **Bright**
+  row. This is where to fix, say, a *Bright black* that's too dark to read against the background.
+
+Click any swatch to open the colour picker. **Reset to defaults** restores the selected scheme's
+whole palette to its built-in preset; only the colours you actually change are saved (stored in
+`colors.json` — see [Configuration files](config-files.md)), so untouched colours keep following
+the built-in defaults across updates.
+
+Open terminals **recolour immediately** when you click **OK**. (An already-ended *session
+stopped* overlay keeps its old colours until a new pane opens in its place.)
 
 ## Theme
 

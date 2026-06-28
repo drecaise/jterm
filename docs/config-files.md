@@ -18,6 +18,7 @@ jterm stores all its state as JSON in a per-OS configuration directory.
 | `keymap.json` | [Keyboard shortcut](shortcuts.md) bindings (written with defaults on first run). |
 | `credentials.json` | SSH passwords and key passphrases, **AES-GCM encrypted** under your master password. No plaintext secrets. |
 | `settings.json` | Application preferences and window state (size/position, theme, defaults). |
+| `colors.json` | Per-theme [terminal palette](preferences.md#colors) customizations. Stores only the colours you changed; absent until you customize one. |
 | `icons/` | Folder holding imported icon image files. |
 
 ## Editing by hand
