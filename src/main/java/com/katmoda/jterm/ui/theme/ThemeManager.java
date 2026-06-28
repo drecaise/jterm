@@ -60,8 +60,8 @@ public final class ThemeManager {
 
     /** Installs the LaF for the current theme. Call once before building UI (before any frame). */
     public void install() {
-        // Restore the persisted light/dark choice before any UI is built.
-        current = AppSettings.get().isDarkTheme() ? ThemeColors.DARK : ThemeColors.LIGHT;
+        // Restore the persisted light/dark choice (with any saved color overrides) before any UI.
+        current = ThemeColorStore.get().effective(AppSettings.get().isDarkTheme());
         // FlatLaf-drawn title bar so we control the window icon + title (GNOME shows neither
         // natively). Keep the menu bar below the title bar rather than embedded in it.
         System.setProperty("flatlaf.useWindowDecorations", "true");
@@ -80,11 +80,12 @@ public final class ThemeManager {
     }
 
     public void setDark(boolean dark) {
-        ThemeColors next = dark ? ThemeColors.DARK : ThemeColors.LIGHT;
-        if (next == current) {
+        // Compare the dark flag, not object identity: a customized ThemeColors is no longer the
+        // static preset, so an identity check would re-apply needlessly (or never short-circuit).
+        if (current.dark() == dark) {
             return;
         }
-        current = next;
+        current = ThemeColorStore.get().effective(dark);
         AppSettings.get().setDarkTheme(dark);
         AppSettings.get().save();
         applyLaf();
@@ -95,6 +96,18 @@ public final class ThemeManager {
 
     public void toggle() {
         setDark(!current.dark());
+    }
+
+    /**
+     * Rebuilds the active scheme's colors from {@link ThemeColorStore} and notifies listeners so
+     * running terminals recolor. Call after the user edits the palette in Preferences. (The LaF
+     * itself is unchanged — only the FlatLaf base depends on dark/light — so we skip {@code applyLaf}.)
+     */
+    public void reapplyColors() {
+        current = ThemeColorStore.get().effective(current.dark());
+        for (Consumer<ThemeColors> l : listeners) {
+            l.accept(current);
+        }
     }
 
     /** Register a callback fired (on the EDT) whenever the theme changes. */

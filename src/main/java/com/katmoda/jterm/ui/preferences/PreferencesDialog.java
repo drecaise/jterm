@@ -29,6 +29,7 @@ import com.katmoda.jterm.ui.component.KeyFileField;
 import com.katmoda.jterm.ui.component.TabColorPicker;
 import com.katmoda.jterm.ui.component.TerminalSettingsForm;
 import com.katmoda.jterm.ui.component.ToggleSwitch;
+import com.katmoda.jterm.ui.theme.ThemeManager;
 
 import javax.swing.BorderFactory;
 import javax.swing.JComboBox;
@@ -146,11 +147,20 @@ public final class PreferencesDialog {
                 + " Passphrase and password are stored encrypted in the credential vault."
                 + " Applies to newly opened sessions.");
 
+        // Colors: per-scheme terminal palette editor (foreground/background/selection + 16 ANSI).
+        ColorSchemeForm colorForm = new ColorSchemeForm();
+        JPanel colors = new JPanel(new BorderLayout(0, 6));
+        colors.add(colorForm.component(), BorderLayout.NORTH);
+        colors.add(hint("Customizes the terminal palette for each theme. Open terminals recolor"
+                + " immediately; an already-ended \"session stopped\" overlay keeps its old colors"
+                + " until a new pane opens."), BorderLayout.SOUTH);
+
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("General", general);
         tabs.addTab("Session Defaults", sessionDefaults);
         tabs.addTab("Terminal Settings", terminal);
         tabs.addTab("Highlighting", highlighting);
+        tabs.addTab("Colors", colors);
 
         int result = JOptionPane.showConfirmDialog(parent, tabs, "Preferences",
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
@@ -175,6 +185,9 @@ public final class PreferencesDialog {
         applyVaultSecret(parent, VaultKeys.GLOBAL_KEY_PASSPHRASE, defaultKeyPassphrase.getPassword());
         applyVaultSecret(parent, VaultKeys.GLOBAL_PASSWORD, defaultPassword.getPassword());
         settings.save();
+        // Persist palette edits and recolor running terminals via the active theme.
+        colorForm.commit();
+        ThemeManager.get().reapplyColors();
     }
 
     /**
