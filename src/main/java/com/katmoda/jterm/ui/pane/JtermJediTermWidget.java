@@ -102,10 +102,13 @@ final class JtermJediTermWidget extends JediTermWidget {
      * Reuse this widget — and its existing {@link TerminalTextBuffer} scrollback — with a new
      * connector after the previous session ended. {@code setTtyConnector} builds a fresh
      * {@code TerminalStarter} (the old one is flagged stopped once a session ends) and {@code start}
-     * spawns a new reader thread; neither clears the text buffer, so prior output is retained and
-     * the new session's output appends below it. We first leave any alternate-screen buffer (e.g. a
-     * session dropped while inside vim/htop) so the new output lands in the scrollback-backed
-     * primary buffer rather than a stale alt-screen. Must be called on the EDT.
+     * spawns a new reader thread; neither clears the text buffer, so prior output is retained. We
+     * first leave any alternate-screen buffer (e.g. a session dropped while inside vim/htop) so the
+     * scroll-off and the new output act on the scrollback-backed primary buffer rather than a stale
+     * alt-screen. The dead session's visible screen is then pushed up into history and the cursor is
+     * homed, so the reconnected session starts on a blank screen with the prior output sitting just
+     * above the top edge (reachable by scrolling up) instead of running together with it. Must be
+     * called on the EDT.
      */
     void restartWith(TtyConnector connector) {
         if (isSessionRunning()) {
@@ -117,6 +120,13 @@ final class JtermJediTermWidget extends JediTermWidget {
         // before restoring it, the cursor would stay invisible because a fresh shell never re-enables
         // it. Force it back on so the reconnected session always shows a cursor.
         getTerminal().setCursorVisible(true);
+        // Scroll the preceding session's output off-screen: move its used screen lines into the
+        // scrollback (this drops trailing blank rows, so the last real line becomes the newest
+        // history line — "just off the top") and home the cursor (1-based CUP), since moving the
+        // lines empties the screen buffer but leaves the Terminal state-machine cursor where it was.
+        // The new session then writes from the top of a blank screen.
+        getTerminalTextBuffer().moveScreenLinesToHistory();
+        getTerminal().cursorPosition(1, 1);
         setTtyConnector(connector);
         start();
     }
