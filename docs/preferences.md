@@ -33,6 +33,8 @@ Changes apply to **newly opened** sessions.
 
 ## Terminal Settings
 
+![Preferences — Terminal Settings](img/preferences-terminal.png)
+
 The application-wide terminal defaults used by the local shell and by sessions that don't
 override them:
 
@@ -44,6 +46,8 @@ These apply to **newly opened** terminals. Individual sessions can override them
 [Terminal Settings tab](ssh-sessions.md#terminal-settings).
 
 ## Highlighting
+
+![Preferences — Highlighting](img/preferences-highlighting.png)
 
 Define named **highlight lists** — rules that colour matching text as it appears in new output
 (for example, flagging `ERROR` red or `WARN` yellow). Pick the **active list (global default)**

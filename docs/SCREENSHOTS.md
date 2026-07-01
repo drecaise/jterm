@@ -41,5 +41,6 @@ window size (~1200×800) so text stays legible.
 | `preferences-general.png` | Preferences dialog, **General** tab | `preferences.md` |
 | `preferences-session-defaults.png` | Preferences dialog, **Session Defaults** tab | `preferences.md` |
 | `preferences-terminal.png` | Preferences dialog, **Terminal Settings** tab | `preferences.md` |
+| `preferences-highlighting.png` | Preferences dialog, **Highlighting** tab (a list with several rules and colours) | `preferences.md` |
 | `preferences-colors.png` | Preferences dialog, **Colors** tab (Dark scheme, ANSI grid visible) | `preferences.md` |
 | `session-stopped-screen.png` | A pane showing the "session stopped" reconnect/restart screen | `reconnect-and-output.md` |
