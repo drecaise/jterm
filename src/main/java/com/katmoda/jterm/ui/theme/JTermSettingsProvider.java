@@ -138,14 +138,16 @@ public final class JTermSettingsProvider extends DefaultSettingsProvider {
     }
 
     /**
-     * Scrollback size, in lines. JediTerm's default is 5000; we use a smaller value to test flood
-     * performance — a smaller cyclic buffer means less churn (trimming/copying) as fast output
-     * pushes lines into history, so a high-volume burst (e.g. {@code cat /dev/urandom}) drains
-     * sooner after it's interrupted. Trade-off: less retained scrollback history.
+     * Scrollback size, in lines. User-configurable via Preferences → Terminal, stored on
+     * {@link AppSettings} (default 10000, clamped to
+     * [{@value AppSettings#MIN_SCROLLBACK_LINES}, {@value AppSettings#MAX_SCROLLBACK_LINES}]).
+     * JediTerm calls this once when it builds each new widget's buffer, so a changed value takes
+     * effect on newly opened terminals. A larger cyclic buffer retains more history at the cost of
+     * more churn (trimming/copying) as fast output pushes lines into it.
      */
     @Override
     public int getBufferMaxLinesCount() {
-        return 1000;
+        return AppSettings.get().getScrollbackLines();
     }
 
     @Override

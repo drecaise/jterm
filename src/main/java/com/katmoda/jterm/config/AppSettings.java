@@ -41,8 +41,19 @@ public final class AppSettings {
 
     private static final AppSettings INSTANCE = load();
 
+    /** Bounds for the scrollback buffer size, in lines. The upper bound caps memory use so a
+     *  hand-edited or corrupted settings file can't drive an unbounded buffer allocation. */
+    public static final int MIN_SCROLLBACK_LINES = 100;
+    public static final int MAX_SCROLLBACK_LINES = 100_000;
+
     private boolean copyOnSelect = false;
     private boolean pasteOnRightClick = false;
+
+    // Terminal scrollback size in lines, read by the settings provider when each new widget's
+    // buffer is built (so it applies to newly opened terminals). Clamped to
+    // [MIN_SCROLLBACK_LINES, MAX_SCROLLBACK_LINES]. Defaults to 10000; a settings file predating
+    // this field keeps the default.
+    private int scrollbackLines = 10_000;
 
     // Whether an unknown (first-seen) host's key is trusted and recorded automatically, without the
     // trust-on-first-use prompt. Defaults to off (prompt). A CHANGED host key is always warned about
@@ -286,6 +297,16 @@ public final class AppSettings {
         this.defaultKeepAliveSeconds = Math.max(0, defaultKeepAliveSeconds);
     }
 
+    /** Terminal scrollback size in lines, read when each new terminal widget's buffer is built. */
+    public int getScrollbackLines() {
+        return scrollbackLines;
+    }
+
+    /** Sets the scrollback size, clamped to [{@value #MIN_SCROLLBACK_LINES}, {@value #MAX_SCROLLBACK_LINES}]. */
+    public void setScrollbackLines(int lines) {
+        this.scrollbackLines = Math.max(MIN_SCROLLBACK_LINES, Math.min(MAX_SCROLLBACK_LINES, lines));
+    }
+
     /** The application-wide default terminal profile (used by the local terminal). */
     public TerminalProfile defaultProfile() {
         return TerminalProfile.from(defaultTerminalType, defaultCharset, defaultFontFamily, defaultFontSize);
@@ -316,7 +337,7 @@ public final class AppSettings {
                             globalHighlightListId, darkTheme, windowMaximized, sidebarWidth,
                             windowX, windowY, windowWidth, windowHeight,
                             defaultUsername, defaultTabColorHex, openTerminalOnStartup,
-                            defaultKeyPath, autoAcceptNewHostKeys));
+                            defaultKeyPath, autoAcceptNewHostKeys, scrollbackLines));
         } catch (Exception ignored) {
             // Settings are a convenience; a failed write shouldn't break the app.
         }
@@ -377,6 +398,9 @@ public final class AppSettings {
                 if (p.windowHeight != null && p.windowHeight > 0) {
                     settings.windowHeight = p.windowHeight;
                 }
+                if (p.scrollbackLines != null) {
+                    settings.setScrollbackLines(p.scrollbackLines);
+                }
             } catch (Exception ignored) {
                 // Fall back to defaults on a malformed file.
             }
@@ -399,6 +423,6 @@ public final class AppSettings {
                              Integer windowWidth, Integer windowHeight,
                              String defaultUsername, String defaultTabColorHex,
                              Boolean openTerminalOnStartup, String defaultKeyPath,
-                             Boolean autoAcceptNewHostKeys) {
+                             Boolean autoAcceptNewHostKeys, Integer scrollbackLines) {
     }
 }

@@ -32,6 +32,8 @@ import com.katmoda.jterm.ui.component.ToggleSwitch;
 import com.katmoda.jterm.ui.theme.ThemeManager;
 
 import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
@@ -44,6 +46,7 @@ import javax.swing.SpinnerNumberModel;
 import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.FlowLayout;
+import java.awt.GridLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
@@ -86,8 +89,25 @@ public final class PreferencesDialog {
         TerminalSettingsForm terminalDefaults = new TerminalSettingsForm(false,
                 settings.getDefaultTerminalType(), settings.getDefaultCharset(),
                 settings.getDefaultFontFamily(), settings.getDefaultFontSize());
+        JSpinner scrollback = new JSpinner(new SpinnerNumberModel(
+                settings.getScrollbackLines(),
+                AppSettings.MIN_SCROLLBACK_LINES, AppSettings.MAX_SCROLLBACK_LINES, 500));
+        // Same two-equal-column grid as TerminalSettingsForm so the label and field line up with
+        // the Type/Font/Size/Charset rows above it.
+        JPanel scrollbackRow = new JPanel(new GridLayout(0, 2, 6, 6));
+        scrollbackRow.add(new JLabel("Scrollback lines:"));
+        scrollbackRow.add(scrollback);
+        // Stack the form and the scrollback row at the top without stretching either vertically.
+        JPanel terminalTop = new JPanel();
+        terminalTop.setLayout(new BoxLayout(terminalTop, BoxLayout.PAGE_AXIS));
+        terminalDefaults.component().setAlignmentX(Component.LEFT_ALIGNMENT);
+        scrollbackRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        terminalTop.add(terminalDefaults.component());
+        terminalTop.add(Box.createVerticalStrut(6));
+        terminalTop.add(scrollbackRow);
         JPanel terminal = new JPanel(new BorderLayout(0, 6));
-        terminal.add(terminalDefaults.component(), BorderLayout.NORTH);
+        terminal.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+        terminal.add(terminalTop, BorderLayout.NORTH);
         JLabel defaultsHint = hint("Defaults for the local terminal and saved sessions that don't"
                 + " override them. Applies to newly opened terminals.");
         terminal.add(defaultsHint, BorderLayout.SOUTH);
@@ -175,6 +195,7 @@ public final class PreferencesDialog {
         settings.setDefaultCharset(terminalDefaults.charset());
         settings.setDefaultFontFamily(terminalDefaults.fontFamily());
         settings.setDefaultFontSize(terminalDefaults.fontSize());
+        settings.setScrollbackLines((Integer) scrollback.getValue());
         highlightForm.commit();
         settings.setGlobalHighlightListId(HighlightListCombo.selectedId(highlightDefault));
         settings.setDefaultUsername(defaultUser.getText());
