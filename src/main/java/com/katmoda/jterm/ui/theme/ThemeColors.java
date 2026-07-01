@@ -52,10 +52,10 @@ public record ThemeColors(
             new Color(0xFFFFFF),
             new Color(0x264F78),
             new Color[]{
-                    new Color(0x2E2E2E), new Color(0xCC6666), new Color(0x8BC34A), new Color(0xD7BA7D),
-                    new Color(0x6A9FD8), new Color(0xB48EAD), new Color(0x56B6C2), new Color(0xC8C8C8),
-                    new Color(0x6E6E6E), new Color(0xE06C75), new Color(0xB5E48C), new Color(0xF0D98C),
-                    new Color(0x82AAFF), new Color(0xC792EA), new Color(0x80CBC4), new Color(0xFFFFFF)
+                    new Color(0x2E2E2E), new Color(0xFF6060), new Color(0x0EB16C), new Color(0xBEBE12),
+                    new Color(0x1296BE), new Color(0xFF4DFF), new Color(0x54CCEF), new Color(0xCCCCCC),
+                    new Color(0x808080), new Color(0xFF8080), new Color(0x18ED93), new Color(0xDEDC12),
+                    new Color(0x1BBAE9), new Color(0xFF7DFF), new Color(0x8EDDF4), new Color(0xFFFFFF)
             }
     );
 
