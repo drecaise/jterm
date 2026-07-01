@@ -82,6 +82,13 @@ public final class LocalSession implements TerminalSession {
                 .setDirectory(dir)
                 .setInitialColumns(80)
                 .setInitialRows(24)
+                // Windows only: use ConPTY, not pty4j's default legacy WinPTY backend. WinPTY
+                // scrapes a single console screen buffer and can't represent the alternate
+                // screen, so full-screen apps (vim/less/htop) render into the primary buffer
+                // and leak into scrollback. ConPTY forwards ?1049h/l so JediTerm switches
+                // buffers correctly; pty4j auto-falls-back to WinPTY on unsupported Windows.
+                // No-op on Unix (native pty already passes these sequences through).
+                .setUseWinConPty(true)
                 .start();
 
         String label = (workingDir != null) ? lastSegment(workingDir) : "local";
@@ -103,6 +110,9 @@ public final class LocalSession implements TerminalSession {
                 .setDirectory(System.getProperty("user.home", "."))
                 .setInitialColumns(80)
                 .setInitialRows(24)
+                // Use ConPTY so the WSL shell's alternate-screen apps (vim/less/htop) don't
+                // leak into scrollback. See start() for the full rationale.
+                .setUseWinConPty(true)
                 .start();
 
         return new LocalSession(process, distro, profile, "builtin/wsl");
