@@ -94,6 +94,7 @@ public final class WslDistributions {
                 distros.add(name);
             }
         }
+        distros.sort(String.CASE_INSENSITIVE_ORDER);
         return distros;
     }
 
