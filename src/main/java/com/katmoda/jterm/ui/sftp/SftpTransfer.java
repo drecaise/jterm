@@ -414,7 +414,7 @@ final class SftpTransfer {
         return base.endsWith("/") ? base + name : base + "/" + name;
     }
 
-    private static Path safeResolve(Path root, String name) {
+    static Path safeResolve(Path root, String name) {
         if (name.isEmpty() || name.equals(".") || name.equals("..")
                 || name.indexOf('/') >= 0 || name.indexOf('\\') >= 0 || name.indexOf('\0') >= 0) {
             return null;

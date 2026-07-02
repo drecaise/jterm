@@ -21,16 +21,24 @@ package com.katmoda.jterm.terminal.ssh.agent;
 
 import org.apache.sshd.agent.SshAgent;
 import org.apache.sshd.common.config.keys.KeyUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
+import java.nio.file.attribute.PosixFileAttributes;
+import java.nio.file.attribute.PosixFilePermission;
 import java.security.PublicKey;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -42,6 +50,8 @@ public final class AgentSupport {
 
     /** Default Windows OpenSSH agent named pipe. */
     public static final String WINDOWS_PIPE = "\\\\.\\pipe\\openssh-ssh-agent";
+
+    private static final Logger LOG = LoggerFactory.getLogger(AgentSupport.class);
 
     private AgentSupport() {
     }
@@ -58,16 +68,56 @@ public final class AgentSupport {
      * The agent endpoint to use (socket path or pipe), or {@code null} if none is available.
      * Prefers {@code $SSH_AUTH_SOCK}; on Windows falls back to the default pipe if present; on
      * Unix falls back to querying a login shell (for desktop-launched processes).
+     *
+     * <p>On Unix the socket path is verified to be a socket the current user owns with no
+     * group/other write access before it is trusted (see {@link #isTrustedUnixSocket}); an
+     * attacker-planted {@code $SSH_AUTH_SOCK} is logged and ignored, so auth falls through to
+     * on-disk keys / password rather than signing against a rogue agent.</p>
      */
     public static String resolveEndpoint() {
-        String sock = System.getenv("SSH_AUTH_SOCK");
-        if (sock != null && !sock.isBlank()) {
-            return sock;
-        }
         if (isWindows()) {
+            String sock = System.getenv("SSH_AUTH_SOCK");
+            if (sock != null && !sock.isBlank()) {
+                return sock;
+            }
             return canOpen(WINDOWS_PIPE) ? WINDOWS_PIPE : null;
         }
-        return loginShellAuthSock();
+        String sock = System.getenv("SSH_AUTH_SOCK");
+        if (sock != null && !sock.isBlank()) {
+            if (isTrustedUnixSocket(sock)) {
+                return sock;
+            }
+            LOG.warn("Ignoring untrusted SSH_AUTH_SOCK '{}' — not a socket owned by {} with no "
+                    + "group/other write access", sock, System.getProperty("user.name"));
+        }
+        String shellSock = loginShellAuthSock();
+        return (shellSock != null && isTrustedUnixSocket(shellSock)) ? shellSock : null;
+    }
+
+    /**
+     * Whether {@code path} is a Unix-domain socket the current user owns and that is not
+     * group- or world-writable — the properties a genuine ssh-agent socket has. Anything else
+     * (a regular file, a symlink, a foreign owner, a writable-by-others socket, or an unreadable
+     * path) is rejected so a hostile {@code $SSH_AUTH_SOCK} can't redirect key-signing.
+     */
+    static boolean isTrustedUnixSocket(String path) {
+        try {
+            Path p = Path.of(path);
+            PosixFileAttributes attrs =
+                    Files.readAttributes(p, PosixFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            if (attrs.isRegularFile() || attrs.isDirectory() || attrs.isSymbolicLink()) {
+                return false; // a socket is "other"; never follow/accept these
+            }
+            String current = System.getProperty("user.name");
+            if (current != null && !current.equals(attrs.owner().getName())) {
+                return false;
+            }
+            Set<PosixFilePermission> perms = attrs.permissions();
+            return !perms.contains(PosixFilePermission.GROUP_WRITE)
+                    && !perms.contains(PosixFilePermission.OTHERS_WRITE);
+        } catch (Exception e) {
+            return false; // missing, unreadable, or non-POSIX — don't trust it
+        }
     }
 
     /** Open the agent at the preferred endpoint (e.g. a MINA property), else the resolved one. */
@@ -77,6 +127,9 @@ public final class AgentSupport {
         if (!isWindows()) {
             if (endpoint == null || endpoint.isBlank()) {
                 throw new IOException("No ssh-agent endpoint available (is the agent running?)");
+            }
+            if (!isTrustedUnixSocket(endpoint)) {
+                throw new IOException("Refusing to use untrusted ssh-agent socket: " + endpoint);
             }
             return new JdkAgentProxy(endpoint);
         }

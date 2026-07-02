@@ -6,7 +6,7 @@
 
     <groupId>com.katmoda</groupId>
     <artifactId>jterm</artifactId>
-    <version>1.1.2</version>
+    <version>1.2.0</version>
     <packaging>jar</packaging>
     <name>jterm</name>
     <description>Java 21 tabbed/splittable terminal emulator with SSH sessions</description>
@@ -33,6 +33,9 @@
         <jackson.version>2.19.0</jackson.version>
         <slf4j.version>2.0.13</slf4j.version>
         <javakeyring.version>1.0.4</javakeyring.version>
+        <junit.version>5.11.3</junit.version>
+        <!-- Override in CI with -Dnvd.api.key=... to avoid NVD API throttling. -->
+        <nvd.api.key></nvd.api.key>
     </properties>
 
     <repositories>
@@ -106,9 +109,10 @@
             <version>${jackson.version}</version>
         </dependency>
 
-        <!-- OS keyring. Used only for the Windows Credential Store (JNA) backend; Linux uses
-             secret-tool and macOS uses the security CLI. The dbus secret-service backend is
-             excluded because it can hang on some setups. -->
+        <!-- OS keyring. Used for the Windows Credential Store and macOS Keychain (both JNA) —
+             the macOS Security.framework backend avoids exposing the master password as a
+             `security` CLI argv element. Linux uses secret-tool (stdin) instead. The dbus
+             secret-service backend is excluded because it can hang on some setups. -->
         <dependency>
             <groupId>com.github.javakeyring</groupId>
             <artifactId>java-keyring</artifactId>
@@ -126,6 +130,14 @@
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-simple</artifactId>
             <version>${slf4j.version}</version>
+        </dependency>
+
+        <!-- Tests (security-critical pure logic). Test scope only — not shipped. -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 
@@ -154,6 +166,13 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
+            </plugin>
+
+            <!-- JUnit 5 test runner. Surefire 3.x discovers Jupiter tests natively. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.2</version>
             </plugin>
 
             <!-- Run during development: mvn exec:java -->
@@ -207,4 +226,36 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!--
+            Dependency vulnerability gate. Not bound to the default build (it needs to download the
+            NVD data and, since NVD API throttling, an API key via -Dnvd.api.key=...). Run on demand
+            or in CI:  mvn -P security verify
+            It fails the build when a dependency has a CVE at or above the configured CVSS score.
+        -->
+        <profile>
+            <id>security</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.owasp</groupId>
+                        <artifactId>dependency-check-maven</artifactId>
+                        <version>10.0.4</version>
+                        <configuration>
+                            <failBuildOnCVSS>7</failBuildOnCVSS>
+                            <nvdApiKey>${nvd.api.key}</nvdApiKey>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>check</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

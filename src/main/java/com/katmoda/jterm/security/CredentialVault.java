@@ -23,19 +23,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.katmoda.jterm.config.AppPaths;
 
-import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
-import javax.crypto.SecretKeyFactory;
-import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.PosixFilePermission;
-import java.security.SecureRandom;
+import java.util.Arrays;
 import java.util.Base64;
-import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -52,23 +46,22 @@ import java.util.Map;
  */
 public final class CredentialVault {
 
-    private static final int PBKDF2_ITERATIONS = 600_000;
-    private static final int KEY_BITS = 256;
-    private static final int SALT_BYTES = 16;
-    private static final int GCM_NONCE_BYTES = 12;
-    private static final int GCM_TAG_BITS = 128;
-
     private static final ObjectMapper MAPPER = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
     private static final Base64.Encoder B64E = Base64.getEncoder();
     private static final Base64.Decoder B64D = Base64.getDecoder();
 
-    private final Path file = AppPaths.file("credentials.json");
-    private final SecureRandom random = new SecureRandom();
+    private final Path file;
 
     private VaultFile data;       // persisted structure (null until loaded)
     private SecretKey vaultKey;   // in-memory only, present once unlocked
 
     public CredentialVault() {
+        this(AppPaths.file("credentials.json"));
+    }
+
+    /** Test seam: back the vault with an explicit file instead of the real config path. */
+    CredentialVault(Path file) {
+        this.file = file;
         this.data = load();
     }
 
@@ -82,15 +75,15 @@ public final class CredentialVault {
 
     /** Create a brand-new vault protected by {@code masterPassword}. */
     public void initialize(char[] masterPassword) throws VaultException {
+        byte[] rawVaultKey = PassphraseBox.randomBytes(PassphraseBox.KEY_BITS / 8);
         try {
-            byte[] rawVaultKey = new byte[KEY_BITS / 8];
-            random.nextBytes(rawVaultKey);
             SecretKey vk = new SecretKeySpec(rawVaultKey, "AES");
 
             VaultFile vf = new VaultFile();
-            vf.salt = B64E.encodeToString(randomBytes(SALT_BYTES));
-            vf.iterations = PBKDF2_ITERATIONS;
-            SecretKey kek = deriveKek(masterPassword, B64D.decode(vf.salt), vf.iterations);
+            byte[] salt = PassphraseBox.randomBytes(PassphraseBox.SALT_BYTES);
+            vf.salt = B64E.encodeToString(salt);
+            vf.iterations = PassphraseBox.PBKDF2_ITERATIONS;
+            SecretKey kek = PassphraseBox.deriveKey(masterPassword, salt, vf.iterations);
             vf.wrappedKey = encrypt(kek, rawVaultKey);
             vf.passwords = new LinkedHashMap<>();
 
@@ -99,6 +92,8 @@ public final class CredentialVault {
             save();
         } catch (Exception e) {
             throw new VaultException("Failed to initialize vault", e);
+        } finally {
+            Arrays.fill(rawVaultKey, (byte) 0);
         }
     }
 
@@ -107,15 +102,20 @@ public final class CredentialVault {
         if (!isInitialized()) {
             throw new VaultException("Vault is not initialized");
         }
+        byte[] raw = null;
         try {
-            SecretKey kek = deriveKek(masterPassword, B64D.decode(data.salt), data.iterations);
-            byte[] raw = decrypt(kek, data.wrappedKey);
+            SecretKey kek = PassphraseBox.deriveKey(masterPassword, B64D.decode(data.salt), data.iterations);
+            raw = decrypt(kek, data.wrappedKey);
             this.vaultKey = new SecretKeySpec(raw, "AES");
             return true;
         } catch (javax.crypto.AEADBadTagException badTag) {
             return false; // wrong master password
         } catch (Exception e) {
             throw new VaultException("Failed to unlock vault", e);
+        } finally {
+            if (raw != null) {
+                Arrays.fill(raw, (byte) 0);
+            }
         }
     }
 
@@ -123,6 +123,13 @@ public final class CredentialVault {
         vaultKey = null;
     }
 
+    /**
+     * The stored password for {@code id}, or {@code null} if none. Returns a {@link String}
+     * deliberately: the value's terminal consumer is MINA's {@code addPasswordIdentity(String)}
+     * (see {@code SshConnect}), so a {@code char[]} would be copied straight into an immutable
+     * {@code String} at that boundary anyway. Zeroing effort is concentrated on the master-password
+     * / key-derivation path in {@link PassphraseBox}, where it actually pays off.
+     */
     public String getPassword(String id) throws VaultException {
         requireUnlocked();
         Blob blob = data.passwords.get(id);
@@ -138,12 +145,14 @@ public final class CredentialVault {
 
     public void setPassword(String id, char[] password) throws VaultException {
         requireUnlocked();
+        byte[] bytes = utf8(password);
         try {
-            byte[] bytes = new String(password).getBytes(StandardCharsets.UTF_8);
             data.passwords.put(id, encrypt(vaultKey, bytes));
             save();
         } catch (Exception e) {
             throw new VaultException("Failed to encrypt password", e);
+        } finally {
+            Arrays.fill(bytes, (byte) 0);
         }
     }
 
@@ -165,35 +174,26 @@ public final class CredentialVault {
         }
     }
 
-    private static SecretKey deriveKek(char[] password, byte[] salt, int iterations) throws Exception {
-        SecretKeyFactory factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
-        PBEKeySpec spec = new PBEKeySpec(password, salt, iterations, KEY_BITS);
-        byte[] derived = factory.generateSecret(spec).getEncoded();
-        spec.clearPassword();
-        return new SecretKeySpec(derived, "AES");
-    }
-
-    private Blob encrypt(SecretKey key, byte[] plaintext) throws Exception {
-        byte[] nonce = randomBytes(GCM_NONCE_BYTES);
-        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_BITS, nonce));
-        byte[] ct = cipher.doFinal(plaintext);
+    /** AES-GCM encrypt {@code plaintext} under {@code key} into a persisted {@link Blob}. */
+    private static Blob encrypt(SecretKey key, byte[] plaintext) throws Exception {
+        byte[] nonce = PassphraseBox.randomBytes(PassphraseBox.GCM_NONCE_BYTES);
+        byte[] ct = PassphraseBox.encrypt(key, nonce, plaintext);
         Blob blob = new Blob();
         blob.nonce = B64E.encodeToString(nonce);
         blob.ciphertext = B64E.encodeToString(ct);
         return blob;
     }
 
-    private byte[] decrypt(SecretKey key, Blob blob) throws Exception {
-        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_BITS, B64D.decode(blob.nonce)));
-        return cipher.doFinal(B64D.decode(blob.ciphertext));
+    private static byte[] decrypt(SecretKey key, Blob blob) throws Exception {
+        return PassphraseBox.decrypt(key, B64D.decode(blob.nonce), B64D.decode(blob.ciphertext));
     }
 
-    private byte[] randomBytes(int n) {
-        byte[] b = new byte[n];
-        random.nextBytes(b);
-        return b;
+    private static byte[] utf8(char[] chars) {
+        java.nio.ByteBuffer buf = StandardCharsets.UTF_8.encode(java.nio.CharBuffer.wrap(chars));
+        byte[] bytes = new byte[buf.remaining()];
+        buf.get(bytes);
+        Arrays.fill(buf.array(), (byte) 0);
+        return bytes;
     }
 
     // ---- persistence ----
@@ -212,17 +212,8 @@ public final class CredentialVault {
     private void save() {
         try {
             MAPPER.writeValue(file.toFile(), data);
-            restrictPermissions();
+            AppPaths.restrictToOwner(file);
         } catch (Exception ignored) {
-        }
-    }
-
-    private void restrictPermissions() {
-        try {
-            Files.setPosixFilePermissions(file,
-                    EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
-        } catch (Exception ignored) {
-            // Non-POSIX filesystem (e.g. Windows) — rely on the user profile's ACLs.
         }
     }
 

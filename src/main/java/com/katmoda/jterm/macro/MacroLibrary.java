@@ -101,6 +101,7 @@ public final class MacroLibrary {
         try {
             new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
                     .writeValue(file().toFile(), macros);
+            AppPaths.restrictToOwner(file());
         } catch (Exception ignored) {
             // Macros are a convenience; a failed write shouldn't break the app.
         }

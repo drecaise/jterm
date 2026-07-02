@@ -34,8 +34,11 @@ import java.util.concurrent.TimeUnit;
  * <p>Per-OS backend, chosen for reliability:</p>
  * <ul>
  *   <li><b>Linux</b> — {@code secret-tool} (libsecret / Secret Service). java-keyring's
- *       dbus-java backend can hang, so the CLI is used instead.</li>
- *   <li><b>macOS</b> — the {@code security} CLI (login Keychain).</li>
+ *       dbus-java backend can hang, so the CLI is used instead. The master password is passed on
+ *       stdin, never as a command-line argument.</li>
+ *   <li><b>macOS</b> — java-keyring's Keychain backend (JNA → {@code Security.framework}). The
+ *       {@code security} CLI is deliberately avoided because it takes the password as an
+ *       {@code argv} element, which is visible in the process list to other local users.</li>
  *   <li><b>Windows</b> — java-keyring's Credential Store backend (JNA, no dbus).</li>
  * </ul>
  *
@@ -56,8 +59,8 @@ public final class MasterPasswordKeyring {
     public boolean isAvailable() {
         return switch (os) {
             case LINUX -> hasCommand("secret-tool");
-            case MAC -> hasCommand("security");
-            case WINDOWS -> windowsKeyringAvailable();
+            case MAC -> nativeKeyringAvailable(KeyringStorageType.OSX_KEYCHAIN);
+            case WINDOWS -> nativeKeyringAvailable(KeyringStorageType.WINDOWS_CREDENTIAL_STORE);
             case OTHER -> false;
         };
     }
@@ -70,18 +73,8 @@ public final class MasterPasswordKeyring {
                     yield (r.exitCode == 0 && !r.stdout.isEmpty())
                             ? Optional.of(stripTrailingNewline(r.stdout).toCharArray()) : Optional.empty();
                 }
-                case MAC -> {
-                    CommandResult r = run(null, "security", "find-generic-password",
-                            "-a", ACCOUNT, "-s", SERVICE, "-w");
-                    yield (r.exitCode == 0 && !r.stdout.isEmpty())
-                            ? Optional.of(stripTrailingNewline(r.stdout).toCharArray()) : Optional.empty();
-                }
-                case WINDOWS -> {
-                    try (Keyring keyring = windowsKeyring()) {
-                        String value = keyring.getPassword(SERVICE, ACCOUNT);
-                        yield value != null ? Optional.of(value.toCharArray()) : Optional.empty();
-                    }
-                }
+                case MAC -> nativeRetrieve(KeyringStorageType.OSX_KEYCHAIN);
+                case WINDOWS -> nativeRetrieve(KeyringStorageType.WINDOWS_CREDENTIAL_STORE);
                 case OTHER -> Optional.empty();
             };
         } catch (Throwable t) {
@@ -94,14 +87,8 @@ public final class MasterPasswordKeyring {
             return switch (os) {
                 case LINUX -> run(new String(masterPassword), "secret-tool", "store",
                         "--label=jterm master password", "service", SERVICE, "account", ACCOUNT).exitCode == 0;
-                case MAC -> run(null, "security", "add-generic-password",
-                        "-a", ACCOUNT, "-s", SERVICE, "-w", new String(masterPassword), "-U").exitCode == 0;
-                case WINDOWS -> {
-                    try (Keyring keyring = windowsKeyring()) {
-                        keyring.setPassword(SERVICE, ACCOUNT, new String(masterPassword));
-                        yield true;
-                    }
-                }
+                case MAC -> nativeStore(KeyringStorageType.OSX_KEYCHAIN, masterPassword);
+                case WINDOWS -> nativeStore(KeyringStorageType.WINDOWS_CREDENTIAL_STORE, masterPassword);
                 case OTHER -> false;
             };
         } catch (Throwable t) {
@@ -113,12 +100,8 @@ public final class MasterPasswordKeyring {
         try {
             switch (os) {
                 case LINUX -> run(null, "secret-tool", "clear", "service", SERVICE, "account", ACCOUNT);
-                case MAC -> run(null, "security", "delete-generic-password", "-a", ACCOUNT, "-s", SERVICE);
-                case WINDOWS -> {
-                    try (Keyring keyring = windowsKeyring()) {
-                        keyring.deletePassword(SERVICE, ACCOUNT);
-                    }
-                }
+                case MAC -> nativeClear(KeyringStorageType.OSX_KEYCHAIN);
+                case WINDOWS -> nativeClear(KeyringStorageType.WINDOWS_CREDENTIAL_STORE);
                 case OTHER -> {
                 }
             }
@@ -127,19 +110,43 @@ public final class MasterPasswordKeyring {
         }
     }
 
-    // ---- helpers ----
+    // ---- native (java-keyring / JNA) backends: macOS Keychain and Windows Credential Store ----
 
-    private static Keyring windowsKeyring() throws Exception {
-        return Keyring.create(KeyringStorageType.WINDOWS_CREDENTIAL_STORE);
+    private static Optional<char[]> nativeRetrieve(KeyringStorageType type) {
+        try (Keyring keyring = Keyring.create(type)) {
+            String value = keyring.getPassword(SERVICE, ACCOUNT);
+            return value != null ? Optional.of(value.toCharArray()) : Optional.empty();
+        } catch (Throwable t) {
+            return Optional.empty();
+        }
     }
 
-    private static boolean windowsKeyringAvailable() {
-        try (Keyring ignored = windowsKeyring()) {
+    private static boolean nativeStore(KeyringStorageType type, char[] masterPassword) {
+        try (Keyring keyring = Keyring.create(type)) {
+            keyring.setPassword(SERVICE, ACCOUNT, new String(masterPassword));
             return true;
         } catch (Throwable t) {
             return false;
         }
     }
+
+    private static void nativeClear(KeyringStorageType type) {
+        try (Keyring keyring = Keyring.create(type)) {
+            keyring.deletePassword(SERVICE, ACCOUNT);
+        } catch (Throwable ignored) {
+            // best-effort
+        }
+    }
+
+    private static boolean nativeKeyringAvailable(KeyringStorageType type) {
+        try (Keyring ignored = Keyring.create(type)) {
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    // ---- helpers ----
 
     private record CommandResult(int exitCode, String stdout) {
     }

@@ -102,6 +102,7 @@ public final class HighlightLibrary {
         try {
             new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
                     .writeValue(file().toFile(), new Persisted(new ArrayList<>(lists)));
+            AppPaths.restrictToOwner(file());
         } catch (Exception ignored) {
             // Highlights are a convenience; a failed write shouldn't break the app.
         }

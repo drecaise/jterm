@@ -23,6 +23,8 @@ import org.apache.sshd.agent.SshAgent;
 import org.apache.sshd.agent.SshAgentKeyConstraint;
 import org.apache.sshd.common.config.keys.KeyUtils;
 import org.apache.sshd.common.session.SessionContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.security.KeyPair;
@@ -44,6 +46,8 @@ import java.util.Map;
  * <p>jterm is a read/sign-only client, so the mutating operations are unsupported.</p>
  */
 public final class CompositeSshAgent implements SshAgent {
+
+    private static final Logger LOG = LoggerFactory.getLogger(CompositeSshAgent.class);
 
     private final List<SshAgent> delegates;
     /** fingerprint -> delegate that listed it; rebuilt by {@link #getIdentities()}. */
@@ -68,7 +72,7 @@ public final class CompositeSshAgent implements SshAgent {
                 }
             } catch (IOException e) {
                 // One unreachable agent must not blind the others.
-                System.err.println("[ssh-agent] failed to list identities from an agent: " + e.getMessage());
+                LOG.debug("Failed to list identities from an ssh-agent delegate: {}", e.getMessage());
             }
         }
         return merged;

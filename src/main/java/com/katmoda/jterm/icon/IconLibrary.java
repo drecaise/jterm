@@ -311,6 +311,7 @@ public final class IconLibrary {
         try {
             new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
                     .writeValue(file.toFile(), imported);
+            AppPaths.restrictToOwner(file);
         } catch (Exception ignored) {
         }
     }

@@ -19,9 +19,11 @@
  */
 package com.katmoda.jterm.ui.sidebar;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.formdev.flatlaf.extras.FlatSVGIcon;
+import com.katmoda.jterm.config.AppPaths;
 import com.katmoda.jterm.dnd.FolderTransferable;
 import com.katmoda.jterm.dnd.LocalTransferable;
 import com.katmoda.jterm.dnd.SessionTransferable;
@@ -31,6 +33,7 @@ import com.katmoda.jterm.config.AppSettings;
 import com.katmoda.jterm.highlight.HighlightLibrary;
 import com.katmoda.jterm.macro.Macro;
 import com.katmoda.jterm.macro.MacroLibrary;
+import com.katmoda.jterm.session.EncryptedSessionExport;
 import com.katmoda.jterm.session.FolderNode;
 import com.katmoda.jterm.session.JumpHostConfig;
 import com.katmoda.jterm.session.SessionExport;
@@ -40,6 +43,7 @@ import com.katmoda.jterm.session.SshSessionConfig;
 import com.katmoda.jterm.session.WslDistroNode;
 import com.katmoda.jterm.terminal.wsl.WslDistributions;
 import com.katmoda.jterm.security.CredentialVault;
+import com.katmoda.jterm.security.PassphraseBox;
 import com.katmoda.jterm.security.VaultException;
 import com.katmoda.jterm.security.VaultKeys;
 import com.katmoda.jterm.security.VaultManager;
@@ -577,15 +581,47 @@ public final class SessionSidebar extends JPanel {
             return; // user cancelled the master-password prompt
         }
 
-        try {
-            EXPORT_MAPPER.writeValue(target.toFile(), export);
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Export failed:\n" + e.getMessage(),
-                    "Export Sessions", JOptionPane.ERROR_MESSAGE);
-            return;
+        if (!writeExport(target, export)) {
+            return; // cancelled, or a failure that was already reported
         }
         JOptionPane.showMessageDialog(this, "Exported to:\n" + target,
                 "Export Sessions", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    /**
+     * Writes {@code export} to {@code target}. If it carries saved passwords the whole document is
+     * encrypted under a user-supplied passphrase (AES-GCM via {@link PassphraseBox}); otherwise it
+     * is written as plaintext JSON, which holds no secrets. Either way the file is restricted to
+     * owner-only. Returns {@code false} if the user cancels the passphrase prompt or the write
+     * fails (in which case a message has already been shown).
+     */
+    private boolean writeExport(Path target, SessionExport export) {
+        try {
+            if (export.credentials.isEmpty()) {
+                EXPORT_MAPPER.writeValue(target.toFile(), export);
+            } else {
+                char[] passphrase = MasterPasswordDialog.promptCreateExportPassphrase(this);
+                if (passphrase == null) {
+                    return false;
+                }
+                byte[] plaintext = EXPORT_MAPPER.writeValueAsBytes(export);
+                try {
+                    EncryptedSessionExport envelope =
+                            new EncryptedSessionExport(PassphraseBox.seal(passphrase, plaintext));
+                    EXPORT_MAPPER.writeValue(target.toFile(), envelope);
+                } finally {
+                    Arrays.fill(plaintext, (byte) 0);
+                    Arrays.fill(passphrase, '\0');
+                    export.credentials.clear(); // drop the plaintext-password references
+                }
+            }
+            AppPaths.restrictToOwner(target);
+            return true;
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Export failed:\n" + e.getMessage(),
+                    "Export Sessions", JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
     }
 
     /**
@@ -658,15 +694,11 @@ public final class SessionSidebar extends JPanel {
             return;
         }
 
-        SessionExport export;
-        try {
-            export = EXPORT_MAPPER.readValue(chooser.getSelectedFile(), SessionExport.class);
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Import failed:\n" + e.getMessage(),
-                    "Import Sessions", JOptionPane.ERROR_MESSAGE);
-            return;
+        SessionExport export = readExport(chooser.getSelectedFile());
+        if (export == null) {
+            return; // cancelled, or a failure that was already reported
         }
-        if (export == null || export.folder == null) {
+        if (export.folder == null) {
             JOptionPane.showMessageDialog(this, "That file is not a valid sessions export.",
                     "Import Sessions", JOptionPane.ERROR_MESSAGE);
             return;
@@ -692,6 +724,54 @@ public final class SessionSidebar extends JPanel {
         String imported = export.root ? "the exported sessions" : "\"" + export.folder.getName() + "\"";
         JOptionPane.showMessageDialog(this, "Imported " + imported + ".",
                 "Import Sessions", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    /**
+     * Reads a session export, transparently decrypting an {@link EncryptedSessionExport} envelope
+     * (prompting for its passphrase) or parsing a plaintext {@link SessionExport}. Returns
+     * {@code null} if the user cancels the passphrase prompt or the file can't be read (a message
+     * is shown for failures, but not for a plain cancel).
+     */
+    private SessionExport readExport(File file) {
+        try {
+            JsonNode root = EXPORT_MAPPER.readTree(file);
+            if (root != null && root.hasNonNull("format")
+                    && EncryptedSessionExport.FORMAT.equals(root.get("format").asText())) {
+                return readEncryptedExport(file);
+            }
+            return EXPORT_MAPPER.treeToValue(root, SessionExport.class);
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Import failed:\n" + e.getMessage(),
+                    "Import Sessions", JOptionPane.ERROR_MESSAGE);
+            return null;
+        }
+    }
+
+    /** Prompts for the passphrase and decrypts an encrypted export, retrying on a wrong passphrase. */
+    private SessionExport readEncryptedExport(File file) throws Exception {
+        EncryptedSessionExport envelope = EXPORT_MAPPER.readValue(file, EncryptedSessionExport.class);
+        if (envelope.box == null) {
+            throw new IllegalArgumentException("Encrypted export is missing its payload.");
+        }
+        String error = null;
+        while (true) {
+            char[] passphrase = MasterPasswordDialog.promptExportPassphrase(this, error);
+            if (passphrase == null) {
+                return null; // cancelled
+            }
+            byte[] plaintext = null;
+            try {
+                plaintext = PassphraseBox.open(passphrase, envelope.box);
+                return EXPORT_MAPPER.readValue(plaintext, SessionExport.class);
+            } catch (javax.crypto.AEADBadTagException badTag) {
+                error = "Incorrect passphrase — try again.";
+            } finally {
+                Arrays.fill(passphrase, '\0');
+                if (plaintext != null) {
+                    Arrays.fill(plaintext, (byte) 0);
+                }
+            }
+        }
     }
 
     private void reassignIds(FolderNode folder, Map<String, String> oldCreds, Map<String, String> newCreds) {

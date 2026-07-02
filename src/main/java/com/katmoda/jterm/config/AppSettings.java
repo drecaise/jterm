@@ -338,6 +338,7 @@ public final class AppSettings {
                             windowX, windowY, windowWidth, windowHeight,
                             defaultUsername, defaultTabColorHex, openTerminalOnStartup,
                             defaultKeyPath, autoAcceptNewHostKeys, scrollbackLines));
+            AppPaths.restrictToOwner(file());
         } catch (Exception ignored) {
             // Settings are a convenience; a failed write shouldn't break the app.
         }

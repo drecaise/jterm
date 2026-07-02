@@ -114,8 +114,9 @@ public final class Keymap {
                 KeyStroke ks = bindings.get(action);
                 out.put(action.id(), ks != null ? ks.toString() : action.defaultStroke());
             }
-            new ObjectMapper().writerWithDefaultPrettyPrinter()
-                    .writeValue(AppPaths.file("keymap.json").toFile(), out);
+            Path file = AppPaths.file("keymap.json");
+            new ObjectMapper().writerWithDefaultPrettyPrinter().writeValue(file.toFile(), out);
+            AppPaths.restrictToOwner(file);
         } catch (Exception ignored) {
         }
     }
@@ -127,6 +128,7 @@ public final class Keymap {
                 out.put(action.id(), action.defaultStroke());
             }
             new ObjectMapper().writerWithDefaultPrettyPrinter().writeValue(file.toFile(), out);
+            AppPaths.restrictToOwner(file);
         } catch (Exception ignored) {
         }
     }

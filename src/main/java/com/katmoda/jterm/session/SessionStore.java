@@ -89,6 +89,7 @@ public final class SessionStore {
     public void save() {
         try {
             MAPPER.writeValue(file.toFile(), root);
+            AppPaths.restrictToOwner(file);
         } catch (Exception ignored) {
         }
     }

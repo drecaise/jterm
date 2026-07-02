@@ -21,6 +21,8 @@ package com.katmoda.jterm.config;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
+import java.util.EnumSet;
 import java.util.Locale;
 
 /**
@@ -40,10 +42,11 @@ public final class AppPaths {
     private AppPaths() {
     }
 
-    /** Root configuration directory (created on demand). */
+    /** Root configuration directory (created on demand, restricted to the owner). */
     public static Path configDir() {
         try {
             Files.createDirectories(CONFIG_DIR);
+            restrictDirToOwner(CONFIG_DIR);
         } catch (Exception ignored) {
             // Surface lazily when an individual file write fails.
         }
@@ -53,6 +56,35 @@ public final class AppPaths {
     /** A file inside the config directory. */
     public static Path file(String name) {
         return configDir().resolve(name);
+    }
+
+    /**
+     * Restrict {@code file} to owner-only access (POSIX 0600). Config files can hold hostnames,
+     * usernames and (for credentials/encrypted exports) secrets, so they shouldn't be group- or
+     * world-readable. A no-op on non-POSIX filesystems (e.g. Windows), where the user profile's
+     * ACLs already scope the config directory.
+     */
+    public static void restrictToOwner(Path file) {
+        try {
+            Files.setPosixFilePermissions(file,
+                    EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
+        } catch (Exception ignored) {
+            // Non-POSIX filesystem — rely on the user profile's ACLs.
+        }
+    }
+
+    /**
+     * Restrict {@code dir} to owner-only access (POSIX 0700). Applied to the config directory so
+     * that even config files written before per-file hardening — or by external tooling — can't be
+     * read by other local users, who can no longer traverse into the directory at all.
+     */
+    public static void restrictDirToOwner(Path dir) {
+        try {
+            Files.setPosixFilePermissions(dir, EnumSet.of(PosixFilePermission.OWNER_READ,
+                    PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_EXECUTE));
+        } catch (Exception ignored) {
+            // Non-POSIX filesystem — rely on the user profile's ACLs.
+        }
     }
 
     /** Directory where imported custom icons are copied. */

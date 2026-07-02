@@ -160,6 +160,7 @@ public final class ThemeColorStore {
         try {
             new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
                     .writeValue(file().toFile(), new Persisted(dark, light));
+            AppPaths.restrictToOwner(file());
         } catch (Exception ignored) {
             // Color customizations are a convenience; a failed write shouldn't break the app.
         }

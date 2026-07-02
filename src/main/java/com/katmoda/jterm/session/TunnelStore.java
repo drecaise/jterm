@@ -88,6 +88,7 @@ public final class TunnelStore {
         try {
             new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
                     .writeValue(file().toFile(), tunnels);
+            AppPaths.restrictToOwner(file());
         } catch (Exception ignored) {
             // Tunnels are a convenience; a failed write shouldn't break the app.
         }

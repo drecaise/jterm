@@ -137,6 +137,71 @@ public final class MasterPasswordDialog {
         return new KeyPassphraseResult(value, allowRemember && remember.isSelected());
     }
 
+    /**
+     * Create a passphrase to encrypt a session export (with confirmation). This is independent of
+     * the vault master password so the exported file stays portable. Returns the passphrase, or
+     * {@code null} if cancelled.
+     */
+    public static char[] promptCreateExportPassphrase(Component parent) {
+        JPasswordField pw1 = new JPasswordField(20);
+        JPasswordField pw2 = new JPasswordField(20);
+        JPanel form = new JPanel(new GridLayout(0, 1, 0, 4));
+        form.add(new JLabel("This export includes saved passwords, so it will be encrypted."));
+        form.add(new JLabel("Export passphrase:"));
+        form.add(pw1);
+        form.add(new JLabel("Confirm:"));
+        form.add(pw2);
+        form.putClientProperty("initialFocus", pw1);
+
+        while (true) {
+            int result = JOptionPane.showConfirmDialog(parent, form, "Encrypt Export",
+                    JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+            if (result != JOptionPane.OK_OPTION) {
+                return null;
+            }
+            char[] a = pw1.getPassword();
+            char[] b = pw2.getPassword();
+            if (a.length == 0) {
+                JOptionPane.showMessageDialog(parent, "Export passphrase cannot be empty.");
+                continue;
+            }
+            if (!Arrays.equals(a, b)) {
+                Arrays.fill(a, '\0');
+                Arrays.fill(b, '\0');
+                pw2.setText("");
+                JOptionPane.showMessageDialog(parent, "Passphrases do not match.");
+                continue;
+            }
+            Arrays.fill(b, '\0');
+            return a;
+        }
+    }
+
+    /**
+     * Enter the passphrase for an encrypted session import; shows {@code errorMessage} after a
+     * failed attempt. Returns the passphrase, or {@code null} if cancelled or left blank.
+     */
+    public static char[] promptExportPassphrase(Component parent, String errorMessage) {
+        JPasswordField pw = new JPasswordField(20);
+        JPanel form = new JPanel(new GridLayout(0, 1, 0, 4));
+        if (errorMessage != null) {
+            JLabel error = new JLabel(errorMessage);
+            error.putClientProperty("FlatLaf.styleClass", "h4");
+            form.add(error);
+        }
+        form.add(new JLabel("This export is encrypted. Enter its passphrase:"));
+        form.add(pw);
+        form.putClientProperty("initialFocus", pw);
+
+        int result = JOptionPane.showConfirmDialog(parent, form, "Decrypt Import",
+                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (result != JOptionPane.OK_OPTION) {
+            return null;
+        }
+        char[] value = pw.getPassword();
+        return value.length == 0 ? null : value;
+    }
+
     /** Connect-time prompt for a (non-saved) session password. */
     public static char[] promptSessionPassword(Component parent, String sessionName) {
         JPasswordField pw = new JPasswordField(20);
