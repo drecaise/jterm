@@ -20,6 +20,7 @@
 package com.katmoda.jterm.ui.sidebar;
 
 import com.katmoda.jterm.icon.IconLibrary;
+import com.katmoda.jterm.ui.theme.ThemeManager;
 
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
@@ -43,7 +44,6 @@ import javax.swing.ListSelectionModel;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
-import javax.swing.UIManager;
 import javax.swing.border.Border;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
@@ -214,7 +214,7 @@ final class IconPickerDialog {
         // while either icon grid has keyboard focus, and auto-select the top-left builtin icon when
         // the grid is tabbed into, so the arrow keys move it and Enter immediately confirms it.
         Border restingBorder = scroll.getBorder();
-        Border focusedBorder = BorderFactory.createLineBorder(accentColor(), 2);
+        Border focusedBorder = BorderFactory.createLineBorder(ThemeManager.accentColor(), 2);
         FocusAdapter gridFocus = new FocusAdapter() {
             @Override
             public void focusGained(FocusEvent e) {
@@ -320,11 +320,6 @@ final class IconPickerDialog {
                 }
             }
         });
-    }
-
-    private static Color accentColor() {
-        Color c = UIManager.getColor("Component.focusColor");
-        return c != null ? c : new Color(0x4A90D9);
     }
 
     /** The index of the cell actually under {@code p} (ignoring clicks in the wrap gutter). */

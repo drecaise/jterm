@@ -22,7 +22,6 @@ package com.katmoda.jterm.ui;
 import com.formdev.flatlaf.extras.FlatSVGIcon;
 import com.katmoda.jterm.icon.IconLibrary;
 import com.katmoda.jterm.terminal.TerminalSession;
-import com.katmoda.jterm.terminal.local.LocalSession;
 import com.katmoda.jterm.terminal.ssh.SshSession;
 import com.katmoda.jterm.ui.theme.ThemeManager;
 
@@ -39,13 +38,15 @@ public final class SessionIcon {
     }
 
     public static Icon forSession(TerminalSession session, int size) {
-        if (session instanceof SshSession ssh) {
-            return forIconId(ssh.iconId(), size);
+        String iconId = session.iconId();
+        if (iconId != null && !iconId.isBlank()) {
+            return IconLibrary.get().icon(iconId, size);
         }
-        if (session instanceof LocalSession local && local.iconId() != null) {
-            return IconLibrary.get().icon(local.iconId(), size);
+        // No custom icon: SSH falls back to the generic server glyph; a plain local shell gets a
+        // theme-contrasting terminal glyph (a light glyph reads on the dark strip, and vice-versa).
+        if (session instanceof SshSession) {
+            return forIconId(null, size);
         }
-        // Plain shell: a light glyph reads on the dark theme's strip, and vice-versa.
         String name = ThemeManager.get().isDark() ? "icons/terminal-light.svg" : "icons/terminal-dark.svg";
         return new FlatSVGIcon(name, size, size);
     }

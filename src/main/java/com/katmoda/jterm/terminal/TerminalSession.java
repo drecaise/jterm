@@ -48,6 +48,23 @@ public interface TerminalSession {
         return null;
     }
 
+    /**
+     * Icon-library id for this session's tab/pane, or {@code null} to use the type-default glyph.
+     * SSH sessions carry their saved icon; local shells return {@code null} except for special
+     * kinds (e.g. a WSL distro).
+     */
+    default String iconId() {
+        return null;
+    }
+
+    /**
+     * Custom tab color as {@code "#RRGGBB"}, or {@code null} for the theme default. Currently only
+     * SSH sessions carry one; local shells inherit the default.
+     */
+    default String tabColorHex() {
+        return null;
+    }
+
     /** Whether the underlying process/channel is still running. */
     boolean isAlive();
 

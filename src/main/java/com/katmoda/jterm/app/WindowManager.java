@@ -22,6 +22,8 @@ package com.katmoda.jterm.app;
 import com.katmoda.jterm.ui.grid.GridContent;
 import com.katmoda.jterm.ui.grid.PaneGrid;
 import com.katmoda.jterm.ui.tabs.TabPane;
+import com.katmoda.jterm.ui.windowing.TerminalWindow;
+import com.katmoda.jterm.ui.windowing.WindowTopology;
 
 import java.awt.KeyboardFocusManager;
 import java.awt.Point;
@@ -38,7 +40,7 @@ import java.util.List;
  * focus. Everything lives in one JVM, so tabs carry their <em>live</em> grids/sessions when they
  * move — nothing is reconnected or serialized.</p>
  */
-public final class WindowManager {
+public final class WindowManager implements WindowTopology {
 
     private static final WindowManager INSTANCE = new WindowManager();
 
@@ -72,10 +74,7 @@ public final class WindowManager {
         windows.remove(window);
     }
 
-    /**
-     * Closes a detached window that has no tabs left (its grids were moved elsewhere, so there are
-     * no sessions to dispose). No-op for the main window, which never auto-closes.
-     */
+    @Override
     public void closeDetached(TerminalWindow window) {
         if (window == null || window.isMain()) {
             return;
@@ -86,6 +85,11 @@ public final class WindowManager {
 
     public MainWindow mainWindow() {
         return main;
+    }
+
+    @Override
+    public TabPane mainTabPane() {
+        return main.tabPane();
     }
 
     /** A snapshot of all open terminal windows (main + detached). */
@@ -116,6 +120,7 @@ public final class WindowManager {
     }
 
     /** The tab strip whose grid currently holds {@code content}, searched across all windows. */
+    @Override
     public TabPane hostContaining(GridContent content) {
         for (TerminalWindow w : windows) {
             if (w.tabPane().gridContaining(content) != null) {
@@ -126,6 +131,7 @@ public final class WindowManager {
     }
 
     /** The tab strip that currently shows {@code grid} as a tab, searched across all windows. */
+    @Override
     public TabPane hostContaining(PaneGrid grid) {
         for (TerminalWindow w : windows) {
             if (w.tabPane().containsGrid(grid)) {
@@ -136,6 +142,7 @@ public final class WindowManager {
     }
 
     /** True if {@code screenPoint} falls inside any terminal window (so a tab drop isn't "outside"). */
+    @Override
     public boolean isInsideAnyWindow(Point screenPoint) {
         for (TerminalWindow w : windows) {
             if (w.frame().isShowing()) {
@@ -148,12 +155,7 @@ public final class WindowManager {
         return false;
     }
 
-    /**
-     * Moves {@code grid} (with its live sessions) out of its current window into a brand-new detached
-     * window placed at {@code screenLocation} (or cascaded when null). No-op if the grid is the sole
-     * tab of an already-detached window (there'd be nothing to gain). The live sessions and scrollback
-     * are preserved — only the hosting container changes.
-     */
+    @Override
     public void detachToNewWindow(PaneGrid grid, Point screenLocation) {
         TabPane source = hostContaining(grid);
         if (source == null) {

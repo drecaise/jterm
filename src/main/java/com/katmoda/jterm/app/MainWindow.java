@@ -26,20 +26,18 @@ import com.katmoda.jterm.keymap.TermAction;
 import com.katmoda.jterm.macro.Macro;
 import com.katmoda.jterm.macro.MacroLibrary;
 import com.katmoda.jterm.macro.MacroRunner;
-import com.katmoda.jterm.security.VaultException;
-import com.katmoda.jterm.security.VaultKeys;
+import com.katmoda.jterm.security.CredentialResolver;
+import com.katmoda.jterm.security.CredentialVault;
 import com.katmoda.jterm.security.VaultManager;
-import com.katmoda.jterm.session.JumpHostConfig;
 import com.katmoda.jterm.session.SessionNode;
 import com.katmoda.jterm.session.SessionStore;
 import com.katmoda.jterm.session.SshSessionConfig;
 import com.katmoda.jterm.session.FolderNode;
 import com.katmoda.jterm.session.TunnelConfig;
 import com.katmoda.jterm.session.TunnelStore;
+import com.katmoda.jterm.terminal.ConnectionService;
 import com.katmoda.jterm.terminal.SessionFactory;
 import com.katmoda.jterm.terminal.TerminalSession;
-import com.katmoda.jterm.terminal.local.LocalSession;
-import com.katmoda.jterm.terminal.TerminalProfile;
 import com.katmoda.jterm.terminal.ssh.SshConnect;
 import com.katmoda.jterm.terminal.ssh.SshSession;
 import com.katmoda.jterm.terminal.ssh.TunnelManager;
@@ -60,6 +58,8 @@ import com.katmoda.jterm.ui.sidebar.OpenMode;
 import com.katmoda.jterm.ui.sidebar.SessionSidebar;
 import com.katmoda.jterm.ui.tabs.TabPane;
 import com.katmoda.jterm.ui.theme.ThemeManager;
+import com.katmoda.jterm.ui.windowing.TerminalServices;
+import com.katmoda.jterm.ui.windowing.TerminalWindow;
 
 import javax.swing.Icon;
 import javax.swing.JEditorPane;
@@ -73,7 +73,6 @@ import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTextArea;
 import javax.swing.KeyStroke;
-import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 import javax.swing.UIManager;
 import javax.swing.event.HyperlinkEvent;
@@ -98,7 +97,10 @@ import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Top-level window: sidebar on the left, a tab strip of {@link PaneGrid}s on the right.
@@ -111,9 +113,13 @@ import java.util.function.Consumer;
  */
 public final class MainWindow implements TerminalWindow, TerminalServices {
 
+    private static final Logger LOG = LoggerFactory.getLogger(MainWindow.class);
+
     private final JFrame frame = new JFrame("jterm");
     private final SessionStore sessionStore = new SessionStore();
     private final Keymap keymap = Keymap.loadOrDefaults();
+    private final CredentialResolver credentialResolver;
+    private final ConnectionService connectionService;
     private final TabPane tabPane;
 
     /** While true, the global terminal-shortcut dispatcher stands down so the editor can capture keys. */
@@ -128,7 +134,38 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         // Register before building the tab pane: the WindowManager is the shared registry every
         // window (and the global shortcut dispatcher) consults.
         WindowManager.get().registerMain(this);
-        this.tabPane = new TabPane(this, this);
+        // Wire the credential/connection subsystem: the vault + prompt adapters here are the only
+        // Swing-aware pieces; CredentialResolver and ConnectionService themselves are headless.
+        CredentialResolver.VaultAccess vaultAccess = new CredentialResolver.VaultAccess() {
+            @Override
+            public boolean ensureUnlocked() {
+                return VaultManager.get().ensureUnlocked(frame);
+            }
+
+            @Override
+            public CredentialVault vault() {
+                return VaultManager.get().vault();
+            }
+        };
+        CredentialResolver.Prompts prompts = new CredentialResolver.Prompts() {
+            @Override
+            public char[] promptSessionPassword(String sessionName) {
+                return MasterPasswordDialog.promptSessionPassword(frame, sessionName);
+            }
+
+            @Override
+            public CredentialResolver.KeyPassphrase promptKeyPassphrase(String keyPath, String error,
+                    boolean allowRemember) {
+                MasterPasswordDialog.KeyPassphraseResult result =
+                        MasterPasswordDialog.promptKeyPassphrase(frame, keyPath, error, allowRemember);
+                return result == null ? null
+                        : new CredentialResolver.KeyPassphrase(result.passphrase(), result.remember());
+            }
+        };
+        this.credentialResolver = new CredentialResolver(sessionStore, vaultAccess, prompts);
+        this.connectionService = new ConnectionService(sessionStore, credentialResolver,
+                (msg, cause) -> ErrorDialog.show(frame, "jterm", msg, cause));
+        this.tabPane = new TabPane(this, this, WindowManager.get());
     }
 
     public void show() {
@@ -149,6 +186,7 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
             @Override
             public void windowClosing(WindowEvent e) {
                 saveWindowState();
+                shutdownSessions();
                 TunnelManager.get().stopAll();
             }
         });
@@ -252,6 +290,20 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         settings.save();
     }
 
+    /**
+     * On quit, close every open session across all windows so SSH channels get a clean teardown and
+     * keep-alive futures are cancelled (otherwise only tunnels were stopped and sessions leaked).
+     * Runs on the EDT: {@code session.close()} may do IO, but the SSH close is async/non-blocking
+     * ({@code channel.close(false)}), matching the existing per-pane close behavior. Detached windows
+     * dispose their own grids on close, but a Quit from the main window must reach all of them.
+     */
+    private void shutdownSessions() {
+        for (TerminalWindow window : WindowManager.get().windows()) {
+            LOG.debug("closing sessions for window {}", window);
+            window.tabPane().disposeAllGrids();
+        }
+    }
+
     private void applyAppIcon() {
         frame.setIconImages(AppIcon.images());
         // Taskbar/dock icon where the platform supports it (macOS dock, some Linux WMs).
@@ -337,7 +389,7 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
             return;
         }
         connectAsync(cfg, session -> {
-            SessionFactory factory = tabPane.sshFactory(cfg);
+            SessionFactory factory = SessionFactory.ssh(cfg, connectionService);
             switch (mode) {
                 case ACTIVE -> grid.placeSessionInActive(session, factory);
                 case SPLIT_COLUMN -> grid.splitColumnAndOpen(session, factory);
@@ -385,7 +437,7 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
             SshSessionConfig cfg = sessions.get(i);
             PaneGrid grid = grids.get(i / perTab);
             connectAsync(cfg, session ->
-                    grid.placeSessionInBestSplit(session, tabPane.sshFactory(cfg)));
+                    grid.placeSessionInBestSplit(session, SessionFactory.ssh(cfg, connectionService)));
         }
     }
 
@@ -411,12 +463,12 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
      * connection (the session may not be open), reusing the normal password/vault resolution.
      */
     private void openSftpForConfig(SshSessionConfig cfg) {
-        String password = resolvePassword(cfg);
+        String password = credentialResolver.resolvePassword(cfg);
         String effectiveUser = sessionStore.effectiveUser(cfg);
         String effectiveKeyPath = sessionStore.effectiveKeyPath(cfg);
         String label = (!effectiveUser.isBlank() ? effectiveUser + "@" : "") + cfg.getHost();
         SftpLauncher.openFresh(cfg.getHost(), cfg.getPort(), effectiveUser, password,
-                effectiveKeyPath, keyPassphraseProvider(cfg, effectiveKeyPath), label, cfg.getIconId(),
+                effectiveKeyPath, credentialResolver.keyPassphraseProvider(cfg, effectiveKeyPath), label, cfg.getIconId(),
                 this::placeSftp,
                 cause -> ErrorDialog.show(frame, "SFTP", "SFTP connection failed:", cause));
     }
@@ -452,304 +504,39 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         if (grid == null) {
             return;
         }
-        LocalSession session = safeWslSession(distro);
-        if (session == null) {
-            return;
-        }
-        SessionFactory factory = wslFactory(distro);
-        switch (mode) {
-            case ACTIVE -> grid.placeSessionInActive(session, factory);
-            case SPLIT_COLUMN -> grid.splitColumnAndOpen(session, factory);
-            case SPLIT_ROW -> grid.splitRowAndOpen(session, factory);
-            default -> { }
-        }
+        SessionFactory factory = SessionFactory.wsl(distro, wslErrorReporter());
+        factory.create(session -> {
+            switch (mode) {
+                case ACTIVE -> grid.placeSessionInActive(session, factory);
+                case SPLIT_COLUMN -> grid.splitColumnAndOpen(session, factory);
+                case SPLIT_ROW -> grid.splitRowAndOpen(session, factory);
+                default -> { }
+            }
+        });
     }
 
     /** Opens a WSL2 distribution in a fresh tab titled with the distro name. */
     private void addWslTab(String distro) {
-        LocalSession session = safeWslSession(distro);
-        if (session == null) {
-            return;
-        }
-        PaneGrid grid = tabPane.newGrid();
-        tabPane.insertGrid(grid);
-        // The tab keeps its generic "Terminal N" base title (for any plain shell split into it);
-        // decorateTab names the WSL pane itself from the session (the distro).
-        grid.initEmpty();
-        grid.placeSessionInActive(session, wslFactory(distro));
+        SessionFactory factory = SessionFactory.wsl(distro, wslErrorReporter());
+        factory.create(session -> {
+            PaneGrid grid = tabPane.newGrid();
+            tabPane.insertGrid(grid);
+            // The tab keeps its generic "Terminal N" base title (for any plain shell split into it);
+            // decorateTab names the WSL pane itself from the session (the distro).
+            grid.initEmpty();
+            grid.placeSessionInActive(session, factory);
+        });
     }
 
-    /** Starts a WSL session, surfacing any failure as a dialog (mirrors the local-shell path). */
-    private LocalSession safeWslSession(String distro) {
-        try {
-            return LocalSession.startWsl(distro);
-        } catch (Exception e) {
-            ErrorDialog.show(frame, "jterm", "Failed to start WSL distribution \"" + distro + "\":", e);
-            return null;
-        }
-    }
-
-    /** A factory that restarts this WSL session (e.g. from the session-stopped screen). */
-    private SessionFactory wslFactory(String distro) {
-        return new SessionFactory() {
-            @Override
-            public void create(Consumer<TerminalSession> onReady) {
-                create(onReady, () -> { });
-            }
-
-            @Override
-            public void create(Consumer<TerminalSession> onReady, Runnable onError) {
-                LocalSession session = safeWslSession(distro);
-                if (session != null) {
-                    onReady.accept(session);
-                } else {
-                    onError.run();
-                }
-            }
-        };
+    /** Reports a WSL-launch failure through the richer {@link ErrorDialog}, parented on the frame. */
+    private BiConsumer<String, Throwable> wslErrorReporter() {
+        return (header, error) -> ErrorDialog.show(frame, "jterm", header, error);
     }
 
     /** Connect an SSH session off the EDT, then hand the live session to {@code onConnected} on the EDT. */
     @Override
     public void connectAsync(SshSessionConfig cfg, Consumer<SshSession> onConnected, Runnable onError) {
-        // Resolve any passwords on the EDT first — they may unlock the vault or prompt. The
-        // target and every jump host are resolved up front so the background connect needs no UI.
-        String password = resolvePassword(cfg);
-        List<SshConnect.HostHop> jumpHosts = resolveJumpHosts(cfg);
-        // Resolve the inherited username / tab color / key path (session → folder chain → global
-        // default) on the EDT, since it walks the live session tree. The saved key passphrase (if
-        // any) is read from the vault here too, so the background connect needs no UI on attempt 0.
-        String effectiveUser = sessionStore.effectiveUser(cfg);
-        String effectiveTabColorHex = sessionStore.effectiveTabColorHex(cfg);
-        String effectiveKeyPath = sessionStore.effectiveKeyPath(cfg);
-        int effectiveKeepAlive = sessionStore.effectiveKeepAliveSeconds(cfg);
-        SshConnect.PassphraseProvider passphrases = keyPassphraseProvider(cfg, effectiveKeyPath);
-        new SwingWorker<SshSession, Void>() {
-            @Override
-            protected SshSession doInBackground() throws Exception {
-                TerminalProfile profile = AppSettings.get().resolve(cfg.getTerminalType(),
-                        cfg.getTerminalCharset(), cfg.getFontFamily(), cfg.getFontSize());
-                return SshSession.connect(cfg.getHost(), cfg.getPort(), effectiveUser,
-                        cfg.isAgentForwarding(), password, effectiveKeyPath, jumpHosts, passphrases,
-                        cfg.getName(), cfg.getIconId(), profile, cfg.getHighlightListId(),
-                        effectiveTabColorHex, effectiveKeepAlive);
-            }
-
-            @Override
-            protected void done() {
-                try {
-                    SshSession session = get();
-                    onConnected.accept(session);
-                    runConnectMacro(cfg, session);
-                } catch (Exception e) {
-                    Throwable cause = e.getCause() != null ? e.getCause() : e;
-                    ErrorDialog.show(frame, "jterm", "SSH connection failed:", cause);
-                    onError.run();
-                }
-            }
-        }.execute();
-    }
-
-    /** If the session has a configured run-on-connect macro, replay it into the new channel. */
-    private void runConnectMacro(SshSessionConfig cfg, SshSession session) {
-        Macro macro = MacroLibrary.get().byId(cfg.getMacroId());
-        if (macro != null) {
-            MacroRunner.run(macro, session.connector());
-        }
-    }
-
-    /**
-     * Resolves the password to try for the target session (EDT): {@code null} if password auth is
-     * off. Otherwise the cascade is the session's own saved password (when {@code savePassword}),
-     * then the inherited folder/global default password, then a one-time prompt. The inherited
-     * defaults apply only when password auth is enabled (so a session never silently authenticates
-     * with a shared password it didn't opt into).
-     */
-    private String resolvePassword(SshSessionConfig cfg) {
-        if (!cfg.isPasswordAuth()) {
-            return null;
-        }
-        List<String> keys = new ArrayList<>();
-        if (cfg.isSavePassword()) {
-            keys.add(VaultKeys.sessionPassword(cfg.getId()));
-        }
-        keys.addAll(sessionStore.defaultPasswordVaultKeys(cfg));
-        String secret = resolveVaultSecret(keys);
-        if (secret != null) {
-            return secret;
-        }
-        char[] entered = MasterPasswordDialog.promptSessionPassword(frame, cfg.getName());
-        if (entered == null) {
-            return null;
-        }
-        String password = new String(entered);
-        java.util.Arrays.fill(entered, '\0');
-        return password;
-    }
-
-    /**
-     * Returns the first secret present (and decryptable) among {@code vaultKeys}, unlocking the
-     * vault on demand. {@code null} if none is stored or the unlock is cancelled/fails.
-     */
-    private String resolveVaultSecret(List<String> vaultKeys) {
-        VaultManager vaults = VaultManager.get();
-        for (String key : vaultKeys) {
-            if (vaults.vault().hasPassword(key)) {
-                if (!vaults.ensureUnlocked(frame)) {
-                    return null;
-                }
-                try {
-                    return vaults.vault().getPassword(key);
-                } catch (VaultException e) {
-                    return null;
-                }
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Resolves the password to try for one host (EDT): {@code null} if password auth is off; a
-     * saved password unlocked from the vault (via keyring or prompt); otherwise a one-time prompt.
-     * A cancelled prompt yields {@code null}, so connection falls back to agent/key auth.
-     */
-    private String resolvePassword(String id, boolean passwordAuth, boolean savePassword,
-                                   String promptName) {
-        if (!passwordAuth) {
-            return null;
-        }
-        VaultManager vaults = VaultManager.get();
-        if (savePassword && vaults.vault().hasPassword(id)) {
-            if (!vaults.ensureUnlocked(frame)) {
-                return null;
-            }
-            try {
-                return vaults.vault().getPassword(id);
-            } catch (VaultException e) {
-                return null;
-            }
-        }
-        char[] entered = MasterPasswordDialog.promptSessionPassword(frame, promptName);
-        if (entered == null) {
-            return null;
-        }
-        String password = new String(entered);
-        java.util.Arrays.fill(entered, '\0');
-        return password;
-    }
-
-    /**
-     * Builds the jump-host chain (EDT) for {@code cfg}, resolving each hop's password up front.
-     * Hops with a blank host are skipped defensively (the dialog already drops them).
-     */
-    private List<SshConnect.HostHop> resolveJumpHosts(SshSessionConfig cfg) {
-        List<SshConnect.HostHop> hops = new ArrayList<>();
-        for (JumpHostConfig jh : cfg.getJumpHosts()) {
-            if (jh.getHost() == null || jh.getHost().isBlank()) {
-                continue;
-            }
-            String label = jh.getUser() + "@" + jh.getHost();
-            String pw = resolvePassword(jh.getId(), jh.isPasswordAuth(), jh.isSavePassword(), label);
-            hops.add(new SshConnect.HostHop(jh.getHost(), jh.getPort(), jh.getUser(), pw,
-                    jh.getKeyPath()));
-        }
-        return hops;
-    }
-
-    /**
-     * Builds the passphrase provider for a connect (the SSH connect runs off the EDT, so prompts
-     * are marshalled onto it). For the session's effective key it tries the saved passphrase first
-     * (attempt 0) and offers to remember a newly entered one; for any other key (jump-host keys,
-     * auto-discovered {@code ~/.ssh} identities) it simply prompts. A wrong passphrase re-prompts
-     * (with an error) until MINA gives up; cancelling skips the key so other auth still applies.
-     *
-     * @param cfg              the session being connected (its id keys a remembered passphrase)
-     * @param effectiveKeyPath the resolved configured key path, or {@code null} if none
-     */
-    private SshConnect.PassphraseProvider keyPassphraseProvider(SshSessionConfig cfg,
-                                                               String effectiveKeyPath) {
-        String expectedKey = SshConnect.resolveKeyPath(effectiveKeyPath);
-        String savedPassphrase = resolveSavedPassphrase(cfg, effectiveKeyPath);
-        return new SshConnect.PassphraseProvider() {
-            // Passphrases the user asked to remember, awaiting a successful decrypt to persist.
-            private final java.util.Map<String, String> pendingRemember = new java.util.HashMap<>();
-
-            @Override
-            public String passphraseFor(String keyPath, int attempt) {
-                boolean isSessionKey = expectedKey != null
-                        && expectedKey.equals(SshConnect.resolveKeyPath(keyPath));
-                if (attempt == 0 && isSessionKey && savedPassphrase != null) {
-                    return savedPassphrase; // try the saved one silently first
-                }
-                String error = attempt > 0 ? "Incorrect passphrase — try again." : null;
-                MasterPasswordDialog.KeyPassphraseResult result =
-                        promptPassphraseOnEdt(keyPath, error, isSessionKey);
-                if (result == null) {
-                    return null;
-                }
-                String passphrase = new String(result.passphrase());
-                java.util.Arrays.fill(result.passphrase(), '\0');
-                if (result.remember() && isSessionKey) {
-                    pendingRemember.put(SshConnect.resolveKeyPath(keyPath), passphrase);
-                }
-                return passphrase;
-            }
-
-            @Override
-            public void onAccepted(String keyPath) {
-                String passphrase = pendingRemember.remove(SshConnect.resolveKeyPath(keyPath));
-                if (passphrase != null) {
-                    saveSessionPassphrase(cfg.getId(), passphrase);
-                }
-            }
-        };
-    }
-
-    /** Reads the saved passphrase for {@code cfg}'s configured key (cascade), or {@code null}. */
-    private String resolveSavedPassphrase(SshSessionConfig cfg, String effectiveKeyPath) {
-        if (effectiveKeyPath == null || effectiveKeyPath.isBlank()) {
-            return null; // no configured key → nothing to attach a saved passphrase to
-        }
-        return resolveVaultSecret(sessionStore.keyPassphraseVaultKeys(cfg));
-    }
-
-    /** Persists a remembered passphrase at the session level (EDT-marshalled; best-effort). */
-    private void saveSessionPassphrase(String sessionId, String passphrase) {
-        Runnable save = () -> {
-            VaultManager vaults = VaultManager.get();
-            if (!vaults.ensureUnlocked(frame)) {
-                return;
-            }
-            try {
-                vaults.vault().setPassword(VaultKeys.sessionKeyPassphrase(sessionId),
-                        passphrase.toCharArray());
-            } catch (VaultException ignored) {
-                // Remembering a passphrase is a convenience; a failed save shouldn't break connect.
-            }
-        };
-        runOnEdt(save);
-    }
-
-    /** Shows the key-passphrase prompt on the EDT and returns its result (or {@code null}). */
-    private MasterPasswordDialog.KeyPassphraseResult promptPassphraseOnEdt(String keyPath,
-            String error, boolean allowRemember) {
-        MasterPasswordDialog.KeyPassphraseResult[] holder = new MasterPasswordDialog.KeyPassphraseResult[1];
-        runOnEdt(() -> holder[0] =
-                MasterPasswordDialog.promptKeyPassphrase(frame, keyPath, error, allowRemember));
-        return holder[0];
-    }
-
-    /** Runs {@code task} synchronously on the EDT (directly if already on it). */
-    private void runOnEdt(Runnable task) {
-        if (SwingUtilities.isEventDispatchThread()) {
-            task.run();
-        } else {
-            try {
-                SwingUtilities.invokeAndWait(task);
-            } catch (Exception ignored) {
-                // Cancelled/interrupted: leave any holder untouched (treated as "no input").
-            }
-        }
+        connectionService.connectAsync(cfg, onConnected, onError);
     }
 
     // ---- tunneling ----
@@ -778,11 +565,11 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
             }
             return;
         }
-        String password = resolvePassword(cfg);
-        List<SshConnect.HostHop> jumpHosts = resolveJumpHosts(cfg);
+        String password = credentialResolver.resolvePassword(cfg);
+        List<SshConnect.HostHop> jumpHosts = credentialResolver.resolveJumpHosts(cfg);
         String effectiveUser = sessionStore.effectiveUser(cfg);
         String effectiveKeyPath = sessionStore.effectiveKeyPath(cfg);
-        SshConnect.PassphraseProvider passphrases = keyPassphraseProvider(cfg, effectiveKeyPath);
+        SshConnect.PassphraseProvider passphrases = credentialResolver.keyPassphraseProvider(cfg, effectiveKeyPath);
         new SwingWorker<SshConnect.Connected, Void>() {
             @Override
             protected SshConnect.Connected doInBackground() throws Exception {
@@ -1038,6 +825,7 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         JMenuItem quit = new JMenuItem("Quit");
         quit.addActionListener(e -> {
             saveWindowState();
+            shutdownSessions();
             TunnelManager.get().stopAll();
             frame.dispose();
         });
@@ -1280,7 +1068,8 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
                 }
                 try {
                     AgentKeysDialog.show(frame, get());
-                } catch (Exception ignored) {
+                } catch (Exception e) {
+                    LOG.debug("failed to show agent keys dialog", e);
                 }
             }
         }.execute();

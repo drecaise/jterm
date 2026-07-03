@@ -35,6 +35,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * An interactive SSH shell session backed by Apache MINA SSHD.
@@ -47,6 +49,8 @@ import java.util.concurrent.TimeUnit;
  * this to a known_hosts-backed policy is a flagged follow-up.</p>
  */
 public final class SshSession implements TerminalSession {
+
+    private static final Logger LOG = LoggerFactory.getLogger(SshSession.class);
 
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(20);
 
@@ -112,11 +116,13 @@ public final class SshSession implements TerminalSession {
     }
 
     /** Icon library id this session was launched with (may be {@code null} → type default). */
+    @Override
     public String iconId() {
         return iconId;
     }
 
     /** Custom tab color as {@code "#RRGGBB"}, or {@code null} for the theme default. */
+    @Override
     public String tabColorHex() {
         return tabColorHex;
     }
@@ -227,9 +233,10 @@ public final class SshSession implements TerminalSession {
                 if (isAlive() && connector.idleFor(interval)) {
                     connector.sendKeepAlive();
                 }
-            } catch (IOException ignored) {
+            } catch (IOException e) {
                 // Transient write failure; the next tick retries, and a truly dead session is
                 // reaped by isAlive() / channel close.
+                LOG.debug("keep-alive write failed; will retry on next tick", e);
             }
         }, keepAliveSeconds, keepAliveSeconds, TimeUnit.SECONDS);
     }
@@ -267,7 +274,8 @@ public final class SshSession implements TerminalSession {
         }
         try {
             channel.close(false);
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            LOG.warn("failed to close ssh channel", e);
         }
         connection.close();
     }

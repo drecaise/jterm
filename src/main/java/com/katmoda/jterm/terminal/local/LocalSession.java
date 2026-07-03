@@ -36,12 +36,16 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A local shell running in a pseudo-terminal via pty4j. Created by keyboard
  * splits and the sidebar's "Local Terminal" entry.
  */
 public final class LocalSession implements TerminalSession {
+
+    private static final Logger LOG = LoggerFactory.getLogger(LocalSession.class);
 
     private final PtyProcess process;
     private final PtyTtyConnector connector;
@@ -58,6 +62,7 @@ public final class LocalSession implements TerminalSession {
     }
 
     /** Icon-library id for this session's tab/pane, or {@code null} to use the default local glyph. */
+    @Override
     public String iconId() {
         return iconId;
     }
@@ -171,10 +176,26 @@ public final class LocalSession implements TerminalSession {
         if (user != null && !user.isBlank()) {
             try {
                 Process p = new ProcessBuilder("flatpak-spawn", "--host", "getent", "passwd", user)
-                        .redirectErrorStream(false)
+                        .redirectError(ProcessBuilder.Redirect.DISCARD)
                         .start();
-                String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-                p.waitFor(3, TimeUnit.SECONDS);
+                // Drain stdout on a daemon thread so readAllBytes() can't outlive the waitFor timeout.
+                byte[][] outHolder = new byte[1][];
+                Thread reader = new Thread(() -> {
+                    try {
+                        outHolder[0] = p.getInputStream().readAllBytes();
+                    } catch (IOException e) {
+                        LOG.debug("failed to drain host login-shell probe stdout", e);
+                    }
+                }, "hostLoginShell-stdout-reader");
+                reader.setDaemon(true);
+                reader.start();
+                if (!p.waitFor(3, TimeUnit.SECONDS)) {
+                    p.destroyForcibly();
+                    reader.join(500); // short bound so the reader thread can't leak
+                    return "/bin/bash";
+                }
+                reader.join(500); // stdout is closed by now; bound guards a truly stuck read
+                String out = new String(outHolder[0] != null ? outHolder[0] : new byte[0], StandardCharsets.UTF_8);
                 // passwd line: name:passwd:uid:gid:gecos:home:shell
                 int nl = out.indexOf('\n');
                 String line = (nl >= 0 ? out.substring(0, nl) : out).trim();
@@ -185,7 +206,8 @@ public final class LocalSession implements TerminalSession {
                         return shell;
                     }
                 }
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                LOG.debug("host login-shell probe failed; falling back to /bin/bash", e);
             }
         }
         return "/bin/bash";
@@ -238,7 +260,8 @@ public final class LocalSession implements TerminalSession {
                 }
                 return path;
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            LOG.debug("could not read working directory from /proc", e);
         }
         return null;
     }

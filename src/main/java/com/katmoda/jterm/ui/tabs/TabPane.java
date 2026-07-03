@@ -19,9 +19,6 @@
  */
 package com.katmoda.jterm.ui.tabs;
 
-import com.katmoda.jterm.app.TerminalServices;
-import com.katmoda.jterm.app.TerminalWindow;
-import com.katmoda.jterm.app.WindowManager;
 import com.katmoda.jterm.config.AppSettings;
 import com.katmoda.jterm.dnd.DetachedPane;
 import com.katmoda.jterm.dnd.PaneMoveCoordinator;
@@ -33,7 +30,6 @@ import com.katmoda.jterm.session.SshSessionConfig;
 import com.katmoda.jterm.terminal.SessionFactory;
 import com.katmoda.jterm.terminal.TerminalSession;
 import com.katmoda.jterm.terminal.local.LocalSession;
-import com.katmoda.jterm.terminal.ssh.SshSession;
 import com.katmoda.jterm.ui.SessionIcon;
 import com.katmoda.jterm.ui.grid.GridContent;
 import com.katmoda.jterm.ui.grid.PaneGrid;
@@ -41,6 +37,9 @@ import com.katmoda.jterm.ui.grid.TabActivityIcon;
 import com.katmoda.jterm.ui.pane.PaneActivity;
 import com.katmoda.jterm.ui.pane.TerminalPane;
 import com.katmoda.jterm.ui.theme.ThemeColors;
+import com.katmoda.jterm.ui.windowing.TerminalServices;
+import com.katmoda.jterm.ui.windowing.TerminalWindow;
+import com.katmoda.jterm.ui.windowing.WindowTopology;
 
 import javax.swing.JButton;
 import javax.swing.JMenuItem;
@@ -72,26 +71,28 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A tab strip of {@link PaneGrid}s (one grid per tab), with a trailing "+" new-tab button.
  *
- * <p>Reusable across windows: the single {@link com.katmoda.jterm.app.MainWindow} and every
- * {@link com.katmoda.jterm.app.DetachedWindow} each embed one. Tabs (live grids + sessions) can be
- * dragged between windows, detached into a new window when dropped outside, and re-attached. SSH
- * connection, icon and tab-color lookup come from {@link TerminalServices}; cross-window moves are
- * coordinated through the {@link WindowManager}.</p>
+ * <p>Reusable across windows: the single main window and every detached window each embed one. Tabs
+ * (live grids + sessions) can be dragged between windows, detached into a new window when dropped
+ * outside, and re-attached. SSH connection, icon and tab-color lookup come from {@link
+ * TerminalServices}; cross-window moves are coordinated through the injected {@link
+ * WindowTopology}.</p>
  */
 public final class TabPane extends JPanel {
 
-    /** Detach/adopt a pane from whatever window owns it (searched across all windows). */
-    private static final PaneMoveCoordinator MOVE_COORDINATOR = content -> {
-        TabPane host = WindowManager.get().hostContaining(content);
-        return host == null ? null : host.detachPaneFromOwnGrid(content);
-    };
+    private static final Logger LOG = LoggerFactory.getLogger(TabPane.class);
 
     private final TerminalWindow owner;
     private final TerminalServices services;
+    private final WindowTopology topology;
+
+    /** Detach/adopt a pane from whatever window owns it (searched across all windows). */
+    private final PaneMoveCoordinator moveCoordinator;
     private final JTabbedPane tabs = new JTabbedPane();
 
     /** Permanent trailing tab hosting the "+" button, keeping it right after the last real tab. */
@@ -102,10 +103,15 @@ public final class TabPane extends JPanel {
     private int selectedBeforePress = -1;
     private int tabCounter = 0;
 
-    public TabPane(TerminalWindow owner, TerminalServices services) {
+    public TabPane(TerminalWindow owner, TerminalServices services, WindowTopology topology) {
         super(new BorderLayout());
         this.owner = owner;
         this.services = services;
+        this.topology = topology;
+        this.moveCoordinator = content -> {
+            TabPane host = topology.hostContaining(content);
+            return host == null ? null : host.detachPaneFromOwnGrid(content);
+        };
         configureTabs();
         add(tabs, BorderLayout.CENTER);
         tabs.addChangeListener(e -> {
@@ -163,6 +169,7 @@ public final class TabPane extends JPanel {
                     movePaneToNewTab(pane);
                     dtde.dropComplete(true);
                 } catch (Exception e) {
+                    LOG.warn("pane drop onto tab strip failed", e);
                     dtde.dropComplete(false);
                 }
             }
@@ -247,7 +254,7 @@ public final class TabPane extends JPanel {
         grid.setOnActiveChanged(() -> decorateTab(grid));
         grid.setOnActivity(() -> decorateTab(grid));
         grid.setOnEmpty(() -> closeTabForGrid(grid));
-        grid.setMoveCoordinator(MOVE_COORDINATOR);
+        grid.setMoveCoordinator(moveCoordinator);
         grid.setOnOpenSessionInNewTab(this::openSessionInNewTab);
     }
 
@@ -315,7 +322,7 @@ public final class TabPane extends JPanel {
 
     /** Pull a pane out of its split into a new tab here. No-op for a sole pane within this window. */
     private void movePaneToNewTab(GridContent content) {
-        TabPane sourceHost = WindowManager.get().hostContaining(content);
+        TabPane sourceHost = topology.hostContaining(content);
         if (sourceHost == null) {
             return;
         }
@@ -390,7 +397,7 @@ public final class TabPane extends JPanel {
     public void detachSelectedTab() {
         PaneGrid grid = currentGrid();
         if (grid != null) {
-            WindowManager.get().detachToNewWindow(grid, null);
+            topology.detachToNewWindow(grid, null);
         }
     }
 
@@ -403,7 +410,7 @@ public final class TabPane extends JPanel {
         if (grid == null) {
             return;
         }
-        TabPane main = WindowManager.get().mainWindow().tabPane();
+        TabPane main = topology.mainTabPane();
         detachGridForMove(grid);
         main.adoptGrid(grid);
         main.toFront();
@@ -414,7 +421,7 @@ public final class TabPane extends JPanel {
         if (owner.isMain()) {
             return;
         }
-        TabPane main = WindowManager.get().mainWindow().tabPane();
+        TabPane main = topology.mainTabPane();
         for (PaneGrid grid : realGrids()) {
             detachGridForMove(grid);
             main.adoptGrid(grid);
@@ -472,18 +479,13 @@ public final class TabPane extends JPanel {
         }
         TerminalSession session = pane.session();
         tabs.setIconAt(idx, SessionIcon.forSession(session, 16));
-        if (session instanceof SshSession ssh) {
-            tabs.setTitleAt(idx, ssh.title());
-            setTabColor(idx, ssh.tabColorHex());
-        } else {
-            LocalSession local = (session instanceof LocalSession ls) ? ls : null;
-            boolean customLocal = local != null && local.iconId() != null;
-            Object base = grid.getClientProperty("baseTitle");
-            String title = customLocal ? session.title()
-                    : (base != null ? base.toString() : session.title());
-            tabs.setTitleAt(idx, title);
-            setTabColor(idx, null);
-        }
+        setTabColor(idx, session.tabColorHex());
+        // A plain local shell (no custom icon) shows the generic "Terminal N" tab title; everything
+        // else (SSH, or a WSL distro) shows the session's own title.
+        boolean plainLocal = session instanceof LocalSession local && local.iconId() == null;
+        Object base = grid.getClientProperty("baseTitle");
+        String title = (plainLocal && base != null) ? base.toString() : session.title();
+        tabs.setTitleAt(idx, title);
         applyActivityIndicator(idx, grid, content);
     }
 
@@ -580,7 +582,7 @@ public final class TabPane extends JPanel {
                 }
             } else {
                 // A detached window with nothing left to show closes itself.
-                WindowManager.get().closeDetached(owner);
+                topology.closeDetached(owner);
             }
         } else {
             tabs.setSelectedIndex(plus - 1);
@@ -650,10 +652,10 @@ public final class TabPane extends JPanel {
                     if (dsde.getDropSuccess() || !containsGrid(grid)) {
                         return;
                     }
-                    if (WindowManager.get().isInsideAnyWindow(dsde.getLocation())) {
+                    if (topology.isInsideAnyWindow(dsde.getLocation())) {
                         return;
                     }
-                    WindowManager.get().detachToNewWindow(grid, dsde.getLocation());
+                    topology.detachToNewWindow(grid, dsde.getLocation());
                 }
             };
             try {
@@ -696,7 +698,7 @@ public final class TabPane extends JPanel {
                         }
                     } else {
                         // A tab dragged in from another window: take ownership of its live grid.
-                        TabPane source = WindowManager.get().hostContaining(grid);
+                        TabPane source = topology.hostContaining(grid);
                         if (source != null) {
                             source.detachGridForMove(grid);
                             adoptGrid(grid);
@@ -705,6 +707,7 @@ public final class TabPane extends JPanel {
                     }
                     dtde.dropComplete(true);
                 } catch (Exception e) {
+                    LOG.warn("tab drop failed", e);
                     dtde.dropComplete(false);
                 }
             }
@@ -759,7 +762,7 @@ public final class TabPane extends JPanel {
         duplicate.addActionListener(a -> duplicateSelectedTab());
         menu.add(duplicate);
         JMenuItem detach = new JMenuItem("Detach Tab to New Window");
-        detach.addActionListener(a -> WindowManager.get().detachToNewWindow(grid, null));
+        detach.addActionListener(a -> topology.detachToNewWindow(grid, null));
         menu.add(detach);
         if (!owner.isMain()) {
             JMenuItem attach = new JMenuItem("Attach to Main Window");

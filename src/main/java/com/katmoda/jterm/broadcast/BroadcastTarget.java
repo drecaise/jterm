@@ -17,25 +17,20 @@
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
-package com.katmoda.jterm.app;
+package com.katmoda.jterm.broadcast;
 
-import com.katmoda.jterm.ui.tabs.TabPane;
-
-import javax.swing.JFrame;
+import com.jediterm.terminal.TtyConnector;
 
 /**
- * A top-level window that hosts a tab strip of terminal grids: the single {@link MainWindow} or a
- * {@link DetachedWindow}. The {@link WindowManager} tracks these so tabs can move between windows and
- * the global shortcut dispatcher can target whichever window is focused.
+ * A pane that can participate in input broadcast. Registered with a {@link PaneBroadcastBus} while
+ * it occupies a grid cell so the bus can fan keystrokes out to it. Defined in this package (rather
+ * than the bus reaching into {@code ui.pane}) so broadcast fan-out stays independent of the UI.
  */
-public interface TerminalWindow {
+public interface BroadcastTarget {
 
-    /** The Swing frame backing this window. */
-    JFrame frame();
+    /** The real (unwrapped) connector, used as the broadcast source/target identity. */
+    TtyConnector realConnector();
 
-    /** This window's tab strip. */
-    TabPane tabPane();
-
-    /** True only for the primary window (the re-attach target; never auto-closes when emptied). */
-    boolean isMain();
+    /** Whether this pane currently participates in broadcast (its per-pane checkbox is ticked). */
+    boolean isBroadcastChecked();
 }

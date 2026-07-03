@@ -22,6 +22,7 @@ package com.katmoda.jterm.ui.pane;
 import com.jediterm.core.compatibility.Point;
 import com.jediterm.terminal.TtyConnector;
 import com.jediterm.terminal.model.SelectionUtil;
+import com.katmoda.jterm.broadcast.BroadcastTarget;
 import com.katmoda.jterm.broadcast.BroadcastingTtyConnector;
 import com.katmoda.jterm.config.AppSettings;
 import com.katmoda.jterm.dnd.DropRegion;
@@ -31,7 +32,9 @@ import com.katmoda.jterm.highlight.HighlightList;
 import com.katmoda.jterm.highlight.HighlightListResolver;
 import com.katmoda.jterm.highlight.HighlightingInstaller;
 import com.katmoda.jterm.terminal.TerminalSession;
+import com.katmoda.jterm.ui.ErrorDialog;
 import com.katmoda.jterm.ui.SessionIcon;
+import com.katmoda.jterm.ui.component.DropHighlighter;
 import com.katmoda.jterm.ui.grid.GridContent;
 import com.katmoda.jterm.ui.theme.JTermSettingsProvider;
 import com.katmoda.jterm.ui.theme.ThemeColors;
@@ -53,8 +56,6 @@ import javax.swing.KeyStroke;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
-import javax.swing.UIManager;
-import javax.swing.border.Border;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -79,6 +80,8 @@ import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.EnumSet;
 import java.util.function.Consumer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A single terminal cell: a JediTerm widget driving one {@link TerminalSession}.
@@ -87,7 +90,9 @@ import java.util.function.Consumer;
  * wrapper around the session's real connector). When broadcast mode is active the pane
  * shows a bottom title bar with a checkbox controlling whether it participates.</p>
  */
-public final class TerminalPane extends JPanel implements GridContent {
+public final class TerminalPane extends JPanel implements GridContent, BroadcastTarget {
+
+    private static final Logger LOG = LoggerFactory.getLogger(TerminalPane.class);
 
     private TerminalSession session;
     private final JtermJediTermWidget widget;
@@ -99,7 +104,16 @@ public final class TerminalPane extends JPanel implements GridContent {
     private final JPanel broadcastBar;
     private final JCheckBox broadcastCheck;
     private final JLabel titleLabel;
-    private final Timer titleTimer;
+    private final DropHighlighter dropHighlighter = new DropHighlighter(this);
+
+    /**
+     * Panes whose title the single shared poll timer refreshes. Replaces the old per-pane 800 ms
+     * timers (there is no title-change callback: {@code LocalSession.title()} reads the live CWD from
+     * {@code /proc}). A pane registers while live and unregisters when stopped or closed.
+     */
+    private static final java.util.Set<TerminalPane> TITLE_POLLED =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private static Timer sharedTitleTimer;
 
     private Runnable onFocus;
     private Runnable onSessionEnd;
@@ -107,7 +121,6 @@ public final class TerminalPane extends JPanel implements GridContent {
     /** Re-opens this pane's session elsewhere; the flag picks a new split (false) or a new tab (true). */
     private Consumer<Boolean> duplicateHandler;
     private Runnable highlightTeardown;
-    private Border savedBorder;
     private boolean stopped;
     private JPanel stoppedPanel;
     /** Repopulates the stopped screen's hint lines; used to restore them after a failed reconnect. */
@@ -163,9 +176,7 @@ public final class TerminalPane extends JPanel implements GridContent {
         add(bottomArea, BorderLayout.SOUTH);
         installPaneDragSource();
         // Keep the title (e.g. a local shell's CWD) up to date while the pane is live.
-        this.titleTimer = new Timer(800, e -> refreshTitle());
-        this.titleTimer.setRepeats(true);
-        this.titleTimer.start();
+        registerForTitlePolling(this);
 
         widget.addListener(w -> {
             if (onSessionEnd != null) {
@@ -249,7 +260,7 @@ public final class TerminalPane extends JPanel implements GridContent {
         }
         stopped = true;
         stoppedActionTaken = false;
-        titleTimer.stop();
+        unregisterFromTitlePolling(this);
         JPanel panel = buildStoppedPanel(onExit, onRestart);
         stoppedPanel = panel;
         bottomArea.add(panel, BorderLayout.CENTER);
@@ -279,7 +290,7 @@ public final class TerminalPane extends JPanel implements GridContent {
         }
         titleLabel.setText(session.title());
         titleLabel.setIcon(SessionIcon.forSession(session, 16));
-        titleTimer.start();
+        registerForTitlePolling(this);
         widget.restartWith(inputConnector);
         revalidate();
         repaint();
@@ -519,8 +530,7 @@ public final class TerminalPane extends JPanel implements GridContent {
             Files.writeString(target, text, StandardCharsets.UTF_8);
             restrictToOwner(target);
         } catch (IOException ex) {
-            JOptionPane.showMessageDialog(this, "Could not save output:\n" + ex.getMessage(),
-                    "jterm", JOptionPane.ERROR_MESSAGE);
+            ErrorDialog.show(this, "jterm", "Could not save output:", ex);
         }
     }
 
@@ -570,6 +580,28 @@ public final class TerminalPane extends JPanel implements GridContent {
         }
     }
 
+    /**
+     * Adds {@code pane} to the shared title-poll set, lazily starting the single EDT timer that
+     * refreshes every registered pane's title every 800 ms (replacing the old per-pane timers).
+     */
+    private static void registerForTitlePolling(TerminalPane pane) {
+        TITLE_POLLED.add(pane);
+        if (sharedTitleTimer == null) {
+            sharedTitleTimer = new Timer(800, e -> {
+                for (TerminalPane p : TITLE_POLLED) {
+                    p.refreshTitle();
+                }
+            });
+            sharedTitleTimer.setRepeats(true);
+            sharedTitleTimer.start();
+        }
+    }
+
+    /** Stops polling {@code pane}'s title (on stop / close); the shared timer keeps running idle. */
+    private static void unregisterFromTitlePolling(TerminalPane pane) {
+        TITLE_POLLED.remove(pane);
+    }
+
     // ---- drag source (move this pane) ----
 
     /**
@@ -595,33 +627,16 @@ public final class TerminalPane extends JPanel implements GridContent {
 
     /** Full-border highlight shown while a dragged pane hovers this one (swap / move target). */
     public void showMoveHint() {
-        if (savedBorder == null) {
-            savedBorder = getBorder();
-        }
-        setBorder(BorderFactory.createLineBorder(accentColor(), 3));
+        dropHighlighter.showMoveHint();
     }
 
     /** Highlight the edge where a dropped session would open (right=column, bottom=row). */
     public void showDropHint(DropRegion region) {
-        if (savedBorder == null) {
-            savedBorder = getBorder();
-        }
-        Color accent = accentColor();
-        setBorder(region == DropRegion.COLUMN
-                ? BorderFactory.createMatteBorder(0, 0, 0, 4, accent)
-                : BorderFactory.createMatteBorder(0, 0, 4, 0, accent));
+        dropHighlighter.showDropHint(region);
     }
 
     public void clearDropHint() {
-        if (savedBorder != null) {
-            setBorder(savedBorder);
-            savedBorder = null;
-        }
-    }
-
-    private static Color accentColor() {
-        Color c = UIManager.getColor("Component.focusColor");
-        return c != null ? c : new Color(0x4A90D9);
+        dropHighlighter.clearDropHint();
     }
 
     // ---- copy on select ----
@@ -750,14 +765,15 @@ public final class TerminalPane extends JPanel implements GridContent {
 
     /** Terminate the terminal and its back-end session. */
     public void close() {
-        titleTimer.stop();
+        unregisterFromTitlePolling(this);
         if (highlightTeardown != null) {
             highlightTeardown.run();
             highlightTeardown = null;
         }
         try {
             widget.close();
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            LOG.debug("failed to close terminal widget", e);
         }
         session.close();
     }

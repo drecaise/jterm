@@ -22,6 +22,7 @@ package com.katmoda.jterm.ui.grid;
 import com.jediterm.terminal.TtyConnector;
 import com.katmoda.jterm.broadcast.BroadcastBus;
 import com.katmoda.jterm.broadcast.BroadcastingTtyConnector;
+import com.katmoda.jterm.broadcast.PaneBroadcastBus;
 import com.katmoda.jterm.dnd.DropRegion;
 import com.katmoda.jterm.dnd.DetachedPane;
 import com.katmoda.jterm.dnd.LocalTransferable;
@@ -33,7 +34,7 @@ import com.katmoda.jterm.dnd.WslTransferable;
 import com.katmoda.jterm.session.SshSessionConfig;
 import com.katmoda.jterm.terminal.SessionFactory;
 import com.katmoda.jterm.terminal.TerminalSession;
-import com.katmoda.jterm.terminal.local.LocalSession;
+import com.katmoda.jterm.ui.ErrorDialog;
 import com.katmoda.jterm.ui.pane.PaneActivity;
 import com.katmoda.jterm.ui.pane.TerminalPane;
 import com.katmoda.jterm.ui.theme.ThemeColors;
@@ -42,11 +43,9 @@ import com.katmoda.jterm.ui.theme.ThemeManager;
 import javax.swing.BorderFactory;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
-import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
-import javax.swing.UIManager;
 import javax.swing.border.Border;
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -60,7 +59,8 @@ import java.awt.dnd.DropTargetEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.function.BiConsumer;
-import java.util.function.Consumer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * One tab's pane layout: a uniform grid of up to {@value #MAX}×{@value #MAX} cells,
@@ -76,6 +76,8 @@ import java.util.function.Consumer;
  */
 public final class PaneGrid extends JPanel implements BroadcastBus {
 
+    private static final Logger LOG = LoggerFactory.getLogger(PaneGrid.class);
+
     public static final int MAX = 3;
 
     private static final int CONTENT_BORDER = 2;
@@ -87,7 +89,8 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     private int cols = 1;
     private int activeRow = 0;
     private int activeCol = 0;
-    private boolean broadcastActive = false;
+    /** Owns broadcast on/off state and the keystroke fan-out over this grid's registered panes. */
+    private final PaneBroadcastBus broadcastBus = new PaneBroadcastBus();
     /** True while this grid's tab is the selected (front) one; suppresses activity flagging. */
     private boolean foreground = false;
     private SessionDropHandler dropHandler;
@@ -262,18 +265,12 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
 
     /** ctrl+RIGHT: add a column (if room) and open a local shell in it. */
     public void splitColumn() {
-        TerminalSession session = safeLocalSession();
-        if (session != null) {
-            splitColumnAndOpen(session, localFactory());
-        }
+        openLocal(this::splitColumnAndOpen);
     }
 
     /** ctrl+DOWN: add a row (if room) and open a local shell in it. */
     public void splitRow() {
-        TerminalSession session = safeLocalSession();
-        if (session != null) {
-            splitRowAndOpen(session, localFactory());
-        }
+        openLocal(this::splitRowAndOpen);
     }
 
     /** Add a column (if room) and open the given session in it; else replace the active cell. */
@@ -354,6 +351,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         }
         GridContent existing = panes[activeRow][activeCol];
         if (existing != null) {
+            unbind(existing);
             existing.closeContent();
         }
         placeExistingPaneAt(activeRow, activeCol, content, null);
@@ -367,6 +365,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         if (content == null) {
             return;
         }
+        unbind(content);
         content.closeContent();
         panes[activeRow][activeCol] = null;
         factories[activeRow][activeCol] = null;
@@ -378,12 +377,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
 
     /** Open a fresh local shell in the active cell (replacing any existing pane). */
     public void openLocalInActive() {
-        TerminalSession session = safeLocalSession();
-        if (session != null) {
-            replaceActiveContent(session, localFactory());
-            relayout();
-            focusActive();
-        }
+        openLocal(this::placeSessionInActive);
     }
 
     /** Place an already-connected session in the active cell (replacing any existing pane). */
@@ -559,6 +553,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
             return null;
         }
         SessionFactory factory = factories[pos[0]][pos[1]];
+        unbind(content);
         panes[pos[0]][pos[1]] = null;
         factories[pos[0]][pos[1]] = null;
         compactGrid();
@@ -619,6 +614,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         for (int r = 0; r < MAX; r++) {
             for (int c = 0; c < MAX; c++) {
                 if (panes[r][c] != null) {
+                    unbind(panes[r][c]);
                     panes[r][c].closeContent();
                     panes[r][c] = null;
                     factories[r][c] = null;
@@ -631,11 +627,12 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
 
     /** ctrl+shift+B: toggle input broadcast and show/hide per-pane title bars. */
     public void toggleBroadcast() {
-        broadcastActive = !broadcastActive;
+        broadcastBus.setActive(!broadcastBus.isActive());
+        boolean active = broadcastBus.isActive();
         for (int r = 0; r < rows; r++) {
             for (int c = 0; c < cols; c++) {
                 if (panes[r][c] instanceof TerminalPane pane) {
-                    pane.setBroadcastMode(broadcastActive);
+                    pane.setBroadcastMode(active);
                 }
             }
         }
@@ -646,28 +643,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
 
     @Override
     public void broadcast(TtyConnector source, byte[] data) {
-        if (!broadcastActive) {
-            return;
-        }
-        // An excluded (unchecked) source pane keeps its own input local — don't fan it out.
-        TerminalPane sourcePane = paneForConnector(source);
-        if (sourcePane != null && !sourcePane.isBroadcastChecked()) {
-            return;
-        }
-        for (int r = 0; r < rows; r++) {
-            for (int c = 0; c < cols; c++) {
-                if (!(panes[r][c] instanceof TerminalPane pane)) {
-                    continue;
-                }
-                if (pane.realConnector() != source && pane.isBroadcastChecked()) {
-                    try {
-                        pane.realConnector().write(data);
-                    } catch (Exception ignored) {
-                        // A dead pane shouldn't break the fan-out to the others.
-                    }
-                }
-            }
-        }
+        broadcastBus.broadcast(source, data);
     }
 
     // ---- internals ----
@@ -678,6 +654,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         }
         GridContent existing = panes[activeRow][activeCol];
         if (existing != null) {
+            unbind(existing);
             existing.closeContent();
         }
         placeAt(activeRow, activeCol, session, factory);
@@ -700,78 +677,34 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     private void replaceActiveWithPane(GridContent content, SessionFactory factory) {
         GridContent existing = panes[activeRow][activeCol];
         if (existing != null) {
+            unbind(existing);
             existing.closeContent();
         }
         placeExistingPaneAt(activeRow, activeCol, content, factory);
     }
 
     private void openLocalAt(int r, int c) {
-        TerminalSession session = safeLocalSession();
-        if (session != null) {
-            placeAt(r, c, session, localFactory());
-        }
+        openLocal((session, factory) -> placeAt(r, c, session, factory));
     }
 
-    /** A factory that synchronously opens a fresh local shell (used for restart). */
-    private SessionFactory localFactory() {
-        return new SessionFactory() {
-            @Override
-            public void create(Consumer<TerminalSession> onReady) {
-                create(onReady, () -> { });
-            }
-
-            @Override
-            public void create(Consumer<TerminalSession> onReady, Runnable onError) {
-                TerminalSession session = safeLocalSession();
-                if (session != null) {
-                    onReady.accept(session);
-                } else {
-                    onError.run();
-                }
-            }
-        };
+    /**
+     * Synchronously start a fresh local shell and, on success, hand the session plus its restart
+     * factory to {@code placer}. On failure the error is shown and {@code placer} is not called.
+     */
+    private void openLocal(BiConsumer<TerminalSession, SessionFactory> placer) {
+        SessionFactory factory = SessionFactory.local(reporter());
+        factory.create(session -> placer.accept(session, factory));
     }
 
-    private TerminalSession safeLocalSession() {
-        try {
-            return LocalSession.start(null);
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this,
-                    "Failed to start local shell:\n" + e.getMessage(),
-                    "jterm", JOptionPane.ERROR_MESSAGE);
-            return null;
-        }
+    /** As {@link #openLocal}, but starts a shell inside the given WSL2 distribution. */
+    private void openWsl(String distro, BiConsumer<TerminalSession, SessionFactory> placer) {
+        SessionFactory factory = SessionFactory.wsl(distro, reporter());
+        factory.create(session -> placer.accept(session, factory));
     }
 
-    /** A factory that synchronously opens a fresh shell in {@code distro} (used for restart). */
-    private SessionFactory wslFactory(String distro) {
-        return new SessionFactory() {
-            @Override
-            public void create(Consumer<TerminalSession> onReady) {
-                create(onReady, () -> { });
-            }
-
-            @Override
-            public void create(Consumer<TerminalSession> onReady, Runnable onError) {
-                TerminalSession session = safeWslSession(distro);
-                if (session != null) {
-                    onReady.accept(session);
-                } else {
-                    onError.run();
-                }
-            }
-        };
-    }
-
-    private TerminalSession safeWslSession(String distro) {
-        try {
-            return LocalSession.startWsl(distro);
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this,
-                    "Failed to start WSL distribution \"" + distro + "\":\n" + e.getMessage(),
-                    "jterm", JOptionPane.ERROR_MESSAGE);
-            return null;
-        }
+    /** Reports a session-creation failure through the richer {@link ErrorDialog}, parented on this grid. */
+    private BiConsumer<String, Throwable> reporter() {
+        return (header, error) -> ErrorDialog.show(this, "jterm", header, error);
     }
 
     /** Build a pane wrapping a fresh session; not yet bound to this grid (see {@link #registerPane}). */
@@ -794,6 +727,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
             pane.setDuplicateHandler(toNewTab -> duplicatePane(pane, toNewTab));
             // A freshly placed/adopted pane has no unseen output yet.
             pane.setActivity(PaneActivity.NONE);
+            broadcastBus.register(pane);
             if (pane.inputConnector() instanceof BroadcastingTtyConnector b) {
                 b.setBus(this);
                 // Output read off-EDT → flag background-tab activity on the EDT (coalesced).
@@ -802,24 +736,80 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
                     markOutput(pane);
                 }));
             }
-            pane.setBroadcastMode(broadcastActive);
+            pane.setBroadcastMode(broadcastBus.isActive());
         } else {
             content.setOnContentEnded(() -> removePane(content));
         }
         installDnd(content);
     }
 
+    /**
+     * The parts of a grid drop that differ between the two targets — dropping onto an occupied pane
+     * (splits relative to it, shows an in-pane split hint) and dropping onto an empty cell (fills the
+     * cell, shows a border hint). The shared {@link #installDropTarget} drives the flavor dispatch.
+     */
+    private interface DropBehavior {
+        /** Visual feedback while a pane (move) is dragged over. */
+        void hintMove();
+
+        /** Visual feedback while a session (copy) is dragged over, given the split it would perform. */
+        void hintDrop(DropRegion region);
+
+        /** Remove any drag feedback (on exit or before a drop). */
+        void clearHint();
+
+        /** A pane was dropped here; {@code region} matters only for the pane-target (split) case. */
+        void onPaneDrop(GridContent dragged, DropRegion region);
+
+        /** Where a freshly opened session (SSH/local/WSL) should land for this target. */
+        BiConsumer<TerminalSession, SessionFactory> placer(DropRegion region);
+    }
+
     private void installDnd(GridContent content) {
         JComponent comp = content.ui();
+        installDropTarget(comp, new DropBehavior() {
+            @Override
+            public void hintMove() {
+                content.showMoveHint();
+            }
+
+            @Override
+            public void hintDrop(DropRegion region) {
+                content.showDropHint(region);
+            }
+
+            @Override
+            public void clearHint() {
+                content.clearDropHint();
+            }
+
+            @Override
+            public void onPaneDrop(GridContent dragged, DropRegion region) {
+                dropPaneOnPane(dragged, content, region);
+            }
+
+            @Override
+            public BiConsumer<TerminalSession, SessionFactory> placer(DropRegion region) {
+                return (session, factory) -> splitFromPaneAndOpen(content, region, session, factory);
+            }
+        });
+    }
+
+    /**
+     * Wire {@code comp} as a grid drop target handling all four flavors — PANE (move), SESSION,
+     * LOCAL and WSL (copy) — with the accept/reject bookkeeping and error tail in one place. What a
+     * drop actually does is supplied by {@code behavior}.
+     */
+    private void installDropTarget(JComponent comp, DropBehavior behavior) {
         new DropTarget(comp, DnDConstants.ACTION_COPY_OR_MOVE, new DropTargetAdapter() {
             @Override
             public void dragOver(DropTargetDragEvent dtde) {
                 if (dtde.isDataFlavorSupported(PaneTransferable.PANE_FLAVOR)) {
                     dtde.acceptDrag(DnDConstants.ACTION_MOVE);
-                    content.showMoveHint();
+                    behavior.hintMove();
                 } else if (isSessionDrag(dtde)) {
                     dtde.acceptDrag(DnDConstants.ACTION_COPY);
-                    content.showDropHint(DropRegion.forPosition(dtde.getLocation().y, comp.getHeight()));
+                    behavior.hintDrop(DropRegion.forPosition(dtde.getLocation().y, comp.getHeight()));
                 } else {
                     dtde.rejectDrag();
                 }
@@ -827,49 +817,43 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
 
             @Override
             public void dragExit(DropTargetEvent dte) {
-                content.clearDropHint();
+                behavior.clearHint();
             }
 
             @Override
             public void drop(DropTargetDropEvent dtde) {
-                content.clearDropHint();
+                behavior.clearHint();
                 DropRegion region = DropRegion.forPosition(dtde.getLocation().y, comp.getHeight());
                 try {
                     if (dtde.isDataFlavorSupported(PaneTransferable.PANE_FLAVOR)) {
                         dtde.acceptDrop(DnDConstants.ACTION_MOVE);
                         GridContent dragged = (GridContent) dtde.getTransferable()
                                 .getTransferData(PaneTransferable.PANE_FLAVOR);
-                        dropPaneOnPane(dragged, content, region);
+                        behavior.onPaneDrop(dragged, region);
                         dtde.dropComplete(true);
                     } else if (dtde.isDataFlavorSupported(SessionTransferable.SESSION_FLAVOR)) {
                         dtde.acceptDrop(DnDConstants.ACTION_COPY);
                         SshSessionConfig cfg = (SshSessionConfig) dtde.getTransferable()
                                 .getTransferData(SessionTransferable.SESSION_FLAVOR);
                         if (dropHandler != null) {
-                            dropHandler.connect(cfg, (session, factory) ->
-                                    splitFromPaneAndOpen(content, region, session, factory));
+                            dropHandler.connect(cfg, behavior.placer(region));
                         }
                         dtde.dropComplete(true);
                     } else if (dtde.isDataFlavorSupported(LocalTransferable.LOCAL_FLAVOR)) {
                         dtde.acceptDrop(DnDConstants.ACTION_COPY);
-                        TerminalSession session = safeLocalSession();
-                        if (session != null) {
-                            splitFromPaneAndOpen(content, region, session, localFactory());
-                        }
+                        openLocal(behavior.placer(region));
                         dtde.dropComplete(true);
                     } else if (dtde.isDataFlavorSupported(WslTransferable.WSL_FLAVOR)) {
                         dtde.acceptDrop(DnDConstants.ACTION_COPY);
                         String distro = (String) dtde.getTransferable()
                                 .getTransferData(WslTransferable.WSL_FLAVOR);
-                        TerminalSession session = safeWslSession(distro);
-                        if (session != null) {
-                            splitFromPaneAndOpen(content, region, session, wslFactory(distro));
-                        }
+                        openWsl(distro, behavior.placer(region));
                         dtde.dropComplete(true);
                     } else {
                         dtde.rejectDrop();
                     }
                 } catch (Exception e) {
+                    LOG.warn("drop onto pane grid failed", e);
                     dtde.dropComplete(false);
                 }
             }
@@ -952,6 +936,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         if (pos == null) {
             return;
         }
+        unbind(content);
         content.closeContent();
         panes[pos[0]][pos[1]] = null;
         factories[pos[0]][pos[1]] = null;
@@ -1019,16 +1004,11 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         }
     }
 
-    /** The terminal pane whose real (unwrapped) connector is {@code connector}, or {@code null}. */
-    private TerminalPane paneForConnector(TtyConnector connector) {
-        for (int r = 0; r < rows; r++) {
-            for (int c = 0; c < cols; c++) {
-                if (panes[r][c] instanceof TerminalPane pane && pane.realConnector() == connector) {
-                    return pane;
-                }
-            }
+    /** Detach content from broadcast fan-out when it leaves a cell (closed, replaced, or moved out). */
+    private void unbind(GridContent content) {
+        if (content instanceof TerminalPane pane) {
+            broadcastBus.unregister(pane);
         }
-        return null;
     }
 
     private int[] locate(GridContent content) {
@@ -1192,7 +1172,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     }
 
     private void updateBorders() {
-        Border activeBorder = BorderFactory.createLineBorder(accentColor(), CONTENT_BORDER);
+        Border activeBorder = BorderFactory.createLineBorder(ThemeManager.accentColor(), CONTENT_BORDER);
         Border broadcastBorder = BorderFactory.createLineBorder(broadcastEnabledColor(), CONTENT_BORDER);
         Border plain = BorderFactory.createEmptyBorder(
                 CONTENT_BORDER, CONTENT_BORDER, CONTENT_BORDER, CONTENT_BORDER);
@@ -1203,7 +1183,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
                     continue;
                 }
                 Border border;
-                if (broadcastActive) {
+                if (broadcastBus.isActive()) {
                     // Every participating terminal is highlighted; excluded/non-terminal cells plain.
                     border = (content instanceof TerminalPane pane && pane.isBroadcastChecked())
                             ? broadcastBorder : plain;
@@ -1253,71 +1233,33 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     /** Make an empty cell a drop target that fills itself (no split) with the dropped session/pane. */
     private void installEmptyCellDnd(JPanel cell, int r, int c) {
         Border idle = cell.getBorder();
-        Border hover = BorderFactory.createLineBorder(accentColor(), CONTENT_BORDER);
-        new DropTarget(cell, DnDConstants.ACTION_COPY_OR_MOVE, new DropTargetAdapter() {
+        Border hover = BorderFactory.createLineBorder(ThemeManager.accentColor(), CONTENT_BORDER);
+        installDropTarget(cell, new DropBehavior() {
             @Override
-            public void dragOver(DropTargetDragEvent dtde) {
-                if (dtde.isDataFlavorSupported(PaneTransferable.PANE_FLAVOR)) {
-                    dtde.acceptDrag(DnDConstants.ACTION_MOVE);
-                    cell.setBorder(hover);
-                } else if (isSessionDrag(dtde)) {
-                    dtde.acceptDrag(DnDConstants.ACTION_COPY);
-                    cell.setBorder(hover);
-                } else {
-                    dtde.rejectDrag();
-                }
+            public void hintMove() {
+                cell.setBorder(hover);
             }
 
             @Override
-            public void dragExit(DropTargetEvent dte) {
+            public void hintDrop(DropRegion region) {
+                cell.setBorder(hover);
+            }
+
+            @Override
+            public void clearHint() {
                 cell.setBorder(idle);
             }
 
             @Override
-            public void drop(DropTargetDropEvent dtde) {
-                cell.setBorder(idle);
-                try {
-                    if (dtde.isDataFlavorSupported(PaneTransferable.PANE_FLAVOR)) {
-                        dtde.acceptDrop(DnDConstants.ACTION_MOVE);
-                        GridContent dragged = (GridContent) dtde.getTransferable()
-                                .getTransferData(PaneTransferable.PANE_FLAVOR);
-                        dropPaneOnEmptyCell(dragged, r, c);
-                        dtde.dropComplete(true);
-                    } else if (dtde.isDataFlavorSupported(SessionTransferable.SESSION_FLAVOR)) {
-                        dtde.acceptDrop(DnDConstants.ACTION_COPY);
-                        SshSessionConfig cfg = (SshSessionConfig) dtde.getTransferable()
-                                .getTransferData(SessionTransferable.SESSION_FLAVOR);
-                        if (dropHandler != null) {
-                            dropHandler.connect(cfg, (session, factory) ->
-                                    placeSessionInCell(r, c, session, factory));
-                        }
-                        dtde.dropComplete(true);
-                    } else if (dtde.isDataFlavorSupported(LocalTransferable.LOCAL_FLAVOR)) {
-                        dtde.acceptDrop(DnDConstants.ACTION_COPY);
-                        placeSessionInCell(r, c, safeLocalSession(), localFactory());
-                        dtde.dropComplete(true);
-                    } else if (dtde.isDataFlavorSupported(WslTransferable.WSL_FLAVOR)) {
-                        dtde.acceptDrop(DnDConstants.ACTION_COPY);
-                        String distro = (String) dtde.getTransferable()
-                                .getTransferData(WslTransferable.WSL_FLAVOR);
-                        TerminalSession session = safeWslSession(distro);
-                        if (session != null) {
-                            placeSessionInCell(r, c, session, wslFactory(distro));
-                        }
-                        dtde.dropComplete(true);
-                    } else {
-                        dtde.rejectDrop();
-                    }
-                } catch (Exception e) {
-                    dtde.dropComplete(false);
-                }
+            public void onPaneDrop(GridContent dragged, DropRegion region) {
+                dropPaneOnEmptyCell(dragged, r, c);
+            }
+
+            @Override
+            public BiConsumer<TerminalSession, SessionFactory> placer(DropRegion region) {
+                return (session, factory) -> placeSessionInCell(r, c, session, factory);
             }
         });
-    }
-
-    private static Color accentColor() {
-        Color c = UIManager.getColor("Component.focusColor");
-        return c != null ? c : new Color(0x4A90D9);
     }
 
     /**
@@ -1326,7 +1268,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
      * plain accent already stands out, so it's used as-is.
      */
     private static Color broadcastEnabledColor() {
-        Color base = accentColor();
+        Color base = ThemeManager.accentColor();
         return ThemeManager.get().isDark() ? brighten(base, 0.35) : base;
     }
 

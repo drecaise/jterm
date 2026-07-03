@@ -20,6 +20,7 @@
 package com.katmoda.jterm.app;
 
 import com.katmoda.jterm.ui.tabs.TabPane;
+import com.katmoda.jterm.ui.windowing.TerminalWindow;
 
 import javax.swing.JButton;
 import javax.swing.JFrame;
@@ -50,7 +51,7 @@ public final class DetachedWindow implements TerminalWindow {
 
     public DetachedWindow() {
         // Share the main window's services (SSH connect / vault, icons, keymap) — one JVM, one vault.
-        this.tabPane = new TabPane(this, WindowManager.get().mainWindow());
+        this.tabPane = new TabPane(this, WindowManager.get().mainWindow(), WindowManager.get());
         frame.setLayout(new BorderLayout());
         frame.add(buildToolbar(), BorderLayout.NORTH);
         frame.add(tabPane, BorderLayout.CENTER);

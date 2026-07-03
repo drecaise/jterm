@@ -17,7 +17,7 @@
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
-package com.katmoda.jterm.app;
+package com.katmoda.jterm.ui.windowing;
 
 import com.katmoda.jterm.keymap.Keymap;
 import com.katmoda.jterm.session.SshSessionConfig;
@@ -28,10 +28,10 @@ import java.util.function.Consumer;
 
 /**
  * The app-level services a {@link com.katmoda.jterm.ui.tabs.TabPane} needs but doesn't own: SSH
- * connection (credential/vault resolution lives in {@link MainWindow}), session-icon/tab-color
- * lookup, and the shared {@link Keymap}. Implemented by {@link MainWindow}; both the main window's
- * and every detached window's {@code TabPane} share the one instance, so reconnects and drops route
- * through the same vault and the same keymap.
+ * connection (credential/vault resolution lives in the main window), session-icon/tab-color lookup,
+ * and the shared {@link Keymap}. Implemented by the main window; both the main window's and every
+ * detached window's {@code TabPane} share the one instance, so reconnects and drops route through
+ * the same vault and the same keymap.
  */
 public interface TerminalServices {
 

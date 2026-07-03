@@ -58,6 +58,16 @@ public final class ThemeManager {
         return INSTANCE;
     }
 
+    /**
+     * The UI accent color used for focus / hover / drag-and-drop highlights across panes and
+     * dialogs. Reads the active FlatLaf {@code Component.focusColor}, falling back to a blue if the
+     * LaF hasn't set one.
+     */
+    public static Color accentColor() {
+        Color c = UIManager.getColor("Component.focusColor");
+        return c != null ? c : new Color(0x4A90D9);
+    }
+
     /** Installs the LaF for the current theme. Call once before building UI (before any frame). */
     public void install() {
         // Restore the persisted light/dark choice (with any saved color overrides) before any UI.

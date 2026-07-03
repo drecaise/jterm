@@ -24,6 +24,7 @@ import com.katmoda.jterm.dnd.DropRegion;
 import com.katmoda.jterm.dnd.PaneTransferable;
 import com.katmoda.jterm.ui.ErrorDialog;
 import com.katmoda.jterm.ui.SessionIcon;
+import com.katmoda.jterm.ui.component.DropHighlighter;
 import com.katmoda.jterm.ui.grid.GridContent;
 import com.katmoda.jterm.ui.theme.ThemeColors;
 import org.apache.sshd.sftp.client.SftpClient;
@@ -47,7 +48,6 @@ import javax.swing.KeyStroke;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingWorker;
 import javax.swing.UIManager;
-import javax.swing.border.Border;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import java.awt.BorderLayout;
@@ -73,6 +73,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.Callable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Remote-only SFTP file browser hosted in a {@link com.katmoda.jterm.ui.grid.PaneGrid} cell.
@@ -84,6 +86,8 @@ import java.util.concurrent.Callable;
  * is first triggered, keeping it out of the resident set until used.</p>
  */
 public final class SftpPane extends JPanel implements GridContent {
+
+    private static final Logger LOG = LoggerFactory.getLogger(SftpPane.class);
 
     private static final DateTimeFormatter MODIFIED_FMT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault());
@@ -101,7 +105,7 @@ public final class SftpPane extends JPanel implements GridContent {
 
     private Runnable onFocus;
     private Runnable onEnded;
-    private Border savedBorder;
+    private final DropHighlighter dropHighlighter = new DropHighlighter(this);
     private String cwd = ".";
     private boolean closed;
 
@@ -235,8 +239,9 @@ public final class SftpPane extends JPanel implements GridContent {
         DragGestureListener listener = dge -> {
             try {
                 dge.startDrag(null, new PaneTransferable(this));
-            } catch (InvalidDnDOperationException ignored) {
+            } catch (InvalidDnDOperationException e) {
                 // Another drag is already in flight; ignore this gesture.
+                LOG.debug("ignoring sftp pane drag gesture; another drag is in flight", e);
             }
         };
         DragSource ds = DragSource.getDefaultDragSource();
@@ -578,7 +583,8 @@ public final class SftpPane extends JPanel implements GridContent {
                     // the shared-session path.
                     try {
                         oldClient.close();
-                    } catch (IOException ignored) {
+                    } catch (IOException e) {
+                        LOG.debug("failed to close stale sftp client during reconnect", e);
                     }
                     if (oldClose != null) {
                         oldClose.run();
@@ -618,7 +624,8 @@ public final class SftpPane extends JPanel implements GridContent {
         closed = true;
         try {
             client.close();
-        } catch (IOException ignored) {
+        } catch (IOException e) {
+            LOG.warn("failed to close sftp client", e);
         }
         if (onClose != null) {
             onClose.run();
@@ -662,39 +669,22 @@ public final class SftpPane extends JPanel implements GridContent {
 
     @Override
     public void showMoveHint() {
-        if (savedBorder == null) {
-            savedBorder = getBorder();
-        }
-        setBorder(BorderFactory.createLineBorder(accent(), 3));
+        dropHighlighter.showMoveHint();
     }
 
     @Override
     public void showDropHint(DropRegion region) {
-        if (savedBorder == null) {
-            savedBorder = getBorder();
-        }
-        Color accent = accent();
-        setBorder(region == DropRegion.COLUMN
-                ? BorderFactory.createMatteBorder(0, 0, 0, 4, accent)
-                : BorderFactory.createMatteBorder(0, 0, 4, 0, accent));
+        dropHighlighter.showDropHint(region);
     }
 
     @Override
     public void clearDropHint() {
-        if (savedBorder != null) {
-            setBorder(savedBorder);
-            savedBorder = null;
-        }
+        dropHighlighter.clearDropHint();
     }
 
     @Override
     public String displayTitle() {
         return "SFTP: " + hostLabel;
-    }
-
-    private static Color accent() {
-        Color c = UIManager.getColor("Component.focusColor");
-        return c != null ? c : new Color(0x4A90D9);
     }
 
     // ---- table model + helpers ----
