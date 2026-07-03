@@ -49,6 +49,8 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Runs one recursive SFTP transfer batch (download or upload) off the EDT, behind a small modal
@@ -62,6 +64,8 @@ import java.util.concurrent.Callable;
  * bounds recursion (no loops) and prevents a link escaping the intended tree.</p>
  */
 final class SftpTransfer {
+
+    private static final Logger LOG = LoggerFactory.getLogger(SftpTransfer.class);
 
     /** How to treat targets that already exist, once the user picks a "…to All" option. */
     private enum Policy { PROMPT, OVERWRITE_ALL, SKIP_ALL }
@@ -398,6 +402,7 @@ final class SftpTransfer {
                     JOptionPane.DEFAULT_OPTION, JOptionPane.WARNING_MESSAGE,
                     null, options, options[0]));
         } catch (Exception e) {
+            LOG.debug("conflict prompt was interrupted; skipping the file", e);
             return 2;
         }
         return result[0];

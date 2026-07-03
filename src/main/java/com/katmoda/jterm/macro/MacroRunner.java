@@ -20,6 +20,8 @@
 package com.katmoda.jterm.macro;
 
 import com.jediterm.terminal.TtyConnector;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Replays a {@link Macro} into a terminal connector. Runs on a daemon background thread
@@ -28,6 +30,8 @@ import com.jediterm.terminal.TtyConnector;
  * respect broadcast mode, or a session's raw connector for run-on-connect.
  */
 public final class MacroRunner {
+
+    private static final Logger LOG = LoggerFactory.getLogger(MacroRunner.class);
 
     private MacroRunner() {
     }
@@ -50,8 +54,9 @@ public final class MacroRunner {
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-        } catch (Exception ignored) {
+        } catch (Exception e) {
             // A broken connector (closed session) ends the run; nothing actionable here.
+            LOG.debug("macro replay ended on a broken connector", e);
         }
     }
 }

@@ -29,6 +29,8 @@ import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.Base64;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The one place that does password-based authenticated encryption for jterm.
@@ -40,6 +42,8 @@ import java.util.Base64;
  * intermediate-key zeroing are defined exactly once.</p>
  */
 public final class PassphraseBox {
+
+    private static final Logger LOG = LoggerFactory.getLogger(PassphraseBox.class);
 
     public static final int PBKDF2_ITERATIONS = 600_000;
     public static final int KEY_BITS = 256;
@@ -134,8 +138,9 @@ public final class PassphraseBox {
     private static void destroy(SecretKey key) {
         try {
             key.destroy();
-        } catch (Exception ignored) {
+        } catch (Exception e) {
             // SecretKeySpec throws DestroyFailedException by default; nothing else to do.
+            LOG.debug("secret key destroy not supported by provider", e);
         }
     }
 }

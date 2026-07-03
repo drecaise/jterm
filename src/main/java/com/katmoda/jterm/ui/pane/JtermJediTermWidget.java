@@ -26,9 +26,13 @@ import com.jediterm.terminal.ui.JediTermWidget;
 import com.jediterm.terminal.ui.TerminalPanel;
 import com.jediterm.terminal.ui.settings.SettingsProvider;
 import com.katmoda.jterm.ui.theme.JTermSettingsProvider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** A {@link JediTermWidget} that uses {@link JtermTerminalPanel} for right-click paste support. */
 final class JtermJediTermWidget extends JediTermWidget {
+
+    private static final Logger LOG = LoggerFactory.getLogger(JtermJediTermWidget.class);
 
     JtermJediTermWidget(SettingsProvider settingsProvider) {
         super(settingsProvider);
@@ -62,8 +66,9 @@ final class JtermJediTermWidget extends JediTermWidget {
             var reset = TerminalPanel.class.getDeclaredMethod("resetColorCache");
             reset.setAccessible(true);
             reset.invoke(panel);
-        } catch (Exception ignored) {
+        } catch (Exception e) {
             // Best-effort: without it the selection tint refreshes on the next selection instead.
+            LOG.debug("could not reset terminal color cache reflectively", e);
         }
         panel.repaint();
     }
@@ -92,8 +97,9 @@ final class JtermJediTermWidget extends JediTermWidget {
             var reinit = TerminalPanel.class.getDeclaredMethod("reinitFontAndResize");
             reinit.setAccessible(true);
             reinit.invoke(panel);
-        } catch (Exception ignored) {
+        } catch (Exception e) {
             // Best-effort: without it the font size won't change until the next natural resize.
+            LOG.debug("could not reinit terminal font reflectively", e);
         }
         panel.repaint();
     }

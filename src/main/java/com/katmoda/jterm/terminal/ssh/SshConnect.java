@@ -39,6 +39,8 @@ import java.security.KeyPair;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Establishes an authenticated SSH connection (client + session) without opening any channel.
@@ -52,6 +54,8 @@ import java.util.List;
  * SFTP-specific {@code sshd-sftp} classes are referenced only from the on-demand SFTP UI.</p>
  */
 public final class SshConnect {
+
+    private static final Logger LOG = LoggerFactory.getLogger(SshConnect.class);
 
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(20);
     private static final Duration AUTH_TIMEOUT = Duration.ofSeconds(30);
@@ -105,12 +109,14 @@ public final class SshConnect {
         public void close() {
             try {
                 session.close(false);
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                LOG.warn("failed to close ssh session", e);
             }
             for (int i = upstream.size() - 1; i >= 0; i--) {
                 try {
                     upstream.get(i).close(false);
-                } catch (Exception ignored) {
+                } catch (Exception e) {
+                    LOG.warn("failed to close upstream jump-host session", e);
                 }
             }
             client.stop();
@@ -192,7 +198,8 @@ public final class SshConnect {
             for (int i = upstream.size() - 1; i >= 0; i--) {
                 try {
                     upstream.get(i).close(true);
-                } catch (Exception ignored) {
+                } catch (Exception closeFailure) {
+                    LOG.warn("failed to close jump-host session during connect teardown", closeFailure);
                 }
             }
             client.stop();
@@ -266,8 +273,9 @@ public final class SshConnect {
             for (KeyPair kp : provider.loadKeys(session)) {
                 session.addPublicKeyIdentity(kp);
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
             // Unreadable/undecryptable key: fall through to agent/password auth.
+            LOG.warn("failed to load key identity from {}; falling back to agent/password auth", path, e);
         }
     }
 
@@ -351,7 +359,8 @@ public final class SshConnect {
         Path ssh = Path.of(System.getProperty("user.home", "."), ".ssh");
         try {
             Files.createDirectories(ssh);
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            LOG.debug("could not create ~/.ssh directory", e);
         }
         return ssh.resolve("known_hosts");
     }

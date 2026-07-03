@@ -205,9 +205,27 @@ public final class AgentSupport {
             if (shell == null || shell.isBlank()) {
                 shell = "/bin/bash";
             }
-            Process p = new ProcessBuilder(shell, "-lic", "printf %s \"$SSH_AUTH_SOCK\"").start();
-            String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
-            p.waitFor(5, TimeUnit.SECONDS);
+            Process p = new ProcessBuilder(shell, "-lic", "printf %s \"$SSH_AUTH_SOCK\"")
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .start();
+            // Drain stdout on a daemon thread so readAllBytes() can't outlive the waitFor timeout.
+            byte[][] outHolder = new byte[1][];
+            Thread reader = new Thread(() -> {
+                try {
+                    outHolder[0] = p.getInputStream().readAllBytes();
+                } catch (IOException ignored) {
+                }
+            }, "authsock-stdout-reader");
+            reader.setDaemon(true);
+            reader.start();
+            if (!p.waitFor(5, TimeUnit.SECONDS)) {
+                p.destroyForcibly();
+                reader.join(500); // short bound so the reader thread can't leak
+                LOG.warn("Login-shell SSH_AUTH_SOCK probe timed out; giving up");
+                return null;
+            }
+            reader.join(500); // stdout is closed by now; bound guards a truly stuck read
+            String out = new String(outHolder[0] != null ? outHolder[0] : new byte[0], StandardCharsets.UTF_8).trim();
             return out.isBlank() ? null : out;
         } catch (Exception e) {
             return null;

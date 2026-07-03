@@ -25,9 +25,13 @@ import com.katmoda.jterm.ui.theme.ThemeManager;
 import javax.swing.SwingUtilities;
 import java.awt.Toolkit;
 import java.lang.reflect.Field;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Application entry point. */
 public final class Main {
+
+    private static final Logger LOG = LoggerFactory.getLogger(Main.class);
 
     /** App id used as the X11 WM_CLASS so GNOME/Wayland can match our {@code .desktop} file. */
     public static final String APP_ID = "jterm";
@@ -57,8 +61,9 @@ public final class Main {
             Field field = toolkit.getClass().getDeclaredField("awtAppClassName");
             field.setAccessible(true);
             field.set(null, name);
-        } catch (Exception ignored) {
+        } catch (Exception e) {
             // Not X11, or module not opened — falls back to the default WM_CLASS.
+            LOG.debug("could not set X11 WM_CLASS; using default", e);
         }
     }
 }

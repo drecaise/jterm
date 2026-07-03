@@ -25,6 +25,8 @@ import org.apache.sshd.common.util.net.SshdSocketAddress;
 import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Tracks the running SSH tunnels and owns their forward lifecycle. A small singleton mirroring
@@ -36,6 +38,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * free of any UI dependency.</p>
  */
 public final class TunnelManager {
+
+    private static final Logger LOG = LoggerFactory.getLogger(TunnelManager.class);
 
     /** A running tunnel: its connection, the bound listen address, and the forward kind. */
     private record ActiveTunnel(SshConnect.Connected connection, SshdSocketAddress bound,
@@ -111,8 +115,9 @@ public final class TunnelManager {
                 case REMOTE -> session.stopRemotePortForwarding(t.bound());
                 case DYNAMIC -> session.stopDynamicPortForwarding(t.bound());
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
             // Best-effort: closing the connection below tears the forward down regardless.
+            LOG.warn("failed to stop port forward for tunnel {}", tunnelId, e);
         }
         t.connection().close();
     }

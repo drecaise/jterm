@@ -21,6 +21,8 @@ package com.katmoda.jterm.terminal;
 
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Per-session terminal/rendering settings. Connect-time fields ({@link #terminalType},
@@ -31,6 +33,8 @@ import java.nio.charset.StandardCharsets;
  * application default".</p>
  */
 public record TerminalProfile(String terminalType, Charset charset, String fontFamily, int fontSize) {
+
+    private static final Logger LOG = LoggerFactory.getLogger(TerminalProfile.class);
 
     public static final TerminalProfile DEFAULT =
             new TerminalProfile("xterm-256color", StandardCharsets.UTF_8, null, 0);
@@ -44,8 +48,9 @@ public record TerminalProfile(String terminalType, Charset charset, String fontF
         if (charsetName != null && !charsetName.isBlank()) {
             try {
                 charset = Charset.forName(charsetName.trim());
-            } catch (Exception ignored) {
+            } catch (Exception e) {
                 // Unknown/unsupported name → keep the UTF-8 default.
+                LOG.debug("unknown charset '{}'; keeping default", charsetName, e);
             }
         }
         String family = (fontFamily != null && !fontFamily.isBlank()) ? fontFamily.trim() : null;

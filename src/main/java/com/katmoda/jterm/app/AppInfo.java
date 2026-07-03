@@ -22,6 +22,8 @@ package com.katmoda.jterm.app;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Properties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Application metadata (name, version, author) read once from {@code application.properties}
@@ -30,6 +32,8 @@ import java.util.Properties;
  * missing (e.g. running against raw classes without a build).
  */
 final class AppInfo {
+
+    private static final Logger LOG = LoggerFactory.getLogger(AppInfo.class);
 
     private static final Properties PROPS = load();
 
@@ -54,8 +58,9 @@ final class AppInfo {
             if (in != null) {
                 props.load(in);
             }
-        } catch (IOException ignored) {
+        } catch (IOException e) {
             // Fall back to defaults below.
+            LOG.debug("could not load application.properties; using defaults", e);
         }
         return props;
     }

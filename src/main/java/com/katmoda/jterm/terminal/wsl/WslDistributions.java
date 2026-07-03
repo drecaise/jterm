@@ -26,6 +26,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Enumerates installed WSL2 distributions on Windows by parsing {@code wsl.exe --list --verbose}.
@@ -39,6 +41,8 @@ import java.util.concurrent.TimeUnit;
  * identically.</p>
  */
 public final class WslDistributions {
+
+    private static final Logger LOG = LoggerFactory.getLogger(WslDistributions.class);
 
     /** Internal helper distros that aren't useful interactive shells. */
     private static final Set<String> HIDDEN = Set.of("docker-desktop", "docker-desktop-data");
@@ -65,6 +69,7 @@ public final class WslDistributions {
             }
             return parse(new String(bytes, StandardCharsets.UTF_16LE));
         } catch (Exception e) {
+            LOG.debug("could not list WSL distributions", e);
             return List.of();
         }
     }

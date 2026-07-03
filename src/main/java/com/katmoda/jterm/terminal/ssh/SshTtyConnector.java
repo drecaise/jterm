@@ -31,6 +31,8 @@ import java.io.OutputStream;
 import java.nio.charset.Charset;
 import java.time.Duration;
 import java.util.EnumSet;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * JediTerm {@link TtyConnector} over a MINA SSHD {@link ChannelShell}, using the
@@ -38,6 +40,8 @@ import java.util.EnumSet;
  * write keystrokes to {@code invertedIn}).
  */
 final class SshTtyConnector implements TtyConnector {
+
+    private static final Logger LOG = LoggerFactory.getLogger(SshTtyConnector.class);
 
     private final ChannelShell channel;
     private final String name;
@@ -112,7 +116,8 @@ final class SshTtyConnector implements TtyConnector {
     public void resize(TermSize size) {
         try {
             channel.sendWindowChange(size.getColumns(), size.getRows());
-        } catch (IOException ignored) {
+        } catch (IOException e) {
+            LOG.debug("failed to send terminal window-change", e);
         }
     }
 

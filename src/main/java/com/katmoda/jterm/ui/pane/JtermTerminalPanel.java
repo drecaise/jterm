@@ -36,6 +36,8 @@ import java.awt.event.MouseWheelEvent;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.function.IntConsumer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A {@link TerminalPanel} that adds "paste on right click" behaviour.
@@ -47,6 +49,8 @@ import java.util.function.IntConsumer;
  * context menu. When it's off, the default context-menu behaviour is untouched.</p>
  */
 final class JtermTerminalPanel extends TerminalPanel {
+
+    private static final Logger LOG = LoggerFactory.getLogger(JtermTerminalPanel.class);
 
     /** Cached private {@code TerminalPanel.updateSelection(TerminalSelection)} — see {@link #clearSelectionOnEdt()}. */
     private static final Method UPDATE_SELECTION = resolveUpdateSelection();
@@ -160,8 +164,9 @@ final class JtermTerminalPanel extends TerminalPanel {
         }
         try {
             UPDATE_SELECTION.invoke(this, (TerminalSelection) null);
-        } catch (ReflectiveOperationException ignored) {
+        } catch (ReflectiveOperationException e) {
             // Best-effort: without it the stale selection lingers until the next mouse-press.
+            LOG.debug("could not clear terminal selection reflectively", e);
         }
         repaint();
     }

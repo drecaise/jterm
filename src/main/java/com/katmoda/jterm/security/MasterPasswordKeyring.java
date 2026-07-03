@@ -22,11 +22,14 @@ package com.katmoda.jterm.security;
 import com.github.javakeyring.Keyring;
 import com.github.javakeyring.KeyringStorageType;
 
+import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Stores the vault's master password in the OS keyring so it isn't prompted on every launch.
@@ -47,6 +50,8 @@ import java.util.concurrent.TimeUnit;
  * password.</p>
  */
 public final class MasterPasswordKeyring {
+
+    private static final Logger LOG = LoggerFactory.getLogger(MasterPasswordKeyring.class);
 
     private static final String SERVICE = "jterm";
     private static final String ACCOUNT = "master-password";
@@ -78,6 +83,7 @@ public final class MasterPasswordKeyring {
                 case OTHER -> Optional.empty();
             };
         } catch (Throwable t) {
+            LOG.warn("failed to retrieve master password from keyring", t);
             return Optional.empty();
         }
     }
@@ -92,6 +98,7 @@ public final class MasterPasswordKeyring {
                 case OTHER -> false;
             };
         } catch (Throwable t) {
+            LOG.warn("failed to store master password in keyring", t);
             return false;
         }
     }
@@ -105,8 +112,9 @@ public final class MasterPasswordKeyring {
                 case OTHER -> {
                 }
             }
-        } catch (Throwable ignored) {
+        } catch (Throwable t) {
             // best-effort
+            LOG.debug("failed to clear master password from keyring", t);
         }
     }
 
@@ -117,6 +125,7 @@ public final class MasterPasswordKeyring {
             String value = keyring.getPassword(SERVICE, ACCOUNT);
             return value != null ? Optional.of(value.toCharArray()) : Optional.empty();
         } catch (Throwable t) {
+            LOG.warn("failed to retrieve master password from keyring", t);
             return Optional.empty();
         }
     }
@@ -126,6 +135,7 @@ public final class MasterPasswordKeyring {
             keyring.setPassword(SERVICE, ACCOUNT, new String(masterPassword));
             return true;
         } catch (Throwable t) {
+            LOG.warn("failed to store master password in keyring", t);
             return false;
         }
     }
@@ -133,8 +143,9 @@ public final class MasterPasswordKeyring {
     private static void nativeClear(KeyringStorageType type) {
         try (Keyring keyring = Keyring.create(type)) {
             keyring.deletePassword(SERVICE, ACCOUNT);
-        } catch (Throwable ignored) {
+        } catch (Throwable t) {
             // best-effort
+            LOG.debug("failed to clear master password from keyring", t);
         }
     }
 
@@ -142,6 +153,7 @@ public final class MasterPasswordKeyring {
         try (Keyring ignored = Keyring.create(type)) {
             return true;
         } catch (Throwable t) {
+            LOG.debug("native keyring backend unavailable", t);
             return false;
         }
     }
@@ -155,7 +167,9 @@ public final class MasterPasswordKeyring {
     private static CommandResult run(String stdin, String... command) {
         try {
             ProcessBuilder pb = new ProcessBuilder(command);
-            pb.redirectErrorStream(false);
+            // stdout is the secret (e.g. secret-tool output), so it must NOT be merged with
+            // stderr; discard stderr so a chatty child can't deadlock on a full stderr pipe.
+            pb.redirectError(ProcessBuilder.Redirect.DISCARD);
             Process process = pb.start();
             if (stdin != null) {
                 try (OutputStream out = process.getOutputStream()) {
@@ -164,13 +178,27 @@ public final class MasterPasswordKeyring {
             } else {
                 process.getOutputStream().close();
             }
-            byte[] outBytes = process.getInputStream().readAllBytes();
+            // Drain stdout on a daemon thread so readAllBytes() can't outlive the timeout below.
+            byte[][] outHolder = new byte[1][];
+            Thread reader = new Thread(() -> {
+                try {
+                    outHolder[0] = process.getInputStream().readAllBytes();
+                } catch (IOException e) {
+                    LOG.debug("failed to drain keyring command stdout", e);
+                }
+            }, "keyring-stdout-reader");
+            reader.setDaemon(true);
+            reader.start();
             if (!process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 process.destroyForcibly();
+                reader.join(500); // short bound so the reader thread can't leak
                 return new CommandResult(-1, "");
             }
+            reader.join(500); // stdout is closed by now; bound guards a truly stuck read
+            byte[] outBytes = outHolder[0] != null ? outHolder[0] : new byte[0];
             return new CommandResult(process.exitValue(), new String(outBytes, StandardCharsets.UTF_8));
         } catch (Exception e) {
+            LOG.debug("keyring command failed: {}", command.length > 0 ? command[0] : "", e);
             return new CommandResult(-1, "");
         }
     }

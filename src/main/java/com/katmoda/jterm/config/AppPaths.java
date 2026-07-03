@@ -24,6 +24,8 @@ import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.EnumSet;
 import java.util.Locale;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Resolves the per-OS configuration directory used to persist sessions,
@@ -37,6 +39,8 @@ import java.util.Locale;
  */
 public final class AppPaths {
 
+    private static final Logger LOG = LoggerFactory.getLogger(AppPaths.class);
+
     private static final Path CONFIG_DIR = resolveConfigDir();
 
     private AppPaths() {
@@ -47,8 +51,9 @@ public final class AppPaths {
         try {
             Files.createDirectories(CONFIG_DIR);
             restrictDirToOwner(CONFIG_DIR);
-        } catch (Exception ignored) {
+        } catch (Exception e) {
             // Surface lazily when an individual file write fails.
+            LOG.debug("could not create/restrict config directory", e);
         }
         return CONFIG_DIR;
     }
@@ -68,8 +73,9 @@ public final class AppPaths {
         try {
             Files.setPosixFilePermissions(file,
                     EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
-        } catch (Exception ignored) {
+        } catch (Exception e) {
             // Non-POSIX filesystem — rely on the user profile's ACLs.
+            LOG.debug("could not restrict {} to owner-only (non-POSIX filesystem?)", file, e);
         }
     }
 
@@ -82,8 +88,9 @@ public final class AppPaths {
         try {
             Files.setPosixFilePermissions(dir, EnumSet.of(PosixFilePermission.OWNER_READ,
                     PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_EXECUTE));
-        } catch (Exception ignored) {
+        } catch (Exception e) {
             // Non-POSIX filesystem — rely on the user profile's ACLs.
+            LOG.debug("could not restrict directory {} to owner-only (non-POSIX filesystem?)", dir, e);
         }
     }
 
@@ -92,7 +99,8 @@ public final class AppPaths {
         Path dir = configDir().resolve("icons");
         try {
             Files.createDirectories(dir);
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            LOG.debug("could not create icons directory", e);
         }
         return dir;
     }

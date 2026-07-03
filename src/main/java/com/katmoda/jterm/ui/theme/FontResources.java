@@ -22,6 +22,8 @@ package com.katmoda.jterm.ui.theme;
 import java.awt.Font;
 import java.awt.GraphicsEnvironment;
 import java.io.InputStream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Registers fonts bundled under {@code resources/fonts/} with the {@link GraphicsEnvironment}
@@ -31,6 +33,8 @@ import java.io.InputStream;
  * has no explicit font; it is bundled here so the default looks identical on every machine.</p>
  */
 public final class FontResources {
+
+    private static final Logger LOG = LoggerFactory.getLogger(FontResources.class);
 
     /** Family name of the bundled default terminal font ({@code fonts/AdwaitaMonoNerdFontMono-Regular.ttf}). */
     public static final String DEFAULT_TERMINAL_FONT_FAMILY = "AdwaitaMono Nerd Font Mono";
@@ -48,9 +52,10 @@ public final class FontResources {
                 if (in != null) {
                     ge.registerFont(Font.createFont(Font.TRUETYPE_FONT, in));
                 }
-            } catch (Exception ignored) {
+            } catch (Exception e) {
                 // A missing/invalid bundled font shouldn't stop startup; the monospaced
                 // auto-pick fallback in JTermSettingsProvider still applies.
+                LOG.debug("failed to register bundled font {}", resource, e);
             }
         }
     }
