@@ -19,6 +19,10 @@
  */
 package com.katmoda.jterm.terminal;
 
+import com.katmoda.jterm.session.SshSessionConfig;
+import com.katmoda.jterm.terminal.local.LocalSession;
+
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 /**
@@ -28,6 +32,12 @@ import java.util.function.Consumer;
  *
  * <p>The factory must deliver the new session to {@code onReady} on the EDT (or not at all, if
  * creation fails — failures are reported by the factory itself, e.g. the SSH error dialog).</p>
+ *
+ * <p>This is also the single entry point for <em>initial</em> session creation: the {@link #local},
+ * {@link #wsl} and {@link #ssh} static factories build a fresh session the very first time a cell is
+ * filled and double as that cell's restart factory. Because local/WSL creation is synchronous, their
+ * {@code create} runs {@code onReady} inline on the calling (EDT) thread, so callers that need the
+ * session immediately can just call {@code create} and act in the callback.</p>
  */
 @FunctionalInterface
 public interface SessionFactory {
@@ -42,5 +52,74 @@ public interface SessionFactory {
      */
     default void create(Consumer<TerminalSession> onReady, Runnable onError) {
         create(onReady);
+    }
+
+    /**
+     * A factory for fresh local login shells. Creation is synchronous; on failure it reports the
+     * error through {@code errorReporter} (a header plus the throwable — kept UI-agnostic so this
+     * {@code terminal}-package type needs no {@code ui} dependency) and runs {@code onError}.
+     */
+    static SessionFactory local(BiConsumer<String, Throwable> errorReporter) {
+        return new SessionFactory() {
+            @Override
+            public void create(Consumer<TerminalSession> onReady) {
+                create(onReady, () -> { });
+            }
+
+            @Override
+            public void create(Consumer<TerminalSession> onReady, Runnable onError) {
+                TerminalSession session;
+                try {
+                    session = LocalSession.start(null);
+                } catch (Exception e) {
+                    errorReporter.accept("Failed to start local shell:", e);
+                    onError.run();
+                    return;
+                }
+                onReady.accept(session);
+            }
+        };
+    }
+
+    /** As {@link #local}, but for a shell inside the given WSL2 distribution. */
+    static SessionFactory wsl(String distro, BiConsumer<String, Throwable> errorReporter) {
+        return new SessionFactory() {
+            @Override
+            public void create(Consumer<TerminalSession> onReady) {
+                create(onReady, () -> { });
+            }
+
+            @Override
+            public void create(Consumer<TerminalSession> onReady, Runnable onError) {
+                TerminalSession session;
+                try {
+                    session = LocalSession.startWsl(distro);
+                } catch (Exception e) {
+                    errorReporter.accept("Failed to start WSL distribution \"" + distro + "\":", e);
+                    onError.run();
+                    return;
+                }
+                onReady.accept(session);
+            }
+        };
+    }
+
+    /**
+     * A factory that connects (and reconnects) an SSH session off the EDT via {@code connections}.
+     * Connection failures are surfaced by {@link ConnectionService}'s own injected error reporter;
+     * {@code onError} is forwarded so a caller can restore transient UI.
+     */
+    static SessionFactory ssh(SshSessionConfig cfg, ConnectionService connections) {
+        return new SessionFactory() {
+            @Override
+            public void create(Consumer<TerminalSession> onReady) {
+                create(onReady, () -> { });
+            }
+
+            @Override
+            public void create(Consumer<TerminalSession> onReady, Runnable onError) {
+                connections.connectAsync(cfg, onReady::accept, onError);
+            }
+        };
     }
 }
