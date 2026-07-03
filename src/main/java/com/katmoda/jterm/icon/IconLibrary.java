@@ -19,10 +19,10 @@
  */
 package com.katmoda.jterm.icon;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.formdev.flatlaf.extras.FlatSVGIcon;
 import com.katmoda.jterm.config.AppPaths;
+import com.katmoda.jterm.config.JsonStore;
 
 import javax.swing.Icon;
 import javax.swing.ImageIcon;
@@ -43,6 +43,8 @@ import java.util.TreeMap;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The pickable icon library: a bundled default set (the image resources under {@code /icons})
@@ -55,6 +57,8 @@ import java.util.zip.ZipFile;
  * icons (window/toolbar/tab glyphs) are excluded.</p>
  */
 public final class IconLibrary {
+
+    private static final Logger LOG = LoggerFactory.getLogger(IconLibrary.class);
 
     /** Extensions that can be shown in the picker. */
     private static final Set<String> PICKABLE_EXT = Set.of("svg", "png", "jpg", "jpeg", "gif");
@@ -194,6 +198,7 @@ public final class IconLibrary {
             save();
             return id;
         } catch (Exception e) {
+            LOG.warn("failed to import icon {}", fileName, e);
             return null;
         }
     }
@@ -226,8 +231,9 @@ public final class IconLibrary {
         }
         try {
             Files.deleteIfExists(dir.resolve(target.getFileName()));
-        } catch (Exception ignored) {
+        } catch (Exception e) {
             // Leave the orphaned file; the registration is what matters for the picker.
+            LOG.debug("could not delete imported icon file for {}", iconId, e);
         }
         imported.remove(target);
         cache.keySet().removeIf(key -> key.startsWith(iconId + "@"));
@@ -271,8 +277,9 @@ public final class IconLibrary {
                     }
                 }
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
             // Fall back below if anything about resource discovery goes wrong.
+            LOG.warn("failed to discover built-in icons; using fallback set", e);
         }
         if (map.isEmpty()) {
             for (String name : FALLBACK) {
@@ -295,25 +302,15 @@ public final class IconLibrary {
     }
 
     private void loadImported() {
-        if (!Files.isRegularFile(file)) {
-            return;
-        }
-        try {
-            ObjectMapper mapper = new ObjectMapper();
-            List<ImportedIcon> list = mapper.readValue(file.toFile(),
-                    mapper.getTypeFactory().constructCollectionType(ArrayList.class, ImportedIcon.class));
+        // Missing or malformed file → no imports (a malformed file is preserved aside by JsonStore).
+        List<ImportedIcon> list = JsonStore.load(file, new TypeReference<List<ImportedIcon>>() { });
+        if (list != null) {
             imported.addAll(list);
-        } catch (Exception ignored) {
         }
     }
 
     private void save() {
-        try {
-            new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
-                    .writeValue(file.toFile(), imported);
-            AppPaths.restrictToOwner(file);
-        } catch (Exception ignored) {
-        }
+        JsonStore.save(file, imported);
     }
 
     private static String builtinId(String name) {

@@ -19,15 +19,12 @@
  */
 package com.katmoda.jterm.session;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
 import com.katmoda.jterm.config.AppPaths;
 import com.katmoda.jterm.config.AppSettings;
+import com.katmoda.jterm.config.JsonStore;
 import com.katmoda.jterm.security.VaultKeys;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -36,9 +33,6 @@ import java.util.List;
  * The root is a {@link FolderNode} whose children form the recursive structure.
  */
 public final class SessionStore {
-
-    private static final ObjectMapper MAPPER = new ObjectMapper()
-            .enable(SerializationFeature.INDENT_OUTPUT);
 
     private final Path file;
     private FolderNode root;
@@ -53,45 +47,14 @@ public final class SessionStore {
     }
 
     private FolderNode load() {
-        if (Files.isRegularFile(file)) {
-            try {
-                return MAPPER.readValue(file.toFile(), FolderNode.class);
-            } catch (Exception ignored) {
-                // Corrupt file: preserve it before starting fresh, so the user's
-                // sessions aren't silently lost on the next save().
-                preserveUnreadable();
-            }
-        }
-        FolderNode fresh = new FolderNode("Sessions");
-        return fresh;
-    }
-
-    /**
-     * Renames the unreadable {@code sessions.json} aside as
-     * {@code sessions.json.unreadable-<n>}, choosing the lowest free counter so
-     * earlier backups are never overwritten. Best-effort: failures are swallowed
-     * so launch still proceeds.
-     */
-    private void preserveUnreadable() {
-        try {
-            for (int counter = 1; ; counter++) {
-                Path backup = file.resolveSibling(file.getFileName() + ".unreadable-" + counter);
-                if (!Files.exists(backup)) {
-                    Files.move(file, backup, StandardCopyOption.ATOMIC_MOVE);
-                    return;
-                }
-            }
-        } catch (Exception ignored) {
-            // Couldn't back it up (e.g. permissions); fall through and start fresh.
-        }
+        // A corrupt file is preserved aside by JsonStore (not overwritten on the next save), so the
+        // user's sessions aren't silently lost; we still fall back to a fresh tree so launch proceeds.
+        FolderNode loaded = JsonStore.load(file, FolderNode.class);
+        return loaded != null ? loaded : new FolderNode("Sessions");
     }
 
     public void save() {
-        try {
-            MAPPER.writeValue(file.toFile(), root);
-            AppPaths.restrictToOwner(file);
-        } catch (Exception ignored) {
-        }
+        JsonStore.save(file, root);
     }
 
     /**
@@ -218,6 +181,112 @@ public final class SessionStore {
             Integer folderValue = ancestors.get(i).getKeepAliveSeconds();
             if (folderValue != null) {
                 return Math.max(0, folderValue);
+            }
+        }
+        return Math.max(0, AppSettings.get().getDefaultKeepAliveSeconds());
+    }
+
+    // ---- folder-level resolution (for the new/edit dialogs' "(inherit: …)" hints) ----
+    //
+    // Two flavours per attribute, mirroring the session-level effective* cascade:
+    //   effective*(FolderNode)  — the folder's own value, then ancestors nearest → root, then the
+    //                             global default: what a blank session field placed in this folder
+    //                             would resolve to. A null folder resolves to just the global chain.
+    //   inherited*(FolderNode)  — excludes the folder's own value (ancestors → global): what a blank
+    //                             field on the folder *itself* would inherit.
+
+    /**
+     * The username a blank session field would resolve to if the session lived in {@code folder}:
+     * the folder's own default, then ancestors nearest → root, then the global default, then the OS
+     * user. Always returns a non-blank value. A {@code null} folder resolves against the global
+     * default → OS user.
+     */
+    public String effectiveUser(FolderNode folder) {
+        if (folder != null) {
+            String own = folder.getUser();
+            if (own != null && !own.isBlank()) {
+                return own;
+            }
+            return inheritedUser(folder); // ancestors → global → OS user
+        }
+        String global = AppSettings.get().getDefaultUsername();
+        return (global != null && !global.isBlank()) ? global : System.getProperty("user.name", "");
+    }
+
+    /**
+     * The username a blank field on {@code folder} would inherit: the nearest ancestor folder's
+     * value, then the global default, then the OS user. (Excludes the folder's own value.)
+     */
+    public String inheritedUser(FolderNode folder) {
+        List<FolderNode> ancestors = ancestorsOf(folder);
+        for (int i = ancestors.size() - 1; i >= 0; i--) {
+            String folderUser = ancestors.get(i).getUser();
+            if (folderUser != null && !folderUser.isBlank()) {
+                return folderUser;
+            }
+        }
+        String global = AppSettings.get().getDefaultUsername();
+        return (global != null && !global.isBlank()) ? global : System.getProperty("user.name", "");
+    }
+
+    /**
+     * The key path a blank session field would resolve to if the session lived in {@code folder}:
+     * the folder's own value, then ancestors nearest → root, then the global default. {@code null}
+     * if nothing is set. A {@code null} folder resolves against the global default only.
+     */
+    public String effectiveKeyPath(FolderNode folder) {
+        if (folder != null) {
+            String own = folder.getKeyPath();
+            if (own != null && !own.isBlank()) {
+                return own;
+            }
+            return inheritedKeyPath(folder); // ancestors → global
+        }
+        String global = AppSettings.get().getDefaultKeyPath();
+        return (global != null && !global.isBlank()) ? global : null;
+    }
+
+    /** The key path a blank field on {@code folder} would inherit (ancestors, then global). */
+    public String inheritedKeyPath(FolderNode folder) {
+        List<FolderNode> ancestors = ancestorsOf(folder);
+        for (int i = ancestors.size() - 1; i >= 0; i--) {
+            String folderKey = ancestors.get(i).getKeyPath();
+            if (folderKey != null && !folderKey.isBlank()) {
+                return folderKey;
+            }
+        }
+        String global = AppSettings.get().getDefaultKeyPath();
+        return (global != null && !global.isBlank()) ? global : null;
+    }
+
+    /**
+     * The keep-alive interval (seconds; {@code 0} = off) a blank/"inherit" session field would
+     * resolve to if the session lived in {@code folder}: the folder's own explicit value, then
+     * ancestors nearest → root, then the global default. A {@code null} folder resolves against the
+     * global default only.
+     */
+    public int effectiveKeepAliveSeconds(FolderNode folder) {
+        if (folder != null) {
+            Integer own = folder.getKeepAliveSeconds();
+            if (own != null) {
+                return Math.max(0, own);
+            }
+            return inheritedKeepAliveSeconds(folder); // ancestors → global
+        }
+        return Math.max(0, AppSettings.get().getDefaultKeepAliveSeconds());
+    }
+
+    /**
+     * The keep-alive interval (seconds; {@code 0} = off) an "inherit" setting on {@code folder}
+     * would resolve to: the nearest ancestor folder's explicit value, then the global default.
+     * (Excludes the folder's own value.)
+     */
+    public int inheritedKeepAliveSeconds(FolderNode folder) {
+        List<FolderNode> ancestors = ancestorsOf(folder);
+        for (int i = ancestors.size() - 1; i >= 0; i--) {
+            Integer value = ancestors.get(i).getKeepAliveSeconds();
+            if (value != null) {
+                return Math.max(0, value);
             }
         }
         return Math.max(0, AppSettings.get().getDefaultKeepAliveSeconds());

@@ -21,9 +21,12 @@ package com.katmoda.jterm.security;
 
 import com.katmoda.jterm.ui.security.MasterPasswordDialog;
 
+import javax.swing.JOptionPane;
 import java.awt.Component;
 import java.util.Arrays;
 import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Orchestrates unlocking the {@link CredentialVault}, transparently using the OS keyring to
@@ -38,6 +41,8 @@ import java.util.Optional;
  * </ol>
  */
 public final class VaultManager {
+
+    private static final Logger LOG = LoggerFactory.getLogger(VaultManager.class);
 
     private static final VaultManager INSTANCE = new VaultManager();
 
@@ -63,6 +68,16 @@ public final class VaultManager {
     public boolean ensureUnlocked(Component parent) {
         if (vault.isUnlocked()) {
             return true;
+        }
+        if (vault.isLoadFailed()) {
+            // The credentials file was corrupt and has been preserved aside; do NOT create a fresh
+            // vault over it — surface the problem so the user can recover the backup.
+            JOptionPane.showMessageDialog(parent,
+                    "The saved-password vault (credentials.json) could not be read and has been\n"
+                            + "set aside as credentials.json.unreadable-* in the config folder.\n\n"
+                            + "Saved SSH passwords are unavailable until this is resolved.",
+                    "Vault Unavailable", JOptionPane.ERROR_MESSAGE);
+            return false;
         }
         return vault.isInitialized() ? unlockExisting(parent) : createNew(parent);
     }
@@ -93,8 +108,9 @@ public final class VaultManager {
                     return true;
                 }
                 keyring.clear(); // stale entry — fall through to prompting
-            } catch (VaultException ignored) {
+            } catch (VaultException e) {
                 // fall through to prompting
+                LOG.debug("stored master password did not unlock the vault; will prompt", e);
             } finally {
                 Arrays.fill(master, '\0');
             }

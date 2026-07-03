@@ -20,11 +20,9 @@
 package com.katmoda.jterm.session;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
 import com.katmoda.jterm.config.AppPaths;
+import com.katmoda.jterm.config.JsonStore;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -85,26 +83,15 @@ public final class TunnelStore {
 
     /** Persist the current tunnels to {@code tunnels.json} (best-effort). */
     public void save() {
-        try {
-            new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
-                    .writeValue(file().toFile(), tunnels);
-            AppPaths.restrictToOwner(file());
-        } catch (Exception ignored) {
-            // Tunnels are a convenience; a failed write shouldn't break the app.
-        }
+        JsonStore.save(file(), tunnels);
     }
 
     private static TunnelStore load() {
         TunnelStore store = new TunnelStore();
-        Path file = file();
-        if (Files.isRegularFile(file)) {
-            try {
-                List<TunnelConfig> loaded = new ObjectMapper()
-                        .readValue(file.toFile(), new TypeReference<List<TunnelConfig>>() { });
-                store.tunnels.addAll(loaded);
-            } catch (Exception ignored) {
-                // Fall back to an empty list on a malformed file.
-            }
+        // Missing or malformed file → empty list (a malformed file is preserved aside by JsonStore).
+        List<TunnelConfig> loaded = JsonStore.load(file(), new TypeReference<List<TunnelConfig>>() { });
+        if (loaded != null) {
+            store.tunnels.addAll(loaded);
         }
         return store;
     }

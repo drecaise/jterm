@@ -20,11 +20,9 @@
 package com.katmoda.jterm.macro;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
 import com.katmoda.jterm.config.AppPaths;
+import com.katmoda.jterm.config.JsonStore;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -98,26 +96,15 @@ public final class MacroLibrary {
 
     /** Persist the current macros to {@code macros.json} (best-effort). */
     public void save() {
-        try {
-            new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
-                    .writeValue(file().toFile(), macros);
-            AppPaths.restrictToOwner(file());
-        } catch (Exception ignored) {
-            // Macros are a convenience; a failed write shouldn't break the app.
-        }
+        JsonStore.save(file(), macros);
     }
 
     private static MacroLibrary load() {
         MacroLibrary library = new MacroLibrary();
-        Path file = file();
-        if (Files.isRegularFile(file)) {
-            try {
-                List<Macro> loaded = new ObjectMapper()
-                        .readValue(file.toFile(), new TypeReference<List<Macro>>() { });
-                library.macros.addAll(loaded);
-            } catch (Exception ignored) {
-                // Fall back to an empty list on a malformed file.
-            }
+        // Missing or malformed file → empty list (a malformed file is preserved aside by JsonStore).
+        List<Macro> loaded = JsonStore.load(file(), new TypeReference<List<Macro>>() { });
+        if (loaded != null) {
+            library.macros.addAll(loaded);
         }
         return library;
     }

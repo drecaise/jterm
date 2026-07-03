@@ -20,12 +20,10 @@
 package com.katmoda.jterm.ui.theme;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
 import com.katmoda.jterm.config.AppPaths;
+import com.katmoda.jterm.config.JsonStore;
 
 import java.awt.Color;
-import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
@@ -157,26 +155,16 @@ public final class ThemeColorStore {
     }
 
     public void save() {
-        try {
-            new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
-                    .writeValue(file().toFile(), new Persisted(dark, light));
-            AppPaths.restrictToOwner(file());
-        } catch (Exception ignored) {
-            // Color customizations are a convenience; a failed write shouldn't break the app.
-        }
+        JsonStore.save(file(), new Persisted(dark, light));
     }
 
     private static ThemeColorStore load() {
         ThemeColorStore store = new ThemeColorStore();
-        Path file = file();
-        if (Files.isRegularFile(file)) {
-            try {
-                Persisted p = new ObjectMapper().readValue(file.toFile(), Persisted.class);
-                store.dark = nullIfEmpty(p.dark);
-                store.light = nullIfEmpty(p.light);
-            } catch (Exception ignored) {
-                // Fall back to the built-in presets on a malformed file.
-            }
+        // Missing or malformed file → built-in presets (a malformed file is preserved aside by JsonStore).
+        Persisted p = JsonStore.load(file(), Persisted.class);
+        if (p != null) {
+            store.dark = nullIfEmpty(p.dark);
+            store.light = nullIfEmpty(p.light);
         }
         return store;
     }

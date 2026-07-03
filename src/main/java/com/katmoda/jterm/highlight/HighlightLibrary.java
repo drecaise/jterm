@@ -20,9 +20,8 @@
 package com.katmoda.jterm.highlight;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
 import com.katmoda.jterm.config.AppPaths;
+import com.katmoda.jterm.config.JsonStore;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -99,26 +98,18 @@ public final class HighlightLibrary {
 
     /** Persist the current lists to {@code highlights.json} (best-effort). */
     public void save() {
-        try {
-            new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
-                    .writeValue(file().toFile(), new Persisted(new ArrayList<>(lists)));
-            AppPaths.restrictToOwner(file());
-        } catch (Exception ignored) {
-            // Highlights are a convenience; a failed write shouldn't break the app.
-        }
+        JsonStore.save(file(), new Persisted(new ArrayList<>(lists)));
     }
 
     private static HighlightLibrary load() {
         HighlightLibrary library = new HighlightLibrary();
         Path file = file();
         if (Files.isRegularFile(file)) {
-            try {
-                Persisted p = new ObjectMapper().readValue(file.toFile(), Persisted.class);
-                if (p.lists != null) {
-                    library.lists.addAll(p.lists);
-                }
-            } catch (Exception ignored) {
-                // Fall back to an empty set on a malformed file.
+            // Present but malformed → empty set (the file is preserved aside by JsonStore); we do not
+            // re-seed the Default list, matching the prior "empty on malformed file" behavior.
+            Persisted p = JsonStore.load(file, Persisted.class);
+            if (p != null && p.lists != null) {
+                library.lists.addAll(p.lists);
             }
             return library;
         }

@@ -9,11 +9,13 @@ package com.katmoda.jterm.security;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CredentialVaultTest {
@@ -58,5 +60,24 @@ class CredentialVaultTest {
         reopened.removePassword("session-1");
         assertFalse(reopened.hasPassword("session-1"));
         assertNull(reopened.getPassword("session-1"));
+    }
+
+    @Test
+    void corruptFileIsPreservedAndTreatedAsUnavailable() throws Exception {
+        Path file = dir.resolve("credentials.json");
+        Files.writeString(file, "{ this is not valid vault json");
+
+        CredentialVault vault = new CredentialVault(file);
+        // Corrupt ≠ missing: the vault reports a load failure and is not "initialized".
+        assertTrue(vault.isLoadFailed());
+        assertFalse(vault.isInitialized());
+
+        // The unreadable file was moved aside (data preserved), not left in place.
+        assertFalse(Files.exists(file));
+        assertTrue(Files.exists(dir.resolve("credentials.json.unreadable-1")));
+
+        // A fresh vault must never be written over the corrupt one.
+        assertThrows(VaultException.class, () -> vault.initialize("master".toCharArray()));
+        assertFalse(Files.exists(file));
     }
 }

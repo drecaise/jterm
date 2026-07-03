@@ -19,14 +19,12 @@
  */
 package com.katmoda.jterm.security;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
 import com.katmoda.jterm.config.AppPaths;
+import com.katmoda.jterm.config.JsonStore;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Base64;
@@ -46,7 +44,6 @@ import java.util.Map;
  */
 public final class CredentialVault {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
     private static final Base64.Encoder B64E = Base64.getEncoder();
     private static final Base64.Decoder B64D = Base64.getDecoder();
 
@@ -54,6 +51,7 @@ public final class CredentialVault {
 
     private VaultFile data;       // persisted structure (null until loaded)
     private SecretKey vaultKey;   // in-memory only, present once unlocked
+    private final boolean loadFailed; // true if credentials.json existed but was unreadable/corrupt
 
     public CredentialVault() {
         this(AppPaths.file("credentials.json"));
@@ -62,11 +60,25 @@ public final class CredentialVault {
     /** Test seam: back the vault with an explicit file instead of the real config path. */
     CredentialVault(Path file) {
         this.file = file;
-        this.data = load();
+        // Distinguish a missing file (fresh vault may be created) from a corrupt one (the vault must
+        // be treated as unavailable, never silently re-initialized over the — now preserved — file).
+        JsonStore.LoadResult<VaultFile> result = JsonStore.loadResult(file, VaultFile.class);
+        this.data = result.value();
+        this.loadFailed = result.isCorrupt();
     }
 
     public boolean isInitialized() {
         return data != null && data.wrappedKey != null;
+    }
+
+    /**
+     * Whether {@code credentials.json} existed but could not be read (corrupt/unparsable). Distinct
+     * from a missing file: the vault is unavailable rather than uninitialized, so callers must surface
+     * an error instead of creating a fresh vault (which would leave the user's saved passwords behind
+     * in the preserved {@code credentials.json.unreadable-*} backup). See {@link VaultManager}.
+     */
+    public boolean isLoadFailed() {
+        return loadFailed;
     }
 
     public boolean isUnlocked() {
@@ -75,6 +87,10 @@ public final class CredentialVault {
 
     /** Create a brand-new vault protected by {@code masterPassword}. */
     public void initialize(char[] masterPassword) throws VaultException {
+        if (loadFailed) {
+            // The existing credentials.json was unreadable; refuse to replace it with a fresh vault.
+            throw new VaultException("Credential vault file is unreadable; refusing to overwrite it");
+        }
         byte[] rawVaultKey = PassphraseBox.randomBytes(PassphraseBox.KEY_BITS / 8);
         try {
             SecretKey vk = new SecretKeySpec(rawVaultKey, "AES");
@@ -198,23 +214,8 @@ public final class CredentialVault {
 
     // ---- persistence ----
 
-    private VaultFile load() {
-        if (!Files.isRegularFile(file)) {
-            return null;
-        }
-        try {
-            return MAPPER.readValue(file.toFile(), VaultFile.class);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
     private void save() {
-        try {
-            MAPPER.writeValue(file.toFile(), data);
-            AppPaths.restrictToOwner(file);
-        } catch (Exception ignored) {
-        }
+        JsonStore.save(file, data);
     }
 
     // ---- persisted shapes ----

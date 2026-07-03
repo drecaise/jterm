@@ -19,8 +19,9 @@
  */
 package com.katmoda.jterm.keymap;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.katmoda.jterm.config.AppPaths;
+import com.katmoda.jterm.config.JsonStore;
 
 import javax.swing.KeyStroke;
 import java.nio.file.Files;
@@ -46,16 +47,12 @@ public final class Keymap {
     public static Keymap loadOrDefaults() {
         Keymap keymap = new Keymap();
         Path file = AppPaths.file("keymap.json");
-        Map<String, String> raw = new LinkedHashMap<>();
 
-        if (Files.isRegularFile(file)) {
-            try {
-                ObjectMapper mapper = new ObjectMapper();
-                raw = mapper.readValue(file.toFile(), mapper.getTypeFactory()
-                        .constructMapType(LinkedHashMap.class, String.class, String.class));
-            } catch (Exception ignored) {
-                // Fall back to defaults on a malformed file.
-            }
+        // Missing or malformed file → defaults (a malformed file is preserved aside by JsonStore).
+        Map<String, String> raw =
+                JsonStore.load(file, new TypeReference<LinkedHashMap<String, String>>() { });
+        if (raw == null) {
+            raw = new LinkedHashMap<>();
         }
 
         for (TermAction action : TermAction.values()) {
@@ -108,28 +105,19 @@ public final class Keymap {
 
     /** Persist the current bindings to {@code keymap.json}. */
     public void save() {
-        try {
-            Map<String, String> out = new LinkedHashMap<>();
-            for (TermAction action : TermAction.values()) {
-                KeyStroke ks = bindings.get(action);
-                out.put(action.id(), ks != null ? ks.toString() : action.defaultStroke());
-            }
-            Path file = AppPaths.file("keymap.json");
-            new ObjectMapper().writerWithDefaultPrettyPrinter().writeValue(file.toFile(), out);
-            AppPaths.restrictToOwner(file);
-        } catch (Exception ignored) {
+        Map<String, String> out = new LinkedHashMap<>();
+        for (TermAction action : TermAction.values()) {
+            KeyStroke ks = bindings.get(action);
+            out.put(action.id(), ks != null ? ks.toString() : action.defaultStroke());
         }
+        JsonStore.save(AppPaths.file("keymap.json"), out);
     }
 
     private void writeDefaults(Path file) {
-        try {
-            Map<String, String> out = new LinkedHashMap<>();
-            for (TermAction action : TermAction.values()) {
-                out.put(action.id(), action.defaultStroke());
-            }
-            new ObjectMapper().writerWithDefaultPrettyPrinter().writeValue(file.toFile(), out);
-            AppPaths.restrictToOwner(file);
-        } catch (Exception ignored) {
+        Map<String, String> out = new LinkedHashMap<>();
+        for (TermAction action : TermAction.values()) {
+            out.put(action.id(), action.defaultStroke());
         }
+        JsonStore.save(file, out);
     }
 }

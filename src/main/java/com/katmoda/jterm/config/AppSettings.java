@@ -20,13 +20,10 @@
 package com.katmoda.jterm.config;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
 import com.katmoda.jterm.highlight.HighlightLibrary;
 import com.katmoda.jterm.terminal.TerminalProfile;
 import com.katmoda.jterm.ui.theme.FontResources;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
@@ -330,80 +327,70 @@ public final class AppSettings {
 
     /** Persist the current values to {@code settings.json} (best-effort). */
     public void save() {
-        try {
-            new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
-                    .writeValue(file().toFile(), new Persisted(copyOnSelect, pasteOnRightClick,
-                            defaultTerminalType, defaultCharset, defaultFontFamily, defaultFontSize,
-                            globalHighlightListId, darkTheme, windowMaximized, sidebarWidth,
-                            windowX, windowY, windowWidth, windowHeight,
-                            defaultUsername, defaultTabColorHex, openTerminalOnStartup,
-                            defaultKeyPath, autoAcceptNewHostKeys, scrollbackLines));
-            AppPaths.restrictToOwner(file());
-        } catch (Exception ignored) {
-            // Settings are a convenience; a failed write shouldn't break the app.
-        }
+        JsonStore.save(file(), new Persisted(copyOnSelect, pasteOnRightClick,
+                defaultTerminalType, defaultCharset, defaultFontFamily, defaultFontSize,
+                globalHighlightListId, darkTheme, windowMaximized, sidebarWidth,
+                windowX, windowY, windowWidth, windowHeight,
+                defaultUsername, defaultTabColorHex, openTerminalOnStartup,
+                defaultKeyPath, autoAcceptNewHostKeys, scrollbackLines));
     }
 
     private static AppSettings load() {
         AppSettings settings = new AppSettings();
-        Path file = file();
-        if (Files.isRegularFile(file)) {
-            try {
-                Persisted p = new ObjectMapper().readValue(file.toFile(), Persisted.class);
-                settings.copyOnSelect = p.copyOnSelect;
-                settings.pasteOnRightClick = p.pasteOnRightClick;
-                if (p.autoAcceptNewHostKeys != null) {
-                    settings.autoAcceptNewHostKeys = p.autoAcceptNewHostKeys;
-                }
-                if (p.openTerminalOnStartup != null) {
-                    settings.openTerminalOnStartup = p.openTerminalOnStartup;
-                }
-                if (!isBlank(p.defaultTerminalType)) {
-                    settings.defaultTerminalType = p.defaultTerminalType;
-                }
-                if (!isBlank(p.defaultCharset)) {
-                    settings.defaultCharset = p.defaultCharset;
-                }
-                if (!isBlank(p.defaultFontFamily)) {
-                    settings.defaultFontFamily = p.defaultFontFamily;
-                }
-                if (p.defaultFontSize > 0) {
-                    settings.defaultFontSize = p.defaultFontSize;
-                }
-                settings.setGlobalHighlightListId(p.globalHighlightListId);
-                if (p.defaultUsername != null) {
-                    settings.defaultUsername = p.defaultUsername.trim();
-                }
-                settings.setDefaultTabColorHex(p.defaultTabColorHex);
-                if (p.defaultKeyPath != null) {
-                    settings.defaultKeyPath = p.defaultKeyPath.trim();
-                }
-                if (p.darkTheme != null) {
-                    settings.darkTheme = p.darkTheme;
-                }
-                if (p.windowMaximized != null) {
-                    settings.windowMaximized = p.windowMaximized;
-                }
-                if (p.sidebarWidth != null && p.sidebarWidth > 0) {
-                    settings.sidebarWidth = p.sidebarWidth;
-                }
-                if (p.windowX != null) {
-                    settings.windowX = p.windowX;
-                }
-                if (p.windowY != null) {
-                    settings.windowY = p.windowY;
-                }
-                if (p.windowWidth != null && p.windowWidth > 0) {
-                    settings.windowWidth = p.windowWidth;
-                }
-                if (p.windowHeight != null && p.windowHeight > 0) {
-                    settings.windowHeight = p.windowHeight;
-                }
-                if (p.scrollbackLines != null) {
-                    settings.setScrollbackLines(p.scrollbackLines);
-                }
-            } catch (Exception ignored) {
-                // Fall back to defaults on a malformed file.
+        // Missing or malformed file → defaults (a malformed file is preserved aside by JsonStore).
+        Persisted p = JsonStore.load(file(), Persisted.class);
+        if (p != null) {
+            settings.copyOnSelect = p.copyOnSelect;
+            settings.pasteOnRightClick = p.pasteOnRightClick;
+            if (p.autoAcceptNewHostKeys != null) {
+                settings.autoAcceptNewHostKeys = p.autoAcceptNewHostKeys;
+            }
+            if (p.openTerminalOnStartup != null) {
+                settings.openTerminalOnStartup = p.openTerminalOnStartup;
+            }
+            if (!isBlank(p.defaultTerminalType)) {
+                settings.defaultTerminalType = p.defaultTerminalType;
+            }
+            if (!isBlank(p.defaultCharset)) {
+                settings.defaultCharset = p.defaultCharset;
+            }
+            if (!isBlank(p.defaultFontFamily)) {
+                settings.defaultFontFamily = p.defaultFontFamily;
+            }
+            if (p.defaultFontSize > 0) {
+                settings.defaultFontSize = p.defaultFontSize;
+            }
+            settings.setGlobalHighlightListId(p.globalHighlightListId);
+            if (p.defaultUsername != null) {
+                settings.defaultUsername = p.defaultUsername.trim();
+            }
+            settings.setDefaultTabColorHex(p.defaultTabColorHex);
+            if (p.defaultKeyPath != null) {
+                settings.defaultKeyPath = p.defaultKeyPath.trim();
+            }
+            if (p.darkTheme != null) {
+                settings.darkTheme = p.darkTheme;
+            }
+            if (p.windowMaximized != null) {
+                settings.windowMaximized = p.windowMaximized;
+            }
+            if (p.sidebarWidth != null && p.sidebarWidth > 0) {
+                settings.sidebarWidth = p.sidebarWidth;
+            }
+            if (p.windowX != null) {
+                settings.windowX = p.windowX;
+            }
+            if (p.windowY != null) {
+                settings.windowY = p.windowY;
+            }
+            if (p.windowWidth != null && p.windowWidth > 0) {
+                settings.windowWidth = p.windowWidth;
+            }
+            if (p.windowHeight != null && p.windowHeight > 0) {
+                settings.windowHeight = p.windowHeight;
+            }
+            if (p.scrollbackLines != null) {
+                settings.setScrollbackLines(p.scrollbackLines);
             }
         }
         return settings;
