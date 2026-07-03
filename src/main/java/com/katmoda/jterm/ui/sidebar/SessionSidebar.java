@@ -19,17 +19,12 @@
  */
 package com.katmoda.jterm.ui.sidebar;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
 import com.formdev.flatlaf.extras.FlatSVGIcon;
-import com.katmoda.jterm.config.AppPaths;
 import com.katmoda.jterm.dnd.FolderTransferable;
 import com.katmoda.jterm.dnd.LocalTransferable;
 import com.katmoda.jterm.dnd.SessionTransferable;
 import com.katmoda.jterm.dnd.WslTransferable;
 import com.katmoda.jterm.icon.IconLibrary;
-import com.katmoda.jterm.config.AppSettings;
 import com.katmoda.jterm.highlight.HighlightLibrary;
 import com.katmoda.jterm.macro.Macro;
 import com.katmoda.jterm.macro.MacroLibrary;
@@ -37,16 +32,17 @@ import com.katmoda.jterm.session.EncryptedSessionExport;
 import com.katmoda.jterm.session.FolderNode;
 import com.katmoda.jterm.session.JumpHostConfig;
 import com.katmoda.jterm.session.SessionExport;
+import com.katmoda.jterm.session.SessionExportService;
 import com.katmoda.jterm.session.SessionNode;
 import com.katmoda.jterm.session.SessionStore;
 import com.katmoda.jterm.session.SshSessionConfig;
 import com.katmoda.jterm.session.WslDistroNode;
 import com.katmoda.jterm.terminal.wsl.WslDistributions;
 import com.katmoda.jterm.security.CredentialVault;
-import com.katmoda.jterm.security.PassphraseBox;
 import com.katmoda.jterm.security.VaultException;
 import com.katmoda.jterm.security.VaultKeys;
 import com.katmoda.jterm.security.VaultManager;
+import com.katmoda.jterm.ui.ErrorDialog;
 import com.katmoda.jterm.ui.security.MasterPasswordDialog;
 import com.katmoda.jterm.ui.component.HighlightListCombo;
 import com.katmoda.jterm.ui.component.JumpHostsForm;
@@ -103,9 +99,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Left sidebar: a recursive tree of saved folders/SSH sessions plus a fixed,
@@ -116,8 +113,7 @@ import java.util.function.Consumer;
  */
 public final class SessionSidebar extends JPanel {
 
-    private static final ObjectMapper EXPORT_MAPPER =
-            new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
+    private static final Logger LOG = LoggerFactory.getLogger(SessionSidebar.class);
 
     private final SessionStore store;
     private final JTree tree;
@@ -204,6 +200,7 @@ public final class SessionSidebar extends JPanel {
                                 .getTransferData(FolderTransferable.FOLDER_FLAVOR);
                         return canMoveFolder(dragged, target);
                     } catch (Exception e) {
+                        LOG.debug("folder drag validation failed", e);
                         return false;
                     }
                 }
@@ -226,6 +223,7 @@ public final class SessionSidebar extends JPanel {
                             .getTransferData(SessionTransferable.SESSION_FLAVOR);
                     return moveSession(dragged, target);
                 } catch (Exception e) {
+                    LOG.warn("sidebar drop failed", e);
                     return false;
                 }
             }
@@ -371,6 +369,7 @@ public final class SessionSidebar extends JPanel {
                 try {
                     distros = get();
                 } catch (Exception e) {
+                    LOG.debug("WSL distribution detection failed", e);
                     return;
                 }
                 wslFolder.getChildren().clear();
@@ -589,37 +588,28 @@ public final class SessionSidebar extends JPanel {
     }
 
     /**
-     * Writes {@code export} to {@code target}. If it carries saved passwords the whole document is
-     * encrypted under a user-supplied passphrase (AES-GCM via {@link PassphraseBox}); otherwise it
-     * is written as plaintext JSON, which holds no secrets. Either way the file is restricted to
-     * owner-only. Returns {@code false} if the user cancels the passphrase prompt or the write
-     * fails (in which case a message has already been shown).
+     * Writes {@code export} to {@code target} via {@link SessionExportService}. If it carries saved
+     * passwords the whole document is encrypted under a user-supplied passphrase (AES-GCM);
+     * otherwise it is written as plaintext JSON, which holds no secrets. Returns {@code false} if
+     * the user cancels the passphrase prompt or the write fails (a message has already been shown).
      */
     private boolean writeExport(Path target, SessionExport export) {
-        try {
-            if (export.credentials.isEmpty()) {
-                EXPORT_MAPPER.writeValue(target.toFile(), export);
-            } else {
-                char[] passphrase = MasterPasswordDialog.promptCreateExportPassphrase(this);
-                if (passphrase == null) {
-                    return false;
-                }
-                byte[] plaintext = EXPORT_MAPPER.writeValueAsBytes(export);
-                try {
-                    EncryptedSessionExport envelope =
-                            new EncryptedSessionExport(PassphraseBox.seal(passphrase, plaintext));
-                    EXPORT_MAPPER.writeValue(target.toFile(), envelope);
-                } finally {
-                    Arrays.fill(plaintext, (byte) 0);
-                    Arrays.fill(passphrase, '\0');
-                    export.credentials.clear(); // drop the plaintext-password references
-                }
+        char[] passphrase = null;
+        if (!export.credentials.isEmpty()) {
+            passphrase = MasterPasswordDialog.promptCreateExportPassphrase(this);
+            if (passphrase == null) {
+                return false;
             }
-            AppPaths.restrictToOwner(target);
+        }
+        try {
+            if (passphrase == null) {
+                SessionExportService.writePlain(target, export);
+            } else {
+                SessionExportService.writeEncrypted(target, export, passphrase);
+            }
             return true;
         } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Export failed:\n" + e.getMessage(),
-                    "Export Sessions", JOptionPane.ERROR_MESSAGE);
+            ErrorDialog.show(this, "Export Sessions", "Export failed:", e);
             return false;
         }
     }
@@ -639,27 +629,12 @@ public final class SessionSidebar extends JPanel {
             return false;
         }
         try {
-            collectCredentials(folder, vault, out);
+            SessionExportService.collectCredentials(folder, vault, out);
         } catch (VaultException e) {
-            JOptionPane.showMessageDialog(this, "Could not read saved credentials:\n" + e.getMessage(),
-                    "Export Sessions", JOptionPane.ERROR_MESSAGE);
+            ErrorDialog.show(this, "Export Sessions", "Could not read saved credentials:", e);
             return false;
         }
         return true;
-    }
-
-    private void collectCredentials(FolderNode folder, CredentialVault vault, Map<String, String> out)
-            throws VaultException {
-        for (SessionNode child : folder.getChildren()) {
-            if (child instanceof FolderNode sub) {
-                collectCredentials(sub, vault, out);
-            } else if (child instanceof SshSessionConfig ssh && ssh.isSavePassword()) {
-                String password = vault.getPassword(ssh.getId());
-                if (password != null) {
-                    out.put(ssh.getId(), password);
-                }
-            }
-        }
     }
 
     /** Prompts for and verifies the master password, unlocking the vault. */
@@ -707,7 +682,7 @@ public final class SessionSidebar extends JPanel {
         // Reassign session ids so imports never collide with existing vault entries, remapping
         // any imported credentials onto the new ids.
         Map<String, String> remapped = new LinkedHashMap<>();
-        reassignIds(export.folder, export.credentials, remapped);
+        SessionExportService.reassignIds(export.folder, export.credentials, remapped);
         if (!remapped.isEmpty()) {
             importCredentials(remapped);
         }
@@ -734,61 +709,33 @@ public final class SessionSidebar extends JPanel {
      */
     private SessionExport readExport(File file) {
         try {
-            JsonNode root = EXPORT_MAPPER.readTree(file);
-            if (root != null && root.hasNonNull("format")
-                    && EncryptedSessionExport.FORMAT.equals(root.get("format").asText())) {
+            if (SessionExportService.isEncrypted(file)) {
                 return readEncryptedExport(file);
             }
-            return EXPORT_MAPPER.treeToValue(root, SessionExport.class);
+            return SessionExportService.readPlain(file);
         } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Import failed:\n" + e.getMessage(),
-                    "Import Sessions", JOptionPane.ERROR_MESSAGE);
+            ErrorDialog.show(this, "Import Sessions", "Import failed:", e);
             return null;
         }
     }
 
     /** Prompts for the passphrase and decrypts an encrypted export, retrying on a wrong passphrase. */
     private SessionExport readEncryptedExport(File file) throws Exception {
-        EncryptedSessionExport envelope = EXPORT_MAPPER.readValue(file, EncryptedSessionExport.class);
-        if (envelope.box == null) {
-            throw new IllegalArgumentException("Encrypted export is missing its payload.");
-        }
+        EncryptedSessionExport envelope = SessionExportService.readEnvelope(file);
         String error = null;
         while (true) {
             char[] passphrase = MasterPasswordDialog.promptExportPassphrase(this, error);
             if (passphrase == null) {
                 return null; // cancelled
             }
-            byte[] plaintext = null;
             try {
-                plaintext = PassphraseBox.open(passphrase, envelope.box);
-                return EXPORT_MAPPER.readValue(plaintext, SessionExport.class);
-            } catch (javax.crypto.AEADBadTagException badTag) {
+                SessionExport export = SessionExportService.openEnvelope(envelope, passphrase);
+                if (export != null) {
+                    return export;
+                }
                 error = "Incorrect passphrase — try again.";
             } finally {
                 Arrays.fill(passphrase, '\0');
-                if (plaintext != null) {
-                    Arrays.fill(plaintext, (byte) 0);
-                }
-            }
-        }
-    }
-
-    private void reassignIds(FolderNode folder, Map<String, String> oldCreds, Map<String, String> newCreds) {
-        // Give the folder a fresh id too, so an imported folder never inherits an existing folder's
-        // saved default password / key passphrase (those vault entries are keyed by folder id).
-        folder.setId(UUID.randomUUID().toString());
-        for (SessionNode child : folder.getChildren()) {
-            if (child instanceof FolderNode sub) {
-                reassignIds(sub, oldCreds, newCreds);
-            } else if (child instanceof SshSessionConfig ssh) {
-                String oldId = ssh.getId();
-                String newId = UUID.randomUUID().toString();
-                ssh.setId(newId);
-                String password = (oldCreds != null) ? oldCreds.get(oldId) : null;
-                if (password != null) {
-                    newCreds.put(newId, password);
-                }
             }
         }
     }
@@ -797,17 +744,7 @@ public final class SessionSidebar extends JPanel {
         if (!VaultManager.get().ensureUnlocked(this)) {
             return; // sessions still import; their passwords just won't be stored
         }
-        CredentialVault vault = VaultManager.get().vault();
-        for (Map.Entry<String, String> entry : credentials.entrySet()) {
-            char[] password = entry.getValue().toCharArray();
-            try {
-                vault.setPassword(entry.getKey(), password);
-            } catch (VaultException ignored) {
-                // Skip a single bad entry rather than abort the whole import.
-            } finally {
-                Arrays.fill(password, '\0');
-            }
-        }
+        SessionExportService.storeCredentials(VaultManager.get().vault(), credentials);
     }
 
     /** Sanitises a folder name for use as a default file name. */
@@ -1184,15 +1121,15 @@ public final class SessionSidebar extends JPanel {
         // folder. Blank inherits from an ancestor folder, then the global default.
         JTextField user = new JTextField(folder.getUser() != null ? folder.getUser() : "");
         user.putClientProperty("JTextField.placeholderText",
-                "(inherit: " + inheritedUser(folder) + ")");
+                "(inherit: " + store.inheritedUser(folder) + ")");
         TabColorPicker tabColor = new TabColorPicker(folder.getTabColorHex(), "Inherit");
 
         // Per-folder default key path + secrets (key passphrase and default password), inherited by
         // sessions beneath this folder. Blank inherits; blank secret fields keep any saved value.
         KeyFileField keyFile = new KeyFileField(folder.getKeyPath());
-        keyFile.setPlaceholder("(inherit: " + describeKeyPath(inheritedFolderKeyPath(folder)) + ")");
+        keyFile.setPlaceholder("(inherit: " + describeKeyPath(store.inheritedKeyPath(folder)) + ")");
         KeepAliveField keepAlive =
-                new KeepAliveField(folder.getKeepAliveSeconds(), inheritedKeepAlive(folder));
+                new KeepAliveField(folder.getKeepAliveSeconds(), store.inheritedKeepAliveSeconds(folder));
         JPasswordField keyPassphrase = new JPasswordField();
         keyPassphrase.putClientProperty("JTextField.placeholderText",
                 VaultManager.get().vault().hasPassword(VaultKeys.folderKeyPassphrase(folder.getId()))
@@ -1234,22 +1171,6 @@ public final class SessionSidebar extends JPanel {
         applyVaultSecret(VaultKeys.folderKeyPassphrase(folder.getId()), keyPassphrase.getPassword());
         applyVaultSecret(VaultKeys.folderPassword(folder.getId()), defaultPassword.getPassword());
         return true;
-    }
-
-    /**
-     * The username a blank field on {@code folder} would inherit: the nearest ancestor folder's
-     * value, then the global default, then the OS user. (Excludes the folder's own value.)
-     */
-    private String inheritedUser(FolderNode folder) {
-        List<FolderNode> ancestors = store.ancestorsOf(folder);
-        for (int i = ancestors.size() - 1; i >= 0; i--) {
-            String folderUser = ancestors.get(i).getUser();
-            if (folderUser != null && !folderUser.isBlank()) {
-                return folderUser;
-            }
-        }
-        String global = AppSettings.get().getDefaultUsername();
-        return (global != null && !global.isBlank()) ? global : System.getProperty("user.name", "");
     }
 
     /**
@@ -1332,7 +1253,7 @@ public final class SessionSidebar extends JPanel {
         // The Inherit row shows what it resolves to in the chosen folder (refreshed below when the
         // folder selection changes).
         KeepAliveField keepAlive = new KeepAliveField(cfg.getKeepAliveSeconds(),
-                inheritedKeepAliveInFolder(initialFolder));
+                store.effectiveKeepAliveSeconds(initialFolder));
 
         KeyFileField keyFile = new KeyFileField(cfg.getKeyPath());
         // Placeholder set by refreshInheritedHints below (resolved against the chosen folder).
@@ -1375,10 +1296,10 @@ public final class SessionSidebar extends JPanel {
             FolderOption sel = (FolderOption) folderCombo.getSelectedItem();
             FolderNode dest = sel != null ? sel.folder() : initialFolder;
             user.putClientProperty("JTextField.placeholderText",
-                    "(inherit: " + inheritedUserInFolder(dest) + ")");
+                    "(inherit: " + store.effectiveUser(dest) + ")");
             user.repaint();
-            keyFile.setPlaceholder("(inherit: " + describeKeyPath(inheritedKeyPathInFolder(dest)) + ")");
-            keepAlive.setInheritedHint(inheritedKeepAliveInFolder(dest));
+            keyFile.setPlaceholder("(inherit: " + describeKeyPath(store.effectiveKeyPath(dest)) + ")");
+            keepAlive.setInheritedHint(store.effectiveKeepAliveSeconds(dest));
         };
         folderCombo.addActionListener(a -> refreshInheritedHints.run());
         refreshInheritedHints.run();
@@ -1538,9 +1459,7 @@ public final class SessionSidebar extends JPanel {
                     vaults.vault().setPassword(id, entered);
                     saved = true;
                 } catch (VaultException e) {
-                    JOptionPane.showMessageDialog(this,
-                            "Could not save the password:\n" + e.getMessage(),
-                            "jterm", JOptionPane.ERROR_MESSAGE);
+                    ErrorDialog.show(this, "jterm", "Could not save the password:", e);
                 }
             }
         } else if (passwordAuth) {
@@ -1563,92 +1482,10 @@ public final class SessionSidebar extends JPanel {
             try {
                 VaultManager.get().vault().setPassword(vaultKey, entered);
             } catch (VaultException e) {
-                JOptionPane.showMessageDialog(this,
-                        "Could not save the secret:\n" + e.getMessage(),
-                        "jterm", JOptionPane.ERROR_MESSAGE);
+                ErrorDialog.show(this, "jterm", "Could not save the secret:", e);
             }
         }
         java.util.Arrays.fill(entered, '\0');
-    }
-
-    /**
-     * The username a blank session field would inherit if the session lived in {@code folder}: the
-     * folder's own default, then ancestor folders nearest → root, then the global default, then the
-     * OS user. Used for the new/duplicate/edit dialog, where the session may not be in the tree yet
-     * (so we resolve against the chosen folder rather than the session's tree position).
-     */
-    private String inheritedUserInFolder(FolderNode folder) {
-        if (folder != null) {
-            String own = folder.getUser();
-            if (own != null && !own.isBlank()) {
-                return own;
-            }
-            return inheritedUser(folder); // ancestors → global → OS user
-        }
-        String global = AppSettings.get().getDefaultUsername();
-        return (global != null && !global.isBlank()) ? global : System.getProperty("user.name", "");
-    }
-
-    /**
-     * The key path a blank session field would inherit if the session lived in {@code folder}: the
-     * folder's own value, then ancestors nearest → root, then the global default. {@code null} if
-     * nothing is set. (Companion to {@link #inheritedUserInFolder}.)
-     */
-    private String inheritedKeyPathInFolder(FolderNode folder) {
-        if (folder != null) {
-            String own = folder.getKeyPath();
-            if (own != null && !own.isBlank()) {
-                return own;
-            }
-            return inheritedFolderKeyPath(folder); // ancestors → global
-        }
-        String global = AppSettings.get().getDefaultKeyPath();
-        return (global != null && !global.isBlank()) ? global : null;
-    }
-
-    /** The key path a blank field on {@code folder} would inherit (ancestors, then global). */
-    private String inheritedFolderKeyPath(FolderNode folder) {
-        List<FolderNode> ancestors = store.ancestorsOf(folder);
-        for (int i = ancestors.size() - 1; i >= 0; i--) {
-            String folderKey = ancestors.get(i).getKeyPath();
-            if (folderKey != null && !folderKey.isBlank()) {
-                return folderKey;
-            }
-        }
-        String global = AppSettings.get().getDefaultKeyPath();
-        return (global != null && !global.isBlank()) ? global : null;
-    }
-
-    /**
-     * The keep-alive interval (seconds; {@code 0} = off) an "inherit" setting on {@code folder}
-     * would resolve to: the nearest ancestor folder's explicit value, then the global default.
-     * (Excludes the folder's own value — companion to {@link #inheritedUser(FolderNode)}.)
-     */
-    private int inheritedKeepAlive(FolderNode folder) {
-        List<FolderNode> ancestors = store.ancestorsOf(folder);
-        for (int i = ancestors.size() - 1; i >= 0; i--) {
-            Integer value = ancestors.get(i).getKeepAliveSeconds();
-            if (value != null) {
-                return Math.max(0, value);
-            }
-        }
-        return Math.max(0, AppSettings.get().getDefaultKeepAliveSeconds());
-    }
-
-    /**
-     * The keep-alive interval an "inherit" session field would resolve to if the session lived in
-     * {@code folder}: the folder's own explicit value, then ancestors nearest → root, then the
-     * global default. (Companion to {@link #inheritedKeyPathInFolder}.)
-     */
-    private int inheritedKeepAliveInFolder(FolderNode folder) {
-        if (folder != null) {
-            Integer own = folder.getKeepAliveSeconds();
-            if (own != null) {
-                return Math.max(0, own);
-            }
-            return inheritedKeepAlive(folder); // ancestors → global
-        }
-        return Math.max(0, AppSettings.get().getDefaultKeepAliveSeconds());
     }
 
     private static String describeKeyPath(String keyPath) {
