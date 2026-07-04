@@ -1,0 +1,39 @@
+flowchart TB
+    subgraph edt["Swing EDT"]
+        cr[CredentialResolver]
+        vm[VaultManager]
+        pd[MasterPasswordDialog]
+    end
+
+    subgraph crypto["security"]
+        cv[CredentialVault<br/>AES-GCM]
+        vk[VaultKeys<br/>PBKDF2]
+        mpk[MasterPasswordKeyring]
+    end
+
+    subgraph persist["config / persistence"]
+        js[JsonStore<br/>atomic writes]
+        ss[SessionStore]
+    end
+
+    kr[/OS keyring<br/>secret-tool / security / JNA/]
+    fs[(credentials.json<br/>sessions.json)]
+
+    cr --> vm
+    vm --> cv
+    vm --> mpk
+    vm -.on first unlock.-> pd
+    cv --> vk
+    mpk --> kr
+    cv --> js
+    ss --> js
+    js --> fs
+
+    classDef sec fill:#ef5350,stroke:#b71c1c,color:#ffffff
+    classDef persist fill:#8d6e63,stroke:#4e342e,color:#ffffff
+    classDef ui fill:#42a5f5,stroke:#1565c0,color:#ffffff
+    classDef ext fill:#6c757d,stroke:#495057,color:#ffffff
+    class cr,vm,cv,vk,mpk sec
+    class js,ss persist
+    class pd ui
+    class kr,fs ext

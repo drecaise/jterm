@@ -95,6 +95,40 @@ filename, what it should show, and which page uses it.
 Capture tips: use the **dark** theme, a ~1200×800 window, and crop to the relevant
 window/dialog. Save as **PNG**.
 
+## Architecture diagrams (C4 via Structurizr DSL)
+
+The `architecture/` section documents jterm's internal design. Diagrams are authored in
+[Structurizr DSL](https://structurizr.com/dsl) at `docs/architecture/model/workspace.dsl`
+and exported to Mermaid under `docs/architecture/model/generated/*.mmd`. Markdown pages
+include the generated files via `pymdownx.snippets`.
+
+**Install the Structurizr CLI once:**
+
+```bash
+curl -sSL -o /tmp/structurizr-cli.zip \
+  https://github.com/structurizr/cli/releases/latest/download/structurizr-cli.zip
+mkdir -p ~/.structurizr-cli && unzip /tmp/structurizr-cli.zip -d ~/.structurizr-cli
+sudo ln -sf ~/.structurizr-cli/structurizr.sh /usr/local/bin/structurizr-cli
+```
+
+The CLI needs a JDK 17+ on PATH. The Java toolchain from the app build is fine.
+
+**Regenerate the Mermaid views after editing `workspace.dsl`:**
+
+```bash
+cd docs/architecture/model
+make export      # writes generated/*.mmd
+make check       # regenerate and fail if committed output is stale (what CI runs)
+```
+
+CI runs `make check` from `docs/architecture/model` on every docs build. If the DSL
+changed but the committed `.mmd` files weren't regenerated, the workflow fails.
+
+!!! note "Don't hand-edit `.mmd` files"
+    The Mermaid files under `generated/` are overwritten by `make export`. Style tweaks
+    beyond what the DSL's `styles` block controls belong in the DSL; changes made
+    directly in `.mmd` files will be lost on the next regeneration.
+
 ## What's excluded from the published site
 
 The `mkdocs-exclude` plugin (configured under `plugins.exclude.glob` in `mkdocs.yml`) keeps

@@ -1,0 +1,26 @@
+flowchart TB
+    user([User])
+
+    subgraph jterm["jterm system"]
+        jvm[jterm JVM process<br/>Java 21 / Swing<br/><br/>Hosts every component;<br/>single OS process.]
+    end
+
+    sshd[Remote SSH daemon<br/>TCP 22]
+    agent[SSH agent<br/>Unix socket / named pipe / Pageant]
+    keyring[OS keyring<br/>secret-tool / security / Credential Store]
+    shell[Local shell<br/>pty4j child process]
+    fs[(Local file system<br/>~/.config/jterm/*.json)]
+
+    user --> jvm
+    jvm -->|"MINA SSHD channel"| sshd
+    jvm -->|"AbstractAgentProxy protocol"| agent
+    jvm -->|"CLI subprocess / JNA"| keyring
+    jvm -->|"pty4j PtyProcess"| shell
+    jvm -->|"Atomic JsonStore writes"| fs
+
+    classDef container fill:#1e88e5,stroke:#0d47a1,color:#ffffff
+    classDef ext fill:#6c757d,stroke:#495057,color:#ffffff
+    classDef person fill:#3949ab,stroke:#1a237e,color:#ffffff
+    class jvm container
+    class sshd,agent,keyring,shell,fs ext
+    class user person

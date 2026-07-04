@@ -8,6 +8,10 @@ light/dark theming that follows the host OS style.
 📖 **[User Manual](https://drecaise.github.io/jterm/)** — task-oriented guide to using the
 application. This README is the quick reference for building and installing.
 
+🏗️ **[Architecture](https://drecaise.github.io/jterm/architecture/)** — C4-model
+overview of the internals for contributors and reviewers, plus dated Architecture
+Decision Records.
+
 ## Features
 
 - **Tabs** and a **uniform pane grid** — split any tab into up to 3 columns × 3 rows

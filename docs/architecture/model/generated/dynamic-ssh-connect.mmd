@@ -1,0 +1,29 @@
+sequenceDiagram
+    autonumber
+    participant U as User
+    participant TP as TerminalPane<br/>(EDT)
+    participant SF as SessionFactory<br/>(EDT)
+    participant CS as ConnectionService<br/>(EDT)
+    participant CR as CredentialResolver<br/>(EDT)
+    participant VM as VaultManager<br/>(EDT)
+    participant W as SwingWorker<br/>(off-EDT)
+    participant SS as SshSession
+    participant AS as AgentSupport
+    participant AG as ssh-agent
+    participant RH as Remote sshd
+
+    U->>TP: Drop SSH session on pane
+    TP->>SF: createSshAsync(config)
+    SF->>CS: connectAsync(config)
+    CS->>CR: resolveCredentials(config)
+    CR->>VM: unlock() if needed
+    VM-->>CR: password (or empty)
+    CS->>W: submit connect task
+    W->>SS: open ClientSession
+    SS->>AS: install agent identities
+    AS->>AG: read identities (blocking I/O)
+    AG-->>AS: identities
+    SS->>RH: authenticate + open ChannelShell
+    RH-->>SS: shell ready
+    W-->>CS: SshSession (via done() on EDT)
+    CS->>TP: setTtyConnector(SshTtyConnector)

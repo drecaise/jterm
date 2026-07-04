@@ -47,6 +47,8 @@ plugins:
         - "SCREENSHOTS.md"
         - "maintaining-the-docs.md"
         - "img/README.md"
+        - "architecture/model/*"
+        - "architecture/model/**"
 
 markdown_extensions:
   - admonition
@@ -57,10 +59,17 @@ markdown_extensions:
       permalink: true
   - pymdownx.highlight:
       anchor_linenums: true
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
   - pymdownx.keys
+  - pymdownx.snippets:
+      base_path: [docs]
+      check_paths: true
 
 nav:
   - Home: index.md
@@ -77,4 +86,21 @@ nav:
   - Preferences: preferences.md
   - Reconnect & save output: reconnect-and-output.md
   - Configuration files: config-files.md
+  - Architecture:
+    - Overview: architecture/index.md
+    - System context: architecture/context.md
+    - Containers: architecture/containers.md
+    - Components (UI): architecture/components-ui.md
+    - Components (Terminal): architecture/components-terminal.md
+    - Components (Security): architecture/components-security.md
+    - Runtime views: architecture/runtime-views.md
+    - Deployment: architecture/deployment.md
+    - Decision records:
+      - Index: architecture/adr/index.md
+      - 0001 Uniform R x C pane grid: architecture/adr/0001-uniform-grid-vs-split-tree.md
+      - 0002 Custom JDK ssh-agent factory: architecture/adr/0002-custom-jdk-agent-factory.md
+      - 0003 No dbus-java on Linux: architecture/adr/0003-exclude-java-keyring-linux-dbus.md
+      - 0004 TOFU host-key verification: architecture/adr/0004-tofu-host-key-verification.md
+      - 0005 Per-OS keyring CLIs: architecture/adr/0005-per-os-keyring-clis.md
+      - 0006 C4 via Structurizr + Mermaid: architecture/adr/0006-c4-with-structurizr-and-mermaid.md
   - Troubleshooting: troubleshooting.md

@@ -1,0 +1,23 @@
+sequenceDiagram
+    autonumber
+    participant U as User
+    participant W as JediTermWidget<br/>(focused pane)
+    participant BC as BroadcastingTtyConnector<br/>(focused)
+    participant TS as TerminalSession<br/>(focused)
+    participant Bus as BroadcastBus
+    participant BC2 as BroadcastingTtyConnector<br/>(sibling A)
+    participant TS2 as TerminalSession<br/>(sibling A)
+    participant BC3 as BroadcastingTtyConnector<br/>(sibling B)
+    participant TS3 as TerminalSession<br/>(sibling B)
+
+    U->>W: Key press
+    W->>BC: write(bytes)
+    BC->>TS: write(bytes)  %% always
+    alt broadcast enabled
+        BC->>Bus: fanOut(bytes, self)
+        Bus->>BC2: deliver(bytes)
+        BC2->>TS2: write(bytes)
+        Bus->>BC3: deliver(bytes)
+        BC3->>TS3: write(bytes)
+        Note over Bus: sender skipped to avoid echo loop
+    end

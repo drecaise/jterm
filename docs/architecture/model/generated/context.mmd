@@ -1,0 +1,22 @@
+flowchart LR
+    user([User])
+    jterm[jterm<br/>Java 21 Swing app]
+    sshd[Remote SSH daemon]
+    agent[SSH agent<br/>Unix socket / pipe / Pageant]
+    keyring[OS keyring<br/>secret-tool / security / Credential Store]
+    shell[Local shell<br/>bash / powershell / wsl.exe]
+    fs[(Local file system<br/>~/.config/jterm)]
+
+    user -->|"Opens tabs, splits panes, launches sessions"| jterm
+    jterm -->|"SSH shell + SFTP + tunnels"| sshd
+    jterm -->|"Public-key auth via identities"| agent
+    jterm -->|"Stores / retrieves master password"| keyring
+    jterm -->|"Runs local shells / WSL"| shell
+    jterm -->|"Reads / writes JSON config"| fs
+
+    classDef ext fill:#6c757d,stroke:#495057,color:#ffffff
+    classDef sys fill:#1e88e5,stroke:#0d47a1,color:#ffffff
+    classDef person fill:#3949ab,stroke:#1a237e,color:#ffffff
+    class user person
+    class jterm sys
+    class sshd,agent,keyring,shell,fs ext

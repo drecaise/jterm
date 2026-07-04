@@ -1,0 +1,24 @@
+flowchart TB
+    subgraph host["Linux workstation"]
+        subgraph flatpak["Flatpak sandbox (org.freedesktop.Platform runtime)"]
+            jvm[jterm JVM process<br/>Java 21 + JediTerm + MINA SSHD]
+        end
+        subgraph libsecret["libsecret / secret-tool"]
+            kr[Keyring backend]
+        end
+        subgraph agentEnv["ssh-agent"]
+            sock[(/run/user/UID/openssh_agent<br/>Unix socket)]
+        end
+        subgraph cfg["~/.config/jterm/"]
+            files[(sessions.json<br/>credentials.json<br/>icons.json<br/>keymap.json<br/>settings.json)]
+        end
+    end
+
+    jvm -->|subprocess| kr
+    jvm -->|JDK Unix-domain socket| sock
+    jvm -->|atomic writes| files
+
+    classDef container fill:#1e88e5,stroke:#0d47a1,color:#ffffff
+    classDef ext fill:#6c757d,stroke:#495057,color:#ffffff
+    class jvm container
+    class kr,sock,files ext

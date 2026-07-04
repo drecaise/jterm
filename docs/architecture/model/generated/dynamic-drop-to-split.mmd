@@ -1,0 +1,24 @@
+sequenceDiagram
+    autonumber
+    participant U as User
+    participant SB as SessionSidebar
+    participant TP as TerminalPane
+    participant DR as DropRegion
+    participant DH as SessionDropHandler
+    participant PG as PaneGrid
+    participant SF as SessionFactory
+    participant CS as ConnectionService
+    participant NP as new TerminalPane
+
+    U->>SB: Drag SSH session
+    SB->>TP: dragEnter(Transferable)
+    TP->>DR: classify(y / height)
+    DR-->>TP: TOP (new column) or BOTTOM (new row)
+    U->>TP: drop
+    TP->>DH: importData(Transferable, region)
+    DH->>PG: split(row|col, targetCell)
+    PG->>NP: install empty pane in new cell
+    DH->>SF: createSshAsync(config)
+    SF->>CS: connect (off-EDT worker)
+    CS-->>DH: SshSession (on EDT)
+    DH->>NP: setTtyConnector(session.connector)
