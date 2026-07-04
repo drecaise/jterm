@@ -1,28 +1,35 @@
-flowchart TB
-    subgraph host["Windows workstation"]
-        subgraph install["MSI-installed jterm (jpackage)"]
-            jvm[jterm JVM process]
-        end
-        subgraph creds["Windows Credential Store"]
-            kr[java-keyring JNA backend]
-        end
-        subgraph openssh["OpenSSH agent"]
-            pipe[/\\.\pipe\openssh-ssh-agent<br/>Named pipe/]
-        end
-        subgraph pageant["PuTTY Pageant"]
-            pw[[Pageant window + WM_COPYDATA]]
-        end
-        subgraph cfg["%APPDATA%\\jterm\\"]
-            files[(sessions.json<br/>credentials.json<br/>...)]
-        end
+graph TB
+  linkStyle default fill:#ffffff
+
+  subgraph diagram ["jterm - Deployment - Windows"]
+    style diagram fill:#ffffff,stroke:#ffffff
+
+    subgraph 110 [Windows workstation]
+      style 110 fill:#ffffff,stroke:#888888,color:#000000
+
+      subgraph 111 [MSI-installed jterm]
+        style 111 fill:#ffffff,stroke:#888888,color:#000000
+
+        112("<div style='font-weight: bold'>jterm JVM process</div><div style='font-size: 70%; margin-top: 0px'>[Container: Java 21 / Swing]</div><div style='font-size: 80%; margin-top:10px'>Java 21 Swing app; single OS<br />process hosting every<br />component.</div>")
+        style 112 fill:#1e88e5,stroke:#155fa0,color:#ffffff
+      end
+
+      subgraph 113 [Windows Credential Store]
+        style 113 fill:#ffffff,stroke:#888888,color:#000000
+
+        114("<div style='font-weight: bold'>OS keyring</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>secret-tool (Linux), security<br />(macOS) or Windows Credential<br />Store.</div>")
+        style 114 fill:#6c757d,stroke:#4b5157,color:#ffffff
+      end
+
+      subgraph 116 [OpenSSH agent + Pageant]
+        style 116 fill:#ffffff,stroke:#888888,color:#000000
+
+        117("<div style='font-weight: bold'>SSH agent</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Unix-domain socket, OpenSSH<br />named pipe or PuTTY Pageant.</div>")
+        style 117 fill:#6c757d,stroke:#4b5157,color:#ffffff
+      end
+
     end
 
-    jvm -->|JNA| kr
-    jvm -->|WindowsPipeAgentProxy| pipe
-    jvm -->|"PageantAgentProxy<br/>(fallback / composite)"| pw
-    jvm -->|atomic writes| files
-
-    classDef container fill:#1e88e5,stroke:#0d47a1,color:#ffffff
-    classDef ext fill:#6c757d,stroke:#495057,color:#ffffff
-    class jvm container
-    class kr,pipe,pw,files ext
+    112-. "<div>Reads and writes native OS<br />secret</div><div style='font-size: 70%'></div>" .->114
+    112-. "<div>Named pipe / Pageant on<br />Windows</div><div style='font-size: 70%'></div>" .->117
+  end

@@ -1,22 +1,33 @@
-flowchart LR
-    user([User])
-    jterm[jterm<br/>Java 21 Swing app]
-    sshd[Remote SSH daemon]
-    agent[SSH agent<br/>Unix socket / pipe / Pageant]
-    keyring[OS keyring<br/>secret-tool / security / Credential Store]
-    shell[Local shell<br/>bash / powershell / wsl.exe]
-    fs[(Local file system<br/>~/.config/jterm)]
+graph LR
+  linkStyle default fill:#ffffff
 
-    user -->|"Opens tabs, splits panes, launches sessions"| jterm
-    jterm -->|"SSH shell + SFTP + tunnels"| sshd
-    jterm -->|"Public-key auth via identities"| agent
-    jterm -->|"Stores / retrieves master password"| keyring
-    jterm -->|"Runs local shells / WSL"| shell
-    jterm -->|"Reads / writes JSON config"| fs
+  subgraph diagram ["jterm - System Context"]
+    style diagram fill:#ffffff,stroke:#ffffff
 
-    classDef ext fill:#6c757d,stroke:#495057,color:#ffffff
-    classDef sys fill:#1e88e5,stroke:#0d47a1,color:#ffffff
-    classDef person fill:#3949ab,stroke:#1a237e,color:#ffffff
-    class user person
-    class jterm sys
-    class sshd,agent,keyring,shell,fs ext
+    1["<div style='font-weight: bold'>User</div><div style='font-size: 70%; margin-top: 0px'>[Person]</div><div style='font-size: 80%; margin-top:10px'>Runs local shells and<br />connects to remote hosts over<br />SSH.</div>"]
+    style 1 fill:#3949ab,stroke:#273377,color:#ffffff
+    2("<div style='font-weight: bold'>Remote SSH daemon</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>sshd on the target host<br />reached via TCP.</div>")
+    style 2 fill:#6c757d,stroke:#4b5157,color:#ffffff
+    3("<div style='font-weight: bold'>OS keyring</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>secret-tool (Linux), security<br />(macOS) or Windows Credential<br />Store.</div>")
+    style 3 fill:#6c757d,stroke:#4b5157,color:#ffffff
+    4("<div style='font-weight: bold'>SSH agent</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Unix-domain socket, OpenSSH<br />named pipe or PuTTY Pageant.</div>")
+    style 4 fill:#6c757d,stroke:#4b5157,color:#ffffff
+    5("<div style='font-weight: bold'>Local shell</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Login shell (/bin/bash,<br />powershell, wsl.exe) spawned<br />via pty4j.</div>")
+    style 5 fill:#6c757d,stroke:#4b5157,color:#ffffff
+    6("<div style='font-weight: bold'>Local file system</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>OS config dir under<br />~/.config/jterm etc.; holds<br />sessions.json,<br />credentials.json, icons.json,<br />keymap.json.</div>")
+    style 6 fill:#6c757d,stroke:#4b5157,color:#ffffff
+    7("<div style='font-weight: bold'>jterm</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Java 21 Swing terminal<br />emulator.</div>")
+    style 7 fill:#1168bd,stroke:#0b4884,color:#ffffff
+
+    7-. "<div>Reads and writes JSON config<br />files</div><div style='font-size: 70%'></div>" .->6
+    7-. "<div>Named pipe / Pageant on<br />Windows</div><div style='font-size: 70%'></div>" .->4
+    7-. "<div>Spawns child process via<br />pty4j</div><div style='font-size: 70%'></div>" .->5
+    7-. "<div>SSH channel over TCP</div><div style='font-size: 70%'></div>" .->2
+    7-. "<div>Reads and writes native OS<br />secret</div><div style='font-size: 70%'></div>" .->3
+    7-. "<div>Atomic writes to the OS<br />config dir</div><div style='font-size: 70%'></div>" .->6
+    1-. "<div>Opens tabs, splits panes,<br />launches sessions</div><div style='font-size: 70%'></div>" .->7
+    7-. "<div>SSH shell + SFTP + tunnels</div><div style='font-size: 70%'></div>" .->2
+    7-. "<div>Stores and retrieves master<br />password</div><div style='font-size: 70%'></div>" .->3
+    7-. "<div>Public-key auth via agent<br />identities</div><div style='font-size: 70%'></div>" .->4
+    7-. "<div>Runs interactive shells<br />locally / in WSL</div><div style='font-size: 70%'></div>" .->5
+  end

@@ -10,6 +10,11 @@ OUT_DIR     := generated
 export:
 	@mkdir -p $(OUT_DIR)
 	$(STRUCTURIZR) export -workspace $(WORKSPACE) -format mermaid -output $(OUT_DIR)
+	@# Structurizr prefixes every file with "structurizr-"; drop it so the
+	@# committed names match the view keys the docs reference via --8<--.
+	@for f in $(OUT_DIR)/structurizr-*.mmd; do \
+	  mv -f "$$f" "$(OUT_DIR)/$$(basename "$$f" | sed 's/^structurizr-//')"; \
+	done
 
 # CI drift check: regenerate and fail if committed output differs.
 check: export

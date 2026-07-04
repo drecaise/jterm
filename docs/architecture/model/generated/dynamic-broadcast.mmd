@@ -1,23 +1,21 @@
-sequenceDiagram
-    autonumber
-    participant U as User
-    participant W as JediTermWidget<br/>(focused pane)
-    participant BC as BroadcastingTtyConnector<br/>(focused)
-    participant TS as TerminalSession<br/>(focused)
-    participant Bus as BroadcastBus
-    participant BC2 as BroadcastingTtyConnector<br/>(sibling A)
-    participant TS2 as TerminalSession<br/>(sibling A)
-    participant BC3 as BroadcastingTtyConnector<br/>(sibling B)
-    participant TS3 as TerminalSession<br/>(sibling B)
+graph LR
+  linkStyle default fill:#ffffff
 
-    U->>W: Key press
-    W->>BC: write(bytes)
-    BC->>TS: write(bytes)  %% always
-    alt broadcast enabled
-        BC->>Bus: fanOut(bytes, self)
-        Bus->>BC2: deliver(bytes)
-        BC2->>TS2: write(bytes)
-        Bus->>BC3: deliver(bytes)
-        BC3->>TS3: write(bytes)
-        Note over Bus: sender skipped to avoid echo loop
+  subgraph diagram ["jterm JVM process - Dynamic"]
+    style diagram fill:#ffffff,stroke:#ffffff
+
+    subgraph 8 [jterm JVM process]
+      style 8 fill:#ffffff,stroke:#155fa0,color:#155fa0
+
+      13("<div style='font-weight: bold'>TerminalPane</div><div style='font-size: 70%; margin-top: 0px'>[Component: Swing / JediTerm]</div><div style='font-size: 80%; margin-top:10px'>Hosts a JediTermWidget; wires<br />session connector through<br />BroadcastingTtyConnector.</div>")
+      style 13 fill:#42a5f5,stroke:#2e73ab,color:#ffffff
+      18("<div style='font-weight: bold'>TerminalSession</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>Interface every pane drives<br />(title, profile,<br />TtyConnector).</div>")
+      style 18 fill:#26a69a,stroke:#1a746b,color:#ffffff
+      25("<div style='font-weight: bold'>BroadcastingTtyConnector</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>Wraps each pane's real<br />connector; fans writes out<br />via BroadcastBus in broadcast<br />mode.</div>")
+      style 25 fill:#26a69a,stroke:#1a746b,color:#ffffff
     end
+
+    13-. "<div>1. User types into focused<br />pane</div><div style='font-size: 70%'></div>" .->25
+    25-. "<div>2. Write to owning connector</div><div style='font-size: 70%'></div>" .->18
+    25-. "<div>3. Fan out via BroadcastBus</div><div style='font-size: 70%'></div>" .->25
+  end

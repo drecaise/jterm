@@ -1,6 +1,6 @@
 workspace "jterm" "Cross-platform Java Swing terminal emulator: tabs, splittable pane grid, saved SSH sessions, SFTP, tunnels, input broadcast." {
 
-    !identifiers hierarchical
+    !identifiers flat
 
     model {
         user = person "User" "Runs local shells and connects to remote hosts over SSH." "Person"
@@ -71,6 +71,8 @@ workspace "jterm" "Cross-platform Java Swing terminal emulator: tabs, splittable
                 sftpPane -> sshSession "Opens SFTP subsystem on an existing connection"
                 sessionDropHandler -> paneGrid "Calls split on drop"
                 sessionDropHandler -> sessionFactory "Creates the new session"
+                sessionSidebar -> sessionDropHandler "Drags a session onto a pane drop target"
+                terminalPane -> sessionFactory "Requests a session when a cell is filled"
 
                 # ---------- Relationships: Terminal ----------
                 sessionFactory -> localSession "Creates local / WSL sessions"
@@ -86,6 +88,8 @@ workspace "jterm" "Cross-platform Java Swing terminal emulator: tabs, splittable
                 localSession -> localShell "Spawns child process via pty4j"
                 sshSession -> remoteSshd "SSH channel over TCP"
                 broadcastConnector -> terminalSession "Reads and writes the underlying connector"
+                broadcastConnector -> broadcastConnector "Fans writes to sibling connectors via BroadcastBus"
+                connectionService -> terminalPane "Hands the connected session back on the EDT"
 
                 # ---------- Relationships: Security ----------
                 credentialResolver -> vaultManager "Requests vault unlock"
@@ -117,7 +121,7 @@ workspace "jterm" "Cross-platform Java Swing terminal emulator: tabs, splittable
         deploymentEnvironment "Linux" {
             deploymentNode "Linux workstation" "Any glibc distro" {
                 deploymentNode "Flatpak sandbox" "org.flatpak.Flatpak" {
-                    linuxJvm = containerInstance jterm.jvm
+                    linuxJvm = containerInstance jvm
                 }
                 deploymentNode "secret-tool" "libsecret CLI" {
                     linuxKeyring = softwareSystemInstance osKeyring
@@ -131,7 +135,7 @@ workspace "jterm" "Cross-platform Java Swing terminal emulator: tabs, splittable
         deploymentEnvironment "Windows" {
             deploymentNode "Windows workstation" "Windows 10/11" {
                 deploymentNode "MSI-installed jterm" "jpackage MSI" {
-                    winJvm = containerInstance jterm.jvm
+                    winJvm = containerInstance jvm
                 }
                 deploymentNode "Windows Credential Store" "java-keyring JNA backend" {
                     winKeyring = softwareSystemInstance osKeyring
@@ -145,9 +149,9 @@ workspace "jterm" "Cross-platform Java Swing terminal emulator: tabs, splittable
         deploymentEnvironment "macOS" {
             deploymentNode "macOS workstation" "macOS 13+" {
                 deploymentNode "DMG-installed jterm" "jpackage DMG" {
-                    macJvm = containerInstance jterm.jvm
+                    macJvm = containerInstance jvm
                 }
-                deploymentNode "security(1)" "Keychain CLI" {
+                deploymentNode "security CLI" "Keychain CLI" {
                     macKeyring = softwareSystemInstance osKeyring
                 }
                 deploymentNode "ssh-agent" "launchd-managed Unix socket" {
@@ -169,13 +173,13 @@ workspace "jterm" "Cross-platform Java Swing terminal emulator: tabs, splittable
             autolayout lr
         }
 
-        component jterm.jvm "componentsUi" "UI-layer components inside the JVM process." {
+        component jvm "components-ui" "UI-layer components inside the JVM process." {
             include mainWindow windowTopology tabPane paneGrid terminalPane sessionSidebar sftpPane themeManager sessionDropHandler
             include terminalSession broadcastConnector highlightLibrary iconLibrary sessionStore keymap
             autolayout tb
         }
 
-        component jterm.jvm "componentsTerminal" "Terminal / session components inside the JVM process." {
+        component jvm "components-terminal" "Terminal / session components inside the JVM process." {
             include terminalPane broadcastConnector
             include terminalSession localSession sshSession sessionFactory connectionService agentSupport jdkAgentProxy knownHostsVerifier
             include credentialResolver credentialVault
@@ -183,14 +187,14 @@ workspace "jterm" "Cross-platform Java Swing terminal emulator: tabs, splittable
             autolayout tb
         }
 
-        component jterm.jvm "componentsSecurity" "Security components and trust boundaries." {
+        component jvm "components-security" "Security components and trust boundaries." {
             include credentialResolver vaultManager credentialVault masterPwKeyring
             include jsonStore appSettings sessionStore
             include osKeyring fileSystem
             autolayout tb
         }
 
-        dynamic jterm.jvm "sshConnect" "SSH connect: credential resolution on EDT, connect off-EDT." {
+        dynamic jvm "dynamic-ssh-connect" "SSH connect: credential resolution on EDT, connect off-EDT." {
             terminalPane -> sessionFactory "User drops SSH session on pane"
             sessionFactory -> connectionService "connectSshAsync (EDT)"
             connectionService -> credentialResolver "Resolve password on EDT"
@@ -204,14 +208,14 @@ workspace "jterm" "Cross-platform Java Swing terminal emulator: tabs, splittable
             autolayout lr
         }
 
-        dynamic jterm.jvm "broadcast" "Broadcast keystrokes fan out through BroadcastingTtyConnector." {
+        dynamic jvm "dynamic-broadcast" "Broadcast keystrokes fan out through BroadcastingTtyConnector." {
             terminalPane -> broadcastConnector "User types into focused pane"
             broadcastConnector -> terminalSession "Write to owning connector"
             broadcastConnector -> broadcastConnector "Fan out via BroadcastBus"
             autolayout lr
         }
 
-        dynamic jterm.jvm "dropToSplit" "Drop-to-split: sidebar drag creates a new pane." {
+        dynamic jvm "dynamic-drop-to-split" "Drop-to-split: sidebar drag creates a new pane." {
             sessionSidebar -> sessionDropHandler "Drop SSH session onto pane"
             sessionDropHandler -> paneGrid "split(row|col) based on DropRegion"
             sessionDropHandler -> sessionFactory "Create session async"
@@ -220,29 +224,51 @@ workspace "jterm" "Cross-platform Java Swing terminal emulator: tabs, splittable
             autolayout lr
         }
 
-        deployment jterm "Linux" "deploymentLinux" "Linux Flatpak deployment." {
+        deployment jterm "Linux" "deployment-linux" "Linux Flatpak deployment." {
             include *
             autolayout tb
         }
 
-        deployment jterm "Windows" "deploymentWindows" "Windows MSI deployment." {
+        deployment jterm "Windows" "deployment-windows" "Windows MSI deployment." {
             include *
             autolayout tb
         }
 
-        deployment jterm "macOS" "deploymentMacos" "macOS DMG deployment." {
+        deployment jterm "macOS" "deployment-macos" "macOS DMG deployment." {
             include *
             autolayout tb
         }
 
         styles {
-            element "Person"       { background "#3949ab" color "#ffffff" shape person }
-            element "External"     { background "#6c757d" color "#ffffff" }
-            element "JVM"          { background "#1e88e5" color "#ffffff" }
-            element "UI"           { background "#42a5f5" color "#ffffff" }
-            element "Terminal"     { background "#26a69a" color "#ffffff" }
-            element "Security"     { background "#ef5350" color "#ffffff" }
-            element "Persistence"  { background "#8d6e63" color "#ffffff" }
+            element "Person" {
+                background "#3949ab"
+                color "#ffffff"
+                shape person
+            }
+            element "External" {
+                background "#6c757d"
+                color "#ffffff"
+            }
+            element "JVM" {
+                background "#1e88e5"
+                color "#ffffff"
+            }
+            element "UI" {
+                background "#42a5f5"
+                color "#ffffff"
+            }
+            element "Terminal" {
+                background "#26a69a"
+                color "#ffffff"
+            }
+            element "Security" {
+                background "#ef5350"
+                color "#ffffff"
+            }
+            element "Persistence" {
+                background "#8d6e63"
+                color "#ffffff"
+            }
         }
 
         theme default

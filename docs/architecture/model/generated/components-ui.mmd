@@ -1,58 +1,59 @@
-flowchart TB
-    subgraph app["app / windowing"]
-        main[MainWindow]
-        top[WindowTopology]
-        km[Keymap]
+graph TB
+  linkStyle default fill:#ffffff
+
+  subgraph diagram ["jterm - jterm JVM process - Components"]
+    style diagram fill:#ffffff,stroke:#ffffff
+
+    subgraph 8 [jterm JVM process]
+      style 8 fill:#ffffff,stroke:#155fa0,color:#155fa0
+
+      10("<div style='font-weight: bold'>WindowTopology</div><div style='font-size: 70%; margin-top: 0px'>[Component: Swing]</div><div style='font-size: 80%; margin-top:10px'>Registry of open windows;<br />routes shortcut dispatch to<br />the focused window.</div>")
+      style 10 fill:#42a5f5,stroke:#2e73ab,color:#ffffff
+      11("<div style='font-weight: bold'>TabPane</div><div style='font-size: 70%; margin-top: 0px'>[Component: Swing]</div><div style='font-size: 80%; margin-top:10px'>JTabbedPane wrapper; hosts<br />one PaneGrid per tab.</div>")
+      style 11 fill:#42a5f5,stroke:#2e73ab,color:#ffffff
+      12("<div style='font-weight: bold'>PaneGrid</div><div style='font-size: 70%; margin-top: 0px'>[Component: Swing]</div><div style='font-size: 80%; margin-top:10px'>Uniform 3x3 R x C grid model;<br />splits and collapses trailing<br />empty rows/cols.</div>")
+      style 12 fill:#42a5f5,stroke:#2e73ab,color:#ffffff
+      13("<div style='font-weight: bold'>TerminalPane</div><div style='font-size: 70%; margin-top: 0px'>[Component: Swing / JediTerm]</div><div style='font-size: 80%; margin-top:10px'>Hosts a JediTermWidget; wires<br />session connector through<br />BroadcastingTtyConnector.</div>")
+      style 13 fill:#42a5f5,stroke:#2e73ab,color:#ffffff
+      14("<div style='font-weight: bold'>SessionSidebar</div><div style='font-size: 70%; margin-top: 0px'>[Component: Swing]</div><div style='font-size: 80%; margin-top:10px'>Tree of folders and SSH<br />sessions; drag source for DnD<br />launches.</div>")
+      style 14 fill:#42a5f5,stroke:#2e73ab,color:#ffffff
+      15("<div style='font-weight: bold'>SftpPane</div><div style='font-size: 70%; margin-top: 0px'>[Component: Swing / MINA SFTP]</div><div style='font-size: 80%; margin-top:10px'>Remote file browser backed by<br />MINA SFTP client.</div>")
+      style 15 fill:#42a5f5,stroke:#2e73ab,color:#ffffff
+      16("<div style='font-weight: bold'>ThemeManager</div><div style='font-size: 70%; margin-top: 0px'>[Component: FlatLaf]</div><div style='font-size: 80%; margin-top:10px'>FlatLaf light/dark; exposes<br />ThemeColors record consumed<br />by JediTerm.</div>")
+      style 16 fill:#42a5f5,stroke:#2e73ab,color:#ffffff
+      17("<div style='font-weight: bold'>SessionDropHandler</div><div style='font-size: 70%; margin-top: 0px'>[Component: Swing DnD]</div><div style='font-size: 80%; margin-top:10px'>Drop target on each pane;<br />decides split direction via<br />DropRegion.</div>")
+      style 17 fill:#42a5f5,stroke:#2e73ab,color:#ffffff
+      18("<div style='font-weight: bold'>TerminalSession</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>Interface every pane drives<br />(title, profile,<br />TtyConnector).</div>")
+      style 18 fill:#26a69a,stroke:#1a746b,color:#ffffff
+      25("<div style='font-weight: bold'>BroadcastingTtyConnector</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>Wraps each pane's real<br />connector; fans writes out<br />via BroadcastBus in broadcast<br />mode.</div>")
+      style 25 fill:#26a69a,stroke:#1a746b,color:#ffffff
+      31("<div style='font-weight: bold'>SessionStore</div><div style='font-size: 70%; margin-top: 0px'>[Component: Jackson]</div><div style='font-size: 80%; margin-top:10px'>Loads and saves the<br />SshSessionConfig / FolderNode<br />tree from sessions.json.</div>")
+      style 31 fill:#8d6e63,stroke:#624d45,color:#ffffff
+      34("<div style='font-weight: bold'>Keymap</div><div style='font-size: 70%; margin-top: 0px'>[Component: Jackson]</div><div style='font-size: 80%; margin-top:10px'>Action-to-KeyStroke bindings<br />from keymap.json; defaults in<br />TermAction.</div>")
+      style 34 fill:#8d6e63,stroke:#624d45,color:#ffffff
+      35("<div style='font-weight: bold'>IconLibrary</div><div style='font-size: 70%; margin-top: 0px'>[Component: Jackson]</div><div style='font-size: 80%; margin-top:10px'>Bundled SVG icons plus user<br />imports persisted to<br />icons.json.</div>")
+      style 35 fill:#8d6e63,stroke:#624d45,color:#ffffff
+      37("<div style='font-weight: bold'>HighlightLibrary</div><div style='font-size: 70%; margin-top: 0px'>[Component: Jackson]</div><div style='font-size: 80%; margin-top:10px'>Keyword highlight lists from<br />highlights.json.</div>")
+      style 37 fill:#8d6e63,stroke:#624d45,color:#ffffff
+      9("<div style='font-weight: bold'>MainWindow</div><div style='font-size: 70%; margin-top: 0px'>[Component: Swing]</div><div style='font-size: 80%; margin-top:10px'>Top-level JFrame; installs<br />the global KeyEventDispatcher<br />for keymap shortcuts.</div>")
+      style 9 fill:#42a5f5,stroke:#2e73ab,color:#ffffff
     end
 
-    subgraph tabs["ui.tabs / ui.grid"]
-        tab[TabPane]
-        grid[PaneGrid<br/>3x3 R x C model]
-    end
-
-    subgraph pane["ui.pane"]
-        tp[TerminalPane]
-        bc[BroadcastingTtyConnector]
-    end
-
-    subgraph side["ui.sidebar / ui.sftp"]
-        sb[SessionSidebar]
-        sftp[SftpPane]
-    end
-
-    subgraph theme["ui.theme / cross-cutting"]
-        tm[ThemeManager]
-        icons[IconLibrary]
-        hl[HighlightLibrary]
-    end
-
-    subgraph dnd["dnd"]
-        drop[SessionDropHandler]
-    end
-
-    ts[TerminalSession<br/>terminal package]
-    ss[SessionStore]
-
-    main --> top
-    main --> tab
-    main --> tm
-    main --> km
-    tab --> grid
-    grid --> tp
-    grid --> bc
-    tp --> bc
-    bc --> ts
-    tp --> hl
-    tp --> tm
-    sb --> ss
-    sb --> icons
-    sb --> drop
-    drop --> grid
-    sftp -.->|SFTP subsystem| ts
-
-    classDef ui fill:#42a5f5,stroke:#1565c0,color:#ffffff
-    classDef terminal fill:#26a69a,stroke:#00695c,color:#ffffff
-    classDef persist fill:#8d6e63,stroke:#4e342e,color:#ffffff
-    class main,top,tab,grid,tp,sb,sftp,tm,drop ui
-    class bc,ts terminal
-    class km,icons,hl,ss persist
+    9-. "<div>Registers window and routes<br />shortcuts</div><div style='font-size: 70%'></div>" .->10
+    9-. "<div>Hosts tabs</div><div style='font-size: 70%'></div>" .->11
+    9-. "<div>Applies LaF and terminal<br />colors</div><div style='font-size: 70%'></div>" .->16
+    9-. "<div>Reads shortcut bindings</div><div style='font-size: 70%'></div>" .->34
+    11-. "<div>One grid per tab</div><div style='font-size: 70%'></div>" .->12
+    12-. "<div>Owns each cell</div><div style='font-size: 70%'></div>" .->13
+    12-. "<div>Wraps every pane's connector</div><div style='font-size: 70%'></div>" .->25
+    13-. "<div>Reads title, profile,<br />TtyConnector</div><div style='font-size: 70%'></div>" .->18
+    13-. "<div>Drives JediTermWidget through<br />the wrapper</div><div style='font-size: 70%'></div>" .->25
+    13-. "<div>Applies highlight rules to<br />output</div><div style='font-size: 70%'></div>" .->37
+    13-. "<div>Reads ThemeColors</div><div style='font-size: 70%'></div>" .->16
+    14-. "<div>Reads and edits the session<br />tree</div><div style='font-size: 70%'></div>" .->31
+    14-. "<div>Renders session icons</div><div style='font-size: 70%'></div>" .->35
+    17-. "<div>Calls split on drop</div><div style='font-size: 70%'></div>" .->12
+    14-. "<div>Drags a session onto a pane<br />drop target</div><div style='font-size: 70%'></div>" .->17
+    25-. "<div>Reads and writes the<br />underlying connector</div><div style='font-size: 70%'></div>" .->18
+    25-. "<div>Fans writes to sibling<br />connectors via BroadcastBus</div><div style='font-size: 70%'></div>" .->25
+  end

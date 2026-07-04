@@ -1,66 +1,61 @@
-flowchart TB
-    tp[TerminalPane<br/>ui.pane]
-    bc[BroadcastingTtyConnector<br/>broadcast]
+graph TB
+  linkStyle default fill:#ffffff
 
-    subgraph term["terminal"]
-        ts[[TerminalSession<br/>interface]]
-        sf[SessionFactory]
-        cs[ConnectionService]
+  subgraph diagram ["jterm - jterm JVM process - Components"]
+    style diagram fill:#ffffff,stroke:#ffffff
+
+    2("<div style='font-weight: bold'>Remote SSH daemon</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>sshd on the target host<br />reached via TCP.</div>")
+    style 2 fill:#6c757d,stroke:#4b5157,color:#ffffff
+    4("<div style='font-weight: bold'>SSH agent</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Unix-domain socket, OpenSSH<br />named pipe or PuTTY Pageant.</div>")
+    style 4 fill:#6c757d,stroke:#4b5157,color:#ffffff
+    5("<div style='font-weight: bold'>Local shell</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Login shell (/bin/bash,<br />powershell, wsl.exe) spawned<br />via pty4j.</div>")
+    style 5 fill:#6c757d,stroke:#4b5157,color:#ffffff
+
+    subgraph 8 [jterm JVM process]
+      style 8 fill:#ffffff,stroke:#155fa0,color:#155fa0
+
+      13("<div style='font-weight: bold'>TerminalPane</div><div style='font-size: 70%; margin-top: 0px'>[Component: Swing / JediTerm]</div><div style='font-size: 80%; margin-top:10px'>Hosts a JediTermWidget; wires<br />session connector through<br />BroadcastingTtyConnector.</div>")
+      style 13 fill:#42a5f5,stroke:#2e73ab,color:#ffffff
+      18("<div style='font-weight: bold'>TerminalSession</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>Interface every pane drives<br />(title, profile,<br />TtyConnector).</div>")
+      style 18 fill:#26a69a,stroke:#1a746b,color:#ffffff
+      19("<div style='font-weight: bold'>LocalSession</div><div style='font-size: 70%; margin-top: 0px'>[Component: pty4j]</div><div style='font-size: 80%; margin-top:10px'>pty4j PtyProcess wrapped by<br />PtyTtyConnector.</div>")
+      style 19 fill:#26a69a,stroke:#1a746b,color:#ffffff
+      20("<div style='font-weight: bold'>SshSession</div><div style='font-size: 70%; margin-top: 0px'>[Component: Apache MINA SSHD]</div><div style='font-size: 80%; margin-top:10px'>MINA SSHD ChannelShell<br />wrapped by SshTtyConnector;<br />keep-alive and reconnect.</div>")
+      style 20 fill:#26a69a,stroke:#1a746b,color:#ffffff
+      21("<div style='font-weight: bold'>SessionFactory</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>Creates local/WSL sessions<br />synchronously and SSH<br />sessions via SwingWorker.</div>")
+      style 21 fill:#26a69a,stroke:#1a746b,color:#ffffff
+      22("<div style='font-weight: bold'>ConnectionService</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>Orchestrates SSH connect<br />off-EDT; resolves credentials<br />on the EDT first.</div>")
+      style 22 fill:#26a69a,stroke:#1a746b,color:#ffffff
+      23("<div style='font-weight: bold'>AgentSupport</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>Per-OS ssh-agent endpoint<br />discovery (socket, named<br />pipe, Pageant).</div>")
+      style 23 fill:#26a69a,stroke:#1a746b,color:#ffffff
+      24("<div style='font-weight: bold'>JdkAgentProxy</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java NIO]</div><div style='font-size: 80%; margin-top:10px'>JDK 19+ Unix-domain-socket<br />agent client; reuses MINA's<br />AbstractAgentProxy.</div>")
+      style 24 fill:#26a69a,stroke:#1a746b,color:#ffffff
+      25("<div style='font-weight: bold'>BroadcastingTtyConnector</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>Wraps each pane's real<br />connector; fans writes out<br />via BroadcastBus in broadcast<br />mode.</div>")
+      style 25 fill:#26a69a,stroke:#1a746b,color:#ffffff
+      26("<div style='font-weight: bold'>JtermKnownHostsVerifier</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>TOFU host-key verifier<br />against ~/.ssh/known_hosts.</div>")
+      style 26 fill:#26a69a,stroke:#1a746b,color:#ffffff
+      28("<div style='font-weight: bold'>CredentialVault</div><div style='font-size: 70%; margin-top: 0px'>[Component: AES-GCM / PBKDF2]</div><div style='font-size: 80%; margin-top:10px'>AES-GCM vault of SSH<br />passwords; PBKDF2-wrapped<br />random vault key.</div>")
+      style 28 fill:#ef5350,stroke:#a73a38,color:#ffffff
+      29("<div style='font-weight: bold'>CredentialResolver</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>Resolves SSH and jump-host<br />credentials from vault or<br />prompt.</div>")
+      style 29 fill:#ef5350,stroke:#a73a38,color:#ffffff
     end
 
-    subgraph local["terminal.local"]
-        ls[LocalSession<br/>pty4j PtyProcess]
-        ptt[PtyTtyConnector]
-    end
-
-    subgraph ssh["terminal.ssh"]
-        ss[SshSession<br/>MINA ChannelShell]
-        stc[SshTtyConnector]
-        khv[JtermKnownHostsVerifier]
-    end
-
-    subgraph sshAgent["terminal.ssh.agent"]
-        as[AgentSupport]
-        jdk[JdkAgentProxy]
-        win[WindowsPipeAgentProxy]
-        pag[PageantAgentProxy]
-        comp[CompositeSshAgent]
-    end
-
-    cr[CredentialResolver<br/>security]
-    shell[/Local shell/]
-    remote[/Remote sshd/]
-    agent[/OS ssh-agent/]
-
-    tp --> bc
-    bc --> ts
-    ts -.implements.-> ls
-    ts -.implements.-> ss
-    ls --> ptt
-    ptt --> shell
-    ss --> stc
-    ss --> khv
-    stc --> remote
-
-    sf --> ls
-    sf --> cs
-    cs --> cr
-    cs --> ss
-
-    ss --> as
-    as --> jdk
-    as --> win
-    as --> pag
-    as --> comp
-    jdk --> agent
-    win --> agent
-    pag --> agent
-
-    classDef terminal fill:#26a69a,stroke:#00695c,color:#ffffff
-    classDef ui fill:#42a5f5,stroke:#1565c0,color:#ffffff
-    classDef sec fill:#ef5350,stroke:#b71c1c,color:#ffffff
-    classDef ext fill:#6c757d,stroke:#495057,color:#ffffff
-    class tp,bc ui
-    class ts,sf,cs,ls,ptt,ss,stc,khv,as,jdk,win,pag,comp terminal
-    class cr sec
-    class shell,remote,agent ext
+    13-. "<div>Reads title, profile,<br />TtyConnector</div><div style='font-size: 70%'></div>" .->18
+    13-. "<div>Drives JediTermWidget through<br />the wrapper</div><div style='font-size: 70%'></div>" .->25
+    13-. "<div>Requests a session when a<br />cell is filled</div><div style='font-size: 70%'></div>" .->21
+    21-. "<div>Creates local / WSL sessions</div><div style='font-size: 70%'></div>" .->19
+    21-. "<div>Delegates SSH connect</div><div style='font-size: 70%'></div>" .->22
+    22-. "<div>Resolves passwords on the EDT</div><div style='font-size: 70%'></div>" .->29
+    22-. "<div>Delivers connected session</div><div style='font-size: 70%'></div>" .->20
+    20-. "<div>Verifies host key on connect</div><div style='font-size: 70%'></div>" .->26
+    20-. "<div>Registers agent identities</div><div style='font-size: 70%'></div>" .->23
+    20-. "<div>Adds password identity when<br />needed</div><div style='font-size: 70%'></div>" .->28
+    23-. "<div>Talks to Unix ssh-agent<br />socket</div><div style='font-size: 70%'></div>" .->24
+    23-. "<div>Named pipe / Pageant on<br />Windows</div><div style='font-size: 70%'></div>" .->4
+    24-. "<div>Reads identities and signs<br />challenges</div><div style='font-size: 70%'></div>" .->4
+    19-. "<div>Spawns child process via<br />pty4j</div><div style='font-size: 70%'></div>" .->5
+    20-. "<div>SSH channel over TCP</div><div style='font-size: 70%'></div>" .->2
+    25-. "<div>Reads and writes the<br />underlying connector</div><div style='font-size: 70%'></div>" .->18
+    25-. "<div>Fans writes to sibling<br />connectors via BroadcastBus</div><div style='font-size: 70%'></div>" .->25
+    22-. "<div>Hands the connected session<br />back on the EDT</div><div style='font-size: 70%'></div>" .->13
+  end

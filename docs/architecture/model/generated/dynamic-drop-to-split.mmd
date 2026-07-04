@@ -1,24 +1,29 @@
-sequenceDiagram
-    autonumber
-    participant U as User
-    participant SB as SessionSidebar
-    participant TP as TerminalPane
-    participant DR as DropRegion
-    participant DH as SessionDropHandler
-    participant PG as PaneGrid
-    participant SF as SessionFactory
-    participant CS as ConnectionService
-    participant NP as new TerminalPane
+graph LR
+  linkStyle default fill:#ffffff
 
-    U->>SB: Drag SSH session
-    SB->>TP: dragEnter(Transferable)
-    TP->>DR: classify(y / height)
-    DR-->>TP: TOP (new column) or BOTTOM (new row)
-    U->>TP: drop
-    TP->>DH: importData(Transferable, region)
-    DH->>PG: split(row|col, targetCell)
-    PG->>NP: install empty pane in new cell
-    DH->>SF: createSshAsync(config)
-    SF->>CS: connect (off-EDT worker)
-    CS-->>DH: SshSession (on EDT)
-    DH->>NP: setTtyConnector(session.connector)
+  subgraph diagram ["jterm JVM process - Dynamic"]
+    style diagram fill:#ffffff,stroke:#ffffff
+
+    subgraph 8 [jterm JVM process]
+      style 8 fill:#ffffff,stroke:#155fa0,color:#155fa0
+
+      12("<div style='font-weight: bold'>PaneGrid</div><div style='font-size: 70%; margin-top: 0px'>[Component: Swing]</div><div style='font-size: 80%; margin-top:10px'>Uniform 3x3 R x C grid model;<br />splits and collapses trailing<br />empty rows/cols.</div>")
+      style 12 fill:#42a5f5,stroke:#2e73ab,color:#ffffff
+      13("<div style='font-weight: bold'>TerminalPane</div><div style='font-size: 70%; margin-top: 0px'>[Component: Swing / JediTerm]</div><div style='font-size: 80%; margin-top:10px'>Hosts a JediTermWidget; wires<br />session connector through<br />BroadcastingTtyConnector.</div>")
+      style 13 fill:#42a5f5,stroke:#2e73ab,color:#ffffff
+      14("<div style='font-weight: bold'>SessionSidebar</div><div style='font-size: 70%; margin-top: 0px'>[Component: Swing]</div><div style='font-size: 80%; margin-top:10px'>Tree of folders and SSH<br />sessions; drag source for DnD<br />launches.</div>")
+      style 14 fill:#42a5f5,stroke:#2e73ab,color:#ffffff
+      17("<div style='font-weight: bold'>SessionDropHandler</div><div style='font-size: 70%; margin-top: 0px'>[Component: Swing DnD]</div><div style='font-size: 80%; margin-top:10px'>Drop target on each pane;<br />decides split direction via<br />DropRegion.</div>")
+      style 17 fill:#42a5f5,stroke:#2e73ab,color:#ffffff
+      21("<div style='font-weight: bold'>SessionFactory</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>Creates local/WSL sessions<br />synchronously and SSH<br />sessions via SwingWorker.</div>")
+      style 21 fill:#26a69a,stroke:#1a746b,color:#ffffff
+      22("<div style='font-weight: bold'>ConnectionService</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>Orchestrates SSH connect<br />off-EDT; resolves credentials<br />on the EDT first.</div>")
+      style 22 fill:#26a69a,stroke:#1a746b,color:#ffffff
+    end
+
+    14-. "<div>1. Drop SSH session onto pane</div><div style='font-size: 70%'></div>" .->17
+    17-. "<div>2. split(row|col) based on<br />DropRegion</div><div style='font-size: 70%'></div>" .->12
+    17-. "<div>3. Create session async</div><div style='font-size: 70%'></div>" .->21
+    21-. "<div>4. Connect SSH off-EDT</div><div style='font-size: 70%'></div>" .->22
+    22-. "<div>5. Attach connector to new<br />pane (EDT)</div><div style='font-size: 70%'></div>" .->13
+  end

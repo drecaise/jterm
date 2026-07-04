@@ -1,24 +1,35 @@
-flowchart TB
-    subgraph host["macOS workstation"]
-        subgraph install["DMG-installed jterm (jpackage)"]
-            jvm[jterm JVM process]
-        end
-        subgraph kc["Keychain via security(1)"]
-            kr[secret storage]
-        end
-        subgraph agentEnv["launchd ssh-agent"]
-            sock[(/private/tmp/com.apple.launchd.*/Listeners<br/>Unix socket)]
-        end
-        subgraph cfg["~/Library/Application Support/jterm/"]
-            files[(sessions.json<br/>credentials.json<br/>...)]
-        end
+graph TB
+  linkStyle default fill:#ffffff
+
+  subgraph diagram ["jterm - Deployment - macOS"]
+    style diagram fill:#ffffff,stroke:#ffffff
+
+    subgraph 119 [macOS workstation]
+      style 119 fill:#ffffff,stroke:#888888,color:#000000
+
+      subgraph 120 [DMG-installed jterm]
+        style 120 fill:#ffffff,stroke:#888888,color:#000000
+
+        121("<div style='font-weight: bold'>jterm JVM process</div><div style='font-size: 70%; margin-top: 0px'>[Container: Java 21 / Swing]</div><div style='font-size: 80%; margin-top:10px'>Java 21 Swing app; single OS<br />process hosting every<br />component.</div>")
+        style 121 fill:#1e88e5,stroke:#155fa0,color:#ffffff
+      end
+
+      subgraph 122 [security CLI]
+        style 122 fill:#ffffff,stroke:#888888,color:#000000
+
+        123("<div style='font-weight: bold'>OS keyring</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>secret-tool (Linux), security<br />(macOS) or Windows Credential<br />Store.</div>")
+        style 123 fill:#6c757d,stroke:#4b5157,color:#ffffff
+      end
+
+      subgraph 125 [ssh-agent]
+        style 125 fill:#ffffff,stroke:#888888,color:#000000
+
+        126("<div style='font-weight: bold'>SSH agent</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Unix-domain socket, OpenSSH<br />named pipe or PuTTY Pageant.</div>")
+        style 126 fill:#6c757d,stroke:#4b5157,color:#ffffff
+      end
+
     end
 
-    jvm -->|subprocess| kr
-    jvm -->|JDK Unix-domain socket| sock
-    jvm -->|atomic writes| files
-
-    classDef container fill:#1e88e5,stroke:#0d47a1,color:#ffffff
-    classDef ext fill:#6c757d,stroke:#495057,color:#ffffff
-    class jvm container
-    class kr,sock,files ext
+    121-. "<div>Reads and writes native OS<br />secret</div><div style='font-size: 70%'></div>" .->123
+    121-. "<div>Named pipe / Pageant on<br />Windows</div><div style='font-size: 70%'></div>" .->126
+  end

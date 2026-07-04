@@ -1,24 +1,35 @@
-flowchart TB
-    subgraph host["Linux workstation"]
-        subgraph flatpak["Flatpak sandbox (org.freedesktop.Platform runtime)"]
-            jvm[jterm JVM process<br/>Java 21 + JediTerm + MINA SSHD]
-        end
-        subgraph libsecret["libsecret / secret-tool"]
-            kr[Keyring backend]
-        end
-        subgraph agentEnv["ssh-agent"]
-            sock[(/run/user/UID/openssh_agent<br/>Unix socket)]
-        end
-        subgraph cfg["~/.config/jterm/"]
-            files[(sessions.json<br/>credentials.json<br/>icons.json<br/>keymap.json<br/>settings.json)]
-        end
+graph TB
+  linkStyle default fill:#ffffff
+
+  subgraph diagram ["jterm - Deployment - Linux"]
+    style diagram fill:#ffffff,stroke:#ffffff
+
+    subgraph 101 [Linux workstation]
+      style 101 fill:#ffffff,stroke:#888888,color:#000000
+
+      subgraph 102 [Flatpak sandbox]
+        style 102 fill:#ffffff,stroke:#888888,color:#000000
+
+        103("<div style='font-weight: bold'>jterm JVM process</div><div style='font-size: 70%; margin-top: 0px'>[Container: Java 21 / Swing]</div><div style='font-size: 80%; margin-top:10px'>Java 21 Swing app; single OS<br />process hosting every<br />component.</div>")
+        style 103 fill:#1e88e5,stroke:#155fa0,color:#ffffff
+      end
+
+      subgraph 104 [secret-tool]
+        style 104 fill:#ffffff,stroke:#888888,color:#000000
+
+        105("<div style='font-weight: bold'>OS keyring</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>secret-tool (Linux), security<br />(macOS) or Windows Credential<br />Store.</div>")
+        style 105 fill:#6c757d,stroke:#4b5157,color:#ffffff
+      end
+
+      subgraph 107 [ssh-agent]
+        style 107 fill:#ffffff,stroke:#888888,color:#000000
+
+        108("<div style='font-weight: bold'>SSH agent</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Unix-domain socket, OpenSSH<br />named pipe or PuTTY Pageant.</div>")
+        style 108 fill:#6c757d,stroke:#4b5157,color:#ffffff
+      end
+
     end
 
-    jvm -->|subprocess| kr
-    jvm -->|JDK Unix-domain socket| sock
-    jvm -->|atomic writes| files
-
-    classDef container fill:#1e88e5,stroke:#0d47a1,color:#ffffff
-    classDef ext fill:#6c757d,stroke:#495057,color:#ffffff
-    class jvm container
-    class kr,sock,files ext
+    103-. "<div>Reads and writes native OS<br />secret</div><div style='font-size: 70%'></div>" .->105
+    103-. "<div>Named pipe / Pageant on<br />Windows</div><div style='font-size: 70%'></div>" .->108
+  end
