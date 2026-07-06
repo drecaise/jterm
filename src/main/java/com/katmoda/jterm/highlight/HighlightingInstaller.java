@@ -32,10 +32,15 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 
 /**
- * Colors new terminal output by re-scanning the on-screen lines whenever the text buffer changes
+ * Colors new terminal output by re-scanning the on-screen lines when the text buffer changes
  * and applying each rule's foreground style via {@link TerminalLine#addCustomHighlighting} — the
  * same per-character override mechanism JediTerm uses for hyperlinks, but with no link semantics
  * (no underline, hover, cursor change or click).
@@ -43,10 +48,29 @@ import java.util.regex.Matcher;
  * <p>Only screen lines are scanned (never history): a line gets colored as it appears, and the
  * highlightings we applied while it was visible ride along into scrollback. Per scan we dispose the
  * highlightings we previously created on a still-visible line before re-applying, so repeated change
- * events never stack duplicates. The model listener fires on JediTerm's read thread, so work runs
- * under {@link TerminalTextBuffer#lock()}.</p>
+ * events never stack duplicates.</p>
+ *
+ * <p>Scans are <em>debounced</em>: the model listener — which JediTerm fires on its emulator thread
+ * for every buffer mutation, at least twice per output line — only flips a flag and schedules a
+ * scan {@value #SCAN_DELAY_MS}&nbsp;ms out on a shared daemon scheduler. Running the rule regexes
+ * synchronously per event throttled pty consumption (making fast output crawl and Ctrl+C appear to
+ * hang while the backlog drained) and, since the scan holds {@link TerminalTextBuffer#lock()},
+ * stalled painting too. Each scan also skips lines whose text is unchanged since the last scan, so
+ * pure scrolling re-matches almost nothing (a {@link TerminalLine}'s identity travels with its
+ * content).</p>
  */
 public final class HighlightingInstaller {
+
+    /** Debounce window between a buffer change and the rescan picking it up. */
+    private static final int SCAN_DELAY_MS = 50;
+
+    /** One scanner thread for all panes; scans are short and take the owning buffer's lock. */
+    private static final ScheduledExecutorService SCANNER =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "jterm-highlight-scanner");
+                t.setDaemon(true);
+                return t;
+            });
 
     private HighlightingInstaller() {
     }
@@ -54,8 +78,8 @@ public final class HighlightingInstaller {
     /**
      * Installs highlighting on {@code widget}. No-op if the compiled list is empty.
      *
-     * @return a teardown {@link Runnable} that detaches the listener (call from the pane's close
-     *         path); {@code null} if nothing was installed.
+     * @return a teardown {@link Runnable} that detaches the listener and cancels any pending scan
+     *         (call from the pane's close path); {@code null} if nothing was installed.
      */
     public static Runnable install(JediTermWidget widget, CompiledHighlightList compiled) {
         if (compiled == null || compiled.isEmpty()) {
@@ -63,24 +87,57 @@ public final class HighlightingInstaller {
         }
         TerminalTextBuffer buffer = widget.getTerminalTextBuffer();
         Scanner scanner = new Scanner(buffer, compiled.rules());
-        TerminalModelListener listener = scanner::scan;
+        TerminalModelListener listener = scanner::requestScan;
         buffer.addModelListener(listener);
-        return () -> buffer.removeModelListener(listener);
+        return () -> {
+            buffer.removeModelListener(listener);
+            scanner.close();
+        };
     }
 
-    /** Holds the per-line highlightings we created, so we can dispose-before-reapply. */
+    /** Holds the per-line scan results, so we can skip unchanged lines and dispose-before-reapply. */
     private static final class Scanner {
+
+        /** What the last scan saw on a line: its text and the highlightings we created for it. */
+        private record LineState(String text, List<TerminalLineIntervalHighlighting> highlightings) {
+        }
+
         private final TerminalTextBuffer buffer;
         private final List<CompiledRule> rules;
-        private final Map<TerminalLine, List<TerminalLineIntervalHighlighting>> applied =
-                new IdentityHashMap<>();
+        /** Touched only on the scanner thread. */
+        private final Map<TerminalLine, LineState> applied = new IdentityHashMap<>();
+
+        /** True while a scan is scheduled but not yet started; coalesces change events. */
+        private final AtomicBoolean scanPending = new AtomicBoolean(false);
+        private volatile ScheduledFuture<?> pendingScan;
+        private volatile boolean closed;
 
         Scanner(TerminalTextBuffer buffer, List<CompiledRule> rules) {
             this.buffer = buffer;
             this.rules = rules;
         }
 
-        void scan() {
+        /** Model-listener entry point; called on JediTerm's emulator thread — must stay cheap. */
+        void requestScan() {
+            if (!closed && scanPending.compareAndSet(false, true)) {
+                pendingScan = SCANNER.schedule(this::scan, SCAN_DELAY_MS, TimeUnit.MILLISECONDS);
+            }
+        }
+
+        void close() {
+            closed = true;
+            ScheduledFuture<?> pending = pendingScan;
+            if (pending != null) {
+                pending.cancel(false);
+            }
+        }
+
+        private void scan() {
+            // Re-arm first: changes arriving mid-scan schedule a follow-up that picks them up.
+            scanPending.set(false);
+            if (closed) {
+                return;
+            }
             buffer.lock();
             try {
                 Set<TerminalLine> current = new HashSet<>();
@@ -102,30 +159,33 @@ public final class HighlightingInstaller {
         }
 
         private void rehighlight(TerminalLine line) {
-            List<TerminalLineIntervalHighlighting> previous = applied.remove(line);
+            String text = line.getText();
+            if (text == null) {
+                text = "";
+            }
+            LineState previous = applied.get(line);
+            if (previous != null && previous.text().equals(text)) {
+                return;
+            }
             if (previous != null) {
-                for (TerminalLineIntervalHighlighting h : previous) {
+                for (TerminalLineIntervalHighlighting h : previous.highlightings()) {
                     h.dispose();
                 }
             }
-            String text = line.getText();
-            if (text == null || text.isEmpty()) {
-                return;
-            }
             List<TerminalLineIntervalHighlighting> created = new ArrayList<>();
-            for (CompiledRule rule : rules) {
-                Matcher m = rule.pattern().matcher(text);
-                while (m.find()) {
-                    if (m.end() > m.start()) {
-                        // addCustomHighlighting's second argument is a LENGTH, not an end offset.
-                        created.add(line.addCustomHighlighting(
-                                m.start(), m.end() - m.start(), rule.style()));
+            if (!text.isEmpty()) {
+                for (CompiledRule rule : rules) {
+                    Matcher m = rule.pattern().matcher(text);
+                    while (m.find()) {
+                        if (m.end() > m.start()) {
+                            // addCustomHighlighting's second argument is a LENGTH, not an end offset.
+                            created.add(line.addCustomHighlighting(
+                                    m.start(), m.end() - m.start(), rule.style()));
+                        }
                     }
                 }
             }
-            if (!created.isEmpty()) {
-                applied.put(line, created);
-            }
+            applied.put(line, new LineState(text, created));
         }
     }
 }
