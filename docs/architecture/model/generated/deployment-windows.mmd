@@ -1,28 +1,28 @@
+%%{init: {'theme':'base','themeVariables':{'edgeLabelBackground':'transparent','lineColor':'#8b95a1','fontFamily':'-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','useMaxWidth':true}}}%%
 graph TB
-  linkStyle default fill:#ffffff
 
   subgraph diagram ["jterm - Deployment - Windows"]
-    style diagram fill:#ffffff,stroke:#ffffff
+    style diagram fill:transparent,stroke:transparent
 
     subgraph 110 [Windows workstation]
-      style 110 fill:#ffffff,stroke:#888888,color:#000000
+      style 110 fill:transparent,stroke:#888888,color:#6b7280
 
       subgraph 111 [MSI-installed jterm]
-        style 111 fill:#ffffff,stroke:#888888,color:#000000
+        style 111 fill:transparent,stroke:#888888,color:#6b7280
 
         112("<div style='font-weight: bold'>jterm JVM process</div><div style='font-size: 70%; margin-top: 0px'>[Container: Java 21 / Swing]</div><div style='font-size: 80%; margin-top:10px'>Java 21 Swing app; single OS<br />process hosting every<br />component.</div>")
         style 112 fill:#1e88e5,stroke:#155fa0,color:#ffffff
       end
 
       subgraph 113 [Windows Credential Store]
-        style 113 fill:#ffffff,stroke:#888888,color:#000000
+        style 113 fill:transparent,stroke:#888888,color:#6b7280
 
         114("<div style='font-weight: bold'>OS keyring</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>secret-tool (Linux), security<br />(macOS) or Windows Credential<br />Store.</div>")
         style 114 fill:#6c757d,stroke:#4b5157,color:#ffffff
       end
 
       subgraph 116 [OpenSSH agent + Pageant]
-        style 116 fill:#ffffff,stroke:#888888,color:#000000
+        style 116 fill:transparent,stroke:#888888,color:#6b7280
 
         117("<div style='font-weight: bold'>SSH agent</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Unix-domain socket, OpenSSH<br />named pipe or PuTTY Pageant.</div>")
         style 117 fill:#6c757d,stroke:#4b5157,color:#ffffff

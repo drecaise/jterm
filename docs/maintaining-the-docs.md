@@ -117,17 +117,28 @@ The CLI needs a JDK 17+ on PATH. The Java toolchain from the app build is fine.
 
 ```bash
 cd docs/architecture/model
-make export      # writes generated/*.mmd
+make export      # writes generated/*.mmd (Structurizr export + postprocess.py)
 make check       # regenerate and fail if committed output is stale (what CI runs)
 ```
 
 CI runs `make check` from `docs/architecture/model` on every docs build. If the DSL
 changed but the committed `.mmd` files weren't regenerated, the workflow fails.
 
+`make export` runs `postprocess.py` after the Structurizr CLI. Structurizr bakes a
+light-mode look into its output (white diagram/boundary backgrounds, black deployment-node
+titles, a `linkStyle default fill:#ffffff`) that renders as a jarring white box in the
+site's dark theme. The post-processor makes the diagrams **theme-adaptive**: it prepends a
+Mermaid `%%{init}%%` directive (transparent edge-label background, neutral line color,
+Material font stack) and rewrites the baked white backgrounds and black titles to
+transparent/neutral gray, leaving the DSL `styles` element colors untouched. It's
+idempotent, so re-running `make export` is byte-stable and drift detection still holds.
+It needs `python3` (already required for the docs build; no extra pip deps).
+
 !!! note "Don't hand-edit `.mmd` files"
     The Mermaid files under `generated/` are overwritten by `make export`. Style tweaks
-    beyond what the DSL's `styles` block controls belong in the DSL; changes made
-    directly in `.mmd` files will be lost on the next regeneration.
+    beyond what the DSL's `styles` block controls belong in the DSL or, for cross-theme
+    presentation, in `postprocess.py`; changes made directly in `.mmd` files will be lost
+    on the next regeneration.
 
 ## What's excluded from the published site
 

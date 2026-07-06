@@ -31,6 +31,17 @@ maintainer to run `make export` will regenerate them from the DSL; from then on 
 DSL is the source of truth and any hand edit to a `.mmd` file is lost on the next
 export.
 
+Structurizr's exporter bakes a light-mode look into every file (`linkStyle default
+fill:#ffffff`, white `fill`/`stroke` on the diagram wrapper and boundary subgraphs,
+black deployment-node titles). MkDocs Material has a dark theme, so those render as a
+white box with low-contrast text. Since the `.mmd` files are regenerated, the fix lives
+in the export pipeline, not in hand edits: `make export` runs `postprocess.py` after the
+CLI to make the diagrams theme-adaptive — it prepends a Mermaid `%%{init}%%` directive
+(transparent edge-label background, neutral line color, Material font stack) and rewrites
+the baked white backgrounds and black titles to `transparent`/neutral gray. Element node
+colors (from the DSL `styles` block) are left untouched, and the step is idempotent so
+`make check` drift detection still holds.
+
 ## Consequences
 
 **Advantages**
@@ -51,8 +62,9 @@ export.
 - Two artifact classes in diffs: the DSL and the generated `.mmd`. Reviewers see
   both, which is verbose but transparent.
 - Structurizr's Mermaid export prioritises correctness over prettiness. Purely
-  aesthetic tweaks are limited; if a diagram needs custom styling beyond the DSL
-  `styles` block, we lose it on regeneration.
+  aesthetic tweaks are limited; styling beyond the DSL `styles` block must go through
+  `postprocess.py` (applied on every export) rather than direct `.mmd` edits, which are
+  lost on regeneration.
 
 **Rejected alternatives**
 

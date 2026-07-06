@@ -1,8 +1,8 @@
+%%{init: {'theme':'base','themeVariables':{'edgeLabelBackground':'transparent','lineColor':'#8b95a1','fontFamily':'-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','useMaxWidth':true}}}%%
 graph LR
-  linkStyle default fill:#ffffff
 
   subgraph diagram ["jterm - Containers"]
-    style diagram fill:#ffffff,stroke:#ffffff
+    style diagram fill:transparent,stroke:transparent
 
     2("<div style='font-weight: bold'>Remote SSH daemon</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>sshd on the target host<br />reached via TCP.</div>")
     style 2 fill:#6c757d,stroke:#4b5157,color:#ffffff
@@ -16,7 +16,7 @@ graph LR
     style 6 fill:#6c757d,stroke:#4b5157,color:#ffffff
 
     subgraph 7 [jterm]
-      style 7 fill:#ffffff,stroke:#0b4884,color:#0b4884
+      style 7 fill:transparent,stroke:#0b4884,color:#0b4884
 
       8("<div style='font-weight: bold'>jterm JVM process</div><div style='font-size: 70%; margin-top: 0px'>[Container: Java 21 / Swing]</div><div style='font-size: 80%; margin-top:10px'>Java 21 Swing app; single OS<br />process hosting every<br />component.</div>")
       style 8 fill:#1e88e5,stroke:#155fa0,color:#ffffff

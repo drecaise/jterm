@@ -2,6 +2,7 @@
 # Requires the Structurizr CLI (https://github.com/structurizr/cli) on PATH.
 
 STRUCTURIZR ?= structurizr-cli
+PYTHON      ?= python3
 WORKSPACE   := workspace.dsl
 OUT_DIR     := generated
 
@@ -15,6 +16,8 @@ export:
 	@for f in $(OUT_DIR)/structurizr-*.mmd; do \
 	  mv -f "$$f" "$(OUT_DIR)/$$(basename "$$f" | sed 's/^structurizr-//')"; \
 	done
+	@# Post-process for theme-adaptive styling (transparent backgrounds, init directive).
+	$(PYTHON) postprocess.py $(OUT_DIR)
 
 # CI drift check: regenerate and fail if committed output differs.
 check: export

@@ -1,8 +1,8 @@
+%%{init: {'theme':'base','themeVariables':{'edgeLabelBackground':'transparent','lineColor':'#8b95a1','fontFamily':'-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','useMaxWidth':true}}}%%
 graph TB
-  linkStyle default fill:#ffffff
 
   subgraph diagram ["jterm - jterm JVM process - Components"]
-    style diagram fill:#ffffff,stroke:#ffffff
+    style diagram fill:transparent,stroke:transparent
 
     3("<div style='font-weight: bold'>OS keyring</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>secret-tool (Linux), security<br />(macOS) or Windows Credential<br />Store.</div>")
     style 3 fill:#6c757d,stroke:#4b5157,color:#ffffff
@@ -10,7 +10,7 @@ graph TB
     style 6 fill:#6c757d,stroke:#4b5157,color:#ffffff
 
     subgraph 8 [jterm JVM process]
-      style 8 fill:#ffffff,stroke:#155fa0,color:#155fa0
+      style 8 fill:transparent,stroke:#155fa0,color:#155fa0
 
       27("<div style='font-weight: bold'>VaultManager</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>Unlocks CredentialVault on<br />the EDT; remembers master<br />password via OS keyring.</div>")
       style 27 fill:#ef5350,stroke:#a73a38,color:#ffffff
