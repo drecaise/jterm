@@ -1,13 +1,18 @@
 /* Click-to-zoom affordance + full-screen overlay for Mermaid diagrams. */
 
-pre.mermaid {
+.mermaid {
   cursor: zoom-in;
   transition: filter 0.15s ease, box-shadow 0.15s ease;
 }
-pre.mermaid:hover {
+.mermaid:hover {
   filter: brightness(1.02);
   box-shadow: 0 0 0 1px var(--md-default-fg-color--lightest);
   border-radius: 0.2rem;
+}
+/* No zoom affordance while the diagram is inside the overlay. */
+.mermaid-zoom-svg .mermaid {
+  cursor: grab;
+  box-shadow: none;
 }
 
 .mermaid-zoom-open {
@@ -42,6 +47,7 @@ pre.mermaid:hover {
 }
 
 .mermaid-zoom-svg {
+  display: inline-block;
   transform-origin: center center;
   cursor: grab;
   will-change: transform;
