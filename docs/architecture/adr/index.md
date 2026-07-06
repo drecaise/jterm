@@ -11,6 +11,7 @@ Short, dated records for jterm's non-obvious architectural choices. Each ADR fol
 | [0004](0004-tofu-host-key-verification.md) | Trust-on-first-use host-key verification | Accepted |
 | [0005](0005-per-os-keyring-clis.md) | Native OS keyring CLIs for Linux and macOS master-password storage | Accepted |
 | [0006](0006-c4-with-structurizr-and-mermaid.md) | C4 documentation via Structurizr DSL + Mermaid | Accepted |
+| [0007](0007-debounced-highlight-scans.md) | Debounce highlight scans off the emulator thread | Accepted |
 
 ## Writing a new ADR
 
