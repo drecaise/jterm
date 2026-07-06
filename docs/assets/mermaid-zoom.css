@@ -26,15 +26,19 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(20, 22, 28, 0.72);
+  /* Opaque, page-matching backdrop so no page content bleeds through. Using the
+     Material bg variable keeps the diagram's theme-adaptive labels/title readable in
+     both light and dark. */
+  background: var(--md-default-bg-color, #fff);
   opacity: 0;
+  /* Non-interactive while hidden: an opacity:0 overlay still captures clicks,
+     which otherwise blocks the rest of the page after the overlay is closed. */
+  pointer-events: none;
   transition: opacity 0.15s ease;
-}
-[data-md-color-scheme="slate"] .mermaid-zoom-overlay {
-  background: rgba(0, 0, 0, 0.82);
 }
 .mermaid-zoom-overlay.visible {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .mermaid-zoom-stage {
@@ -68,13 +72,13 @@
   height: 2.4rem;
   border: none;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
+  background: var(--md-default-fg-color--lightest);
+  color: var(--md-default-fg-color);
   font-size: 1.6rem;
   line-height: 1;
   cursor: pointer;
   transition: background 0.15s ease;
 }
 .mermaid-zoom-close:hover {
-  background: rgba(255, 255, 255, 0.28);
+  background: var(--md-default-fg-color--lighter);
 }

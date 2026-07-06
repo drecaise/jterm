@@ -1,3 +1,8 @@
+---
+config:
+  flowchart:
+    padding: 16
+---
 %%{init: {'theme':'base','themeVariables':{'edgeLabelBackground':'transparent','lineColor':'#8b95a1','fontFamily':'-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','useMaxWidth':true}}}%%
 graph TB
 
@@ -40,22 +45,22 @@ graph TB
       style 29 fill:#ef5350,stroke:#a73a38,color:#ffffff
     end
 
-    13-. "<div>Reads title, profile,<br />TtyConnector</div><div style='font-size: 70%'></div>" .->18
-    13-. "<div>Drives JediTermWidget through<br />the wrapper</div><div style='font-size: 70%'></div>" .->25
-    13-. "<div>Requests a session when a<br />cell is filled</div><div style='font-size: 70%'></div>" .->21
-    21-. "<div>Creates local / WSL sessions</div><div style='font-size: 70%'></div>" .->19
-    21-. "<div>Delegates SSH connect</div><div style='font-size: 70%'></div>" .->22
-    22-. "<div>Resolves passwords on the EDT</div><div style='font-size: 70%'></div>" .->29
-    22-. "<div>Delivers connected session</div><div style='font-size: 70%'></div>" .->20
-    20-. "<div>Verifies host key on connect</div><div style='font-size: 70%'></div>" .->26
-    20-. "<div>Registers agent identities</div><div style='font-size: 70%'></div>" .->23
-    20-. "<div>Adds password identity when<br />needed</div><div style='font-size: 70%'></div>" .->28
-    23-. "<div>Talks to Unix ssh-agent<br />socket</div><div style='font-size: 70%'></div>" .->24
-    23-. "<div>Named pipe / Pageant on<br />Windows</div><div style='font-size: 70%'></div>" .->4
-    24-. "<div>Reads identities and signs<br />challenges</div><div style='font-size: 70%'></div>" .->4
-    19-. "<div>Spawns child process via<br />pty4j</div><div style='font-size: 70%'></div>" .->5
-    20-. "<div>SSH channel over TCP</div><div style='font-size: 70%'></div>" .->2
-    25-. "<div>Reads and writes the<br />underlying connector</div><div style='font-size: 70%'></div>" .->18
-    25-. "<div>Fans writes to sibling<br />connectors via BroadcastBus</div><div style='font-size: 70%'></div>" .->25
-    22-. "<div>Hands the connected session<br />back on the EDT</div><div style='font-size: 70%'></div>" .->13
+    13-. "<div style='padding:4px 8px'><div>Reads title, profile,<br />TtyConnector</div><div style='font-size: 70%'></div></div>" .->18
+    13-. "<div style='padding:4px 8px'><div>Drives JediTermWidget through<br />the wrapper</div><div style='font-size: 70%'></div></div>" .->25
+    13-. "<div style='padding:4px 8px'><div>Requests a session when a<br />cell is filled</div><div style='font-size: 70%'></div></div>" .->21
+    21-. "<div style='padding:4px 8px'><div>Creates local / WSL sessions</div><div style='font-size: 70%'></div></div>" .->19
+    21-. "<div style='padding:4px 8px'><div>Delegates SSH connect</div><div style='font-size: 70%'></div></div>" .->22
+    22-. "<div style='padding:4px 8px'><div>Resolves passwords on the EDT</div><div style='font-size: 70%'></div></div>" .->29
+    22-. "<div style='padding:4px 8px'><div>Delivers connected session</div><div style='font-size: 70%'></div></div>" .->20
+    20-. "<div style='padding:4px 8px'><div>Verifies host key on connect</div><div style='font-size: 70%'></div></div>" .->26
+    20-. "<div style='padding:4px 8px'><div>Registers agent identities</div><div style='font-size: 70%'></div></div>" .->23
+    20-. "<div style='padding:4px 8px'><div>Adds password identity when<br />needed</div><div style='font-size: 70%'></div></div>" .->28
+    23-. "<div style='padding:4px 8px'><div>Talks to Unix ssh-agent<br />socket</div><div style='font-size: 70%'></div></div>" .->24
+    23-. "<div style='padding:4px 8px'><div>Named pipe / Pageant on<br />Windows</div><div style='font-size: 70%'></div></div>" .->4
+    24-. "<div style='padding:4px 8px'><div>Reads identities and signs<br />challenges</div><div style='font-size: 70%'></div></div>" .->4
+    19-. "<div style='padding:4px 8px'><div>Spawns child process via<br />pty4j</div><div style='font-size: 70%'></div></div>" .->5
+    20-. "<div style='padding:4px 8px'><div>SSH channel over TCP</div><div style='font-size: 70%'></div></div>" .->2
+    25-. "<div style='padding:4px 8px'><div>Reads and writes the<br />underlying connector</div><div style='font-size: 70%'></div></div>" .->18
+    25-. "<div style='padding:4px 8px'><div>Fans writes to sibling<br />connectors via BroadcastBus</div><div style='font-size: 70%'></div></div>" .->25
+    22-. "<div style='padding:4px 8px'><div>Hands the connected session<br />back on the EDT</div><div style='font-size: 70%'></div></div>" .->13
   end

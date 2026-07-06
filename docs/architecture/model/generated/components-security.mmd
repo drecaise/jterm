@@ -1,3 +1,8 @@
+---
+config:
+  flowchart:
+    padding: 16
+---
 %%{init: {'theme':'base','themeVariables':{'edgeLabelBackground':'transparent','lineColor':'#8b95a1','fontFamily':'-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','useMaxWidth':true}}}%%
 graph TB
 
@@ -28,12 +33,12 @@ graph TB
       style 33 fill:#8d6e63,stroke:#624d45,color:#ffffff
     end
 
-    29-. "<div>Requests vault unlock</div><div style='font-size: 70%'></div>" .->27
-    27-. "<div>Decrypts entries after unlock</div><div style='font-size: 70%'></div>" .->28
-    27-. "<div>Loads or stores master<br />password</div><div style='font-size: 70%'></div>" .->30
-    30-. "<div>Reads and writes native OS<br />secret</div><div style='font-size: 70%'></div>" .->3
-    28-. "<div>Persists credentials.json</div><div style='font-size: 70%'></div>" .->32
-    31-. "<div>Persists sessions.json</div><div style='font-size: 70%'></div>" .->32
-    33-. "<div>Persists settings.json</div><div style='font-size: 70%'></div>" .->32
-    32-. "<div>Atomic writes to the OS<br />config dir</div><div style='font-size: 70%'></div>" .->6
+    29-. "<div style='padding:4px 8px'><div>Requests vault unlock</div><div style='font-size: 70%'></div></div>" .->27
+    27-. "<div style='padding:4px 8px'><div>Decrypts entries after unlock</div><div style='font-size: 70%'></div></div>" .->28
+    27-. "<div style='padding:4px 8px'><div>Loads or stores master<br />password</div><div style='font-size: 70%'></div></div>" .->30
+    30-. "<div style='padding:4px 8px'><div>Reads and writes native OS<br />secret</div><div style='font-size: 70%'></div></div>" .->3
+    28-. "<div style='padding:4px 8px'><div>Persists credentials.json</div><div style='font-size: 70%'></div></div>" .->32
+    31-. "<div style='padding:4px 8px'><div>Persists sessions.json</div><div style='font-size: 70%'></div></div>" .->32
+    33-. "<div style='padding:4px 8px'><div>Persists settings.json</div><div style='font-size: 70%'></div></div>" .->32
+    32-. "<div style='padding:4px 8px'><div>Atomic writes to the OS<br />config dir</div><div style='font-size: 70%'></div></div>" .->6
   end

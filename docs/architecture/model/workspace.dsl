@@ -1,6 +1,11 @@
 workspace "jterm" "Cross-platform Java Swing terminal emulator: tabs, splittable pane grid, saved SSH sessions, SFTP, tunnels, input broadcast." {
 
     !identifiers flat
+    # No auto-summarised (implied) relationships: each C4 level declares its own
+    # jterm/jvm/component -> external edges explicitly. Implied edges duplicated every
+    # external relationship in the context view (a summary edge plus a component-derived
+    # detail edge), which made the edge labels overlap.
+    !impliedRelationships false
 
     model {
         user = person "User" "Runs local shells and connects to remote hosts over SSH." "Person"
@@ -117,6 +122,15 @@ workspace "jterm" "Cross-platform Java Swing terminal emulator: tabs, splittable
         jterm -> localShell "Runs interactive shells locally / in WSL"
         jterm -> fileSystem "Reads and writes JSON config files"
 
+        # ---------- Container-level external relationships (the jterm JVM process) ----------
+        # Declared explicitly because implied relationships are disabled; these are what the
+        # Containers and Deployment views draw to the OS-native peers.
+        jvm -> remoteSshd "SSH channel over TCP"
+        jvm -> osKeyring "Reads and writes native OS secret"
+        jvm -> sshAgent "Named pipe / Pageant on Windows"
+        jvm -> localShell "Spawns child process via pty4j"
+        jvm -> fileSystem "Atomic writes to the OS config dir"
+
         # ---------- Deployment environments ----------
         deploymentEnvironment "Linux" {
             deploymentNode "Linux workstation" "Any glibc distro" {
@@ -165,7 +179,7 @@ workspace "jterm" "Cross-platform Java Swing terminal emulator: tabs, splittable
 
         systemContext jterm "context" "System context for jterm." {
             include *
-            autolayout lr
+            autolayout tb
         }
 
         container jterm "containers" "Runtime containers and their external peers." {

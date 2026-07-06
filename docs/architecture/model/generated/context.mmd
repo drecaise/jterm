@@ -1,5 +1,10 @@
+---
+config:
+  flowchart:
+    padding: 16
+---
 %%{init: {'theme':'base','themeVariables':{'edgeLabelBackground':'transparent','lineColor':'#8b95a1','fontFamily':'-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','useMaxWidth':true}}}%%
-graph LR
+graph TB
 
   subgraph diagram ["jterm - System Context"]
     style diagram fill:transparent,stroke:transparent
@@ -19,15 +24,10 @@ graph LR
     7("<div style='font-weight: bold'>jterm</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Java 21 Swing terminal<br />emulator.</div>")
     style 7 fill:#1168bd,stroke:#0b4884,color:#ffffff
 
-    7-. "<div>Reads and writes JSON config<br />files</div><div style='font-size: 70%'></div>" .->6
-    7-. "<div>Named pipe / Pageant on<br />Windows</div><div style='font-size: 70%'></div>" .->4
-    7-. "<div>Spawns child process via<br />pty4j</div><div style='font-size: 70%'></div>" .->5
-    7-. "<div>SSH channel over TCP</div><div style='font-size: 70%'></div>" .->2
-    7-. "<div>Reads and writes native OS<br />secret</div><div style='font-size: 70%'></div>" .->3
-    7-. "<div>Atomic writes to the OS<br />config dir</div><div style='font-size: 70%'></div>" .->6
-    1-. "<div>Opens tabs, splits panes,<br />launches sessions</div><div style='font-size: 70%'></div>" .->7
-    7-. "<div>SSH shell + SFTP + tunnels</div><div style='font-size: 70%'></div>" .->2
-    7-. "<div>Stores and retrieves master<br />password</div><div style='font-size: 70%'></div>" .->3
-    7-. "<div>Public-key auth via agent<br />identities</div><div style='font-size: 70%'></div>" .->4
-    7-. "<div>Runs interactive shells<br />locally / in WSL</div><div style='font-size: 70%'></div>" .->5
+    1-. "<div style='padding:4px 8px'><div>Opens tabs, splits panes,<br />launches sessions</div><div style='font-size: 70%'></div></div>" .->7
+    7-. "<div style='padding:4px 8px'><div>SSH shell + SFTP + tunnels</div><div style='font-size: 70%'></div></div>" .->2
+    7-. "<div style='padding:4px 8px'><div>Stores and retrieves master<br />password</div><div style='font-size: 70%'></div></div>" .->3
+    7-. "<div style='padding:4px 8px'><div>Public-key auth via agent<br />identities</div><div style='font-size: 70%'></div></div>" .->4
+    7-. "<div style='padding:4px 8px'><div>Runs interactive shells<br />locally / in WSL</div><div style='font-size: 70%'></div></div>" .->5
+    7-. "<div style='padding:4px 8px'><div>Reads and writes JSON config<br />files</div><div style='font-size: 70%'></div></div>" .->6
   end

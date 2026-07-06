@@ -1,3 +1,8 @@
+---
+config:
+  flowchart:
+    padding: 16
+---
 %%{init: {'theme':'base','themeVariables':{'edgeLabelBackground':'transparent','lineColor':'#8b95a1','fontFamily':'-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','useMaxWidth':true}}}%%
 graph LR
 
@@ -29,14 +34,14 @@ graph LR
       style 29 fill:#ef5350,stroke:#a73a38,color:#ffffff
     end
 
-    13-. "<div>1. User drops SSH session on<br />pane</div><div style='font-size: 70%'></div>" .->21
-    21-. "<div>2. connectSshAsync (EDT)</div><div style='font-size: 70%'></div>" .->22
-    22-. "<div>3. Resolve password on EDT</div><div style='font-size: 70%'></div>" .->29
-    29-. "<div>4. Unlock vault</div><div style='font-size: 70%'></div>" .->27
-    27-. "<div>5. Decrypt saved password</div><div style='font-size: 70%'></div>" .->28
-    22-. "<div>6. Open ChannelShell<br />(SwingWorker)</div><div style='font-size: 70%'></div>" .->20
-    20-. "<div>7. Verify host key</div><div style='font-size: 70%'></div>" .->26
-    20-. "<div>8. Install ssh-agent<br />identities</div><div style='font-size: 70%'></div>" .->23
-    23-. "<div>9. Open Unix socket</div><div style='font-size: 70%'></div>" .->24
-    22-. "<div>10. Hand connected session<br />back (EDT)</div><div style='font-size: 70%'></div>" .->13
+    13-. "<div style='padding:4px 8px'><div>1. User drops SSH session on<br />pane</div><div style='font-size: 70%'></div></div>" .->21
+    21-. "<div style='padding:4px 8px'><div>2. connectSshAsync (EDT)</div><div style='font-size: 70%'></div></div>" .->22
+    22-. "<div style='padding:4px 8px'><div>3. Resolve password on EDT</div><div style='font-size: 70%'></div></div>" .->29
+    29-. "<div style='padding:4px 8px'><div>4. Unlock vault</div><div style='font-size: 70%'></div></div>" .->27
+    27-. "<div style='padding:4px 8px'><div>5. Decrypt saved password</div><div style='font-size: 70%'></div></div>" .->28
+    22-. "<div style='padding:4px 8px'><div>6. Open ChannelShell<br />(SwingWorker)</div><div style='font-size: 70%'></div></div>" .->20
+    20-. "<div style='padding:4px 8px'><div>7. Verify host key</div><div style='font-size: 70%'></div></div>" .->26
+    20-. "<div style='padding:4px 8px'><div>8. Install ssh-agent<br />identities</div><div style='font-size: 70%'></div></div>" .->23
+    23-. "<div style='padding:4px 8px'><div>9. Open Unix socket</div><div style='font-size: 70%'></div></div>" .->24
+    22-. "<div style='padding:4px 8px'><div>10. Hand connected session<br />back (EDT)</div><div style='font-size: 70%'></div></div>" .->13
   end
