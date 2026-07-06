@@ -1,0 +1,74 @@
+/* Click-to-zoom affordance + full-screen overlay for Mermaid diagrams. */
+
+pre.mermaid {
+  cursor: zoom-in;
+  transition: filter 0.15s ease, box-shadow 0.15s ease;
+}
+pre.mermaid:hover {
+  filter: brightness(1.02);
+  box-shadow: 0 0 0 1px var(--md-default-fg-color--lightest);
+  border-radius: 0.2rem;
+}
+
+.mermaid-zoom-open {
+  overflow: hidden; /* lock background scroll while overlay is open */
+}
+
+.mermaid-zoom-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(20, 22, 28, 0.72);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+[data-md-color-scheme="slate"] .mermaid-zoom-overlay {
+  background: rgba(0, 0, 0, 0.82);
+}
+.mermaid-zoom-overlay.visible {
+  opacity: 1;
+}
+
+.mermaid-zoom-stage {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.mermaid-zoom-svg {
+  transform-origin: center center;
+  cursor: grab;
+  will-change: transform;
+}
+.mermaid-zoom-svg.dragging {
+  cursor: grabbing;
+}
+.mermaid-zoom-svg svg {
+  display: block;
+  user-select: none;
+}
+
+.mermaid-zoom-close {
+  position: absolute;
+  top: 1rem;
+  right: 1.2rem;
+  width: 2.4rem;
+  height: 2.4rem;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.mermaid-zoom-close:hover {
+  background: rgba(255, 255, 255, 0.28);
+}

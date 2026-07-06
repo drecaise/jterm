@@ -140,6 +140,15 @@ It needs `python3` (already required for the docs build; no extra pip deps).
     presentation, in `postprocess.py`; changes made directly in `.mmd` files will be lost
     on the next regeneration.
 
+### Click-to-zoom overlay
+
+The rendered diagrams are small on the page, so `docs/assets/mermaid-zoom.js` and
+`docs/assets/mermaid-zoom.css` (wired via `extra_javascript`/`extra_css` in `mkdocs.yml`)
+make any Mermaid diagram open full-screen on a dismissible overlay when clicked, with
+wheel-zoom and drag-pan. It's dependency-free vanilla JS — a single delegated click
+listener on `document` (instant-navigation-safe) that clones the runtime `<svg>` into the
+overlay. Close via the × button, a backdrop click, or ++esc++.
+
 ## What's excluded from the published site
 
 The `mkdocs-exclude` plugin (configured under `plugins.exclude.glob` in `mkdocs.yml`) keeps

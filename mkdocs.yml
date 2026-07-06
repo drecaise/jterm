@@ -71,6 +71,12 @@ markdown_extensions:
       base_path: [docs]
       check_paths: true
 
+extra_css:
+  - assets/mermaid-zoom.css
+
+extra_javascript:
+  - assets/mermaid-zoom.js
+
 nav:
   - Home: index.md
   - Getting started: getting-started.md
