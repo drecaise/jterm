@@ -91,6 +91,34 @@ These assets are built automatically by the `Release` GitHub Actions workflow
 ([`.github/workflows/release.yml`](.github/workflows/release.yml)) whenever a `v*.*.*` tag is
 pushed; a manual workflow run builds the same artifacts for testing without publishing a release.
 
+### Building a test RPM with `gh` (no release created)
+
+The `Release` workflow supports manual dispatch: it builds all the artifacts and uploads
+them as downloadable **workflow artifacts** only — no GitHub Release is created or
+modified. Manual builds are versioned from `pom.xml` with a `-SNAPSHOT` suffix
+(e.g. `jterm-1.2.3-SNAPSHOT.x86_64.rpm`).
+
+```bash
+# Start a manual build (add --ref <branch> to build from a branch other than the default)
+gh workflow run release.yml
+
+# Find the run that just started and follow it (the full build takes a while;
+# the RPM job alone usually finishes sooner)
+gh run list --workflow=release.yml --limit 1
+gh run watch <run-id>
+
+# Download just the RPM artifact (other names: jterm-jar, jterm-msi, jterm-dmg,
+# jterm-flatpak, jterm-snap; omit --name to grab everything)
+gh run download <run-id> --name jterm-rpm
+```
+
+The RPM is built inside a Rocky Linux 10 container, so it installs natively there
+(and on compatible EL10 distros):
+
+```bash
+sudo dnf install ./jterm-*.x86_64.rpm
+```
+
 ### Linux / GNOME desktop integration (running the bare jar)
 
 If you run the bare `.jar` directly (rather than installing the Flatpak, which already

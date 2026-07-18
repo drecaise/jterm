@@ -128,6 +128,10 @@ in classpath mode (`app.classpath`/`app.mainclass` in `jterm.cfg`), where manife
 are ignored. So the `build-rpm` workflow job passes `--java-options "--add-opens=…"` explicitly
 and swaps in `packaging/rpm/jterm.desktop` (a jpackage resource override with
 `StartupWMClass=jterm`) via `--resource-dir` — remove either and GNOME shows two dock icons.
+The same resource dir also overrides the RPM spec (`packaging/rpm/jterm.spec`, based on JDK
+21's `template.spec`): its `%install` relocates the generated desktop entry to an RPM-owned
+`/usr/share/applications/jterm.desktop`, replacing the stock `xdg-desktop-menu` scriptlets
+that copied `jterm-jterm.desktop` untracked into `/usr/local/share/applications`.
 
 ## Conventions
 - Java records/sealed-where-it-helps; one public type per file; package-private helpers kept
