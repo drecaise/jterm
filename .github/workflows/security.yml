@@ -34,8 +34,20 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
           cache: maven
+      # Persist the NVD database across runs. The key never hits (fresh run_id), so the
+      # restore-keys fallback always pulls the most recent prior DB, and a new cache is saved
+      # each run. This means a transient NVD API outage falls back to yesterday's cached data
+      # instead of hard-failing with "No documents exist".
+      - name: Cache NVD database
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/owasp/dependency-check-data
+          key: nvd-data-${{ github.run_id }}
+          restore-keys: |
+            nvd-data-
       # Fails the build on a dependency with a CVE at CVSS >= 7 (see the `security` profile).
-      # NVD_API_KEY (repo secret) avoids API throttling; the scan still runs without it, just slower.
+      # NVD_API_KEY (repo secret) is required to update the NVD data reliably — without a valid
+      # key the NVD API rejects/throttles the update, which surfaces as a bytes-is-null NPE.
       - run: mvn -B -P security verify -DskipTests -Dnvd.api.key="${NVD_API_KEY}"
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
