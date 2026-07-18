@@ -1,0 +1,18 @@
+# jpackage resource override for the RPM's desktop entry (picked up via
+# --resource-dir in .github/workflows/release.yml). ALL_CAPS tokens are
+# substituted by jpackage; StartupWMClass must stay in sync with
+# com.katmoda.jterm.app.Main.APP_ID so GNOME matches the running window
+# to this launcher (one dock icon instead of two).
+[Desktop Entry]
+Name=APPLICATION_NAME
+GenericName=Terminal
+Comment=APPLICATION_DESCRIPTION
+Exec=APPLICATION_LAUNCHER
+Icon=APPLICATION_ICON
+Terminal=false
+Type=Application
+Categories=DEPLOY_BUNDLE_CATEGORY
+Keywords=terminal;shell;ssh;console;
+StartupNotify=true
+StartupWMClass=jterm
+DESKTOP_MIMES

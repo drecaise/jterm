@@ -123,6 +123,12 @@ to `jterm` via reflection on `sun.awt.X11.XToolkit` (enabled by `Add-Opens:
 java.desktop/sun.awt.X11` in the jar manifest), and `packaging/install-desktop-integration.sh`
 installs the icon + a `StartupWMClass=jterm` desktop file.
 
+The jar-manifest `Add-Opens` does **not** reach the jpackage RPM: its launcher starts the app
+in classpath mode (`app.classpath`/`app.mainclass` in `jterm.cfg`), where manifest attributes
+are ignored. So the `build-rpm` workflow job passes `--java-options "--add-opens=…"` explicitly
+and swaps in `packaging/rpm/jterm.desktop` (a jpackage resource override with
+`StartupWMClass=jterm`) via `--resource-dir` — remove either and GNOME shows two dock icons.
+
 ## Conventions
 - Java records/sealed-where-it-helps; one public type per file; package-private helpers kept
   next to their user. No Lombok, no DI framework — plain constructors and small singletons

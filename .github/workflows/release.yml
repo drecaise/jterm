@@ -330,8 +330,11 @@ jobs:
     steps:
       - name: Install RPM build tooling
         # rpm-build provides rpmbuild (jpackage --type rpm shells out to it);
-        # tar/gzip let setup-java unpack the Temurin JDK below.
-        run: dnf -y install rpm-build tar gzip
+        # tar/gzip let setup-java unpack the Temurin JDK below; git lets
+        # actions/checkout clone instead of falling back to a tarball download.
+        run: dnf -y install rpm-build tar gzip git
+      # Needed for packaging/rpm/ (jpackage resource overrides).
+      - uses: actions/checkout@v7
       # Use Temurin, not the distro OpenJDK: Rocky's java-21-openjdk omits the
       # jdk.management.jfr jmod, so jpackage's internal jlink fails with
       # "Module jdk.management.jfr not found". Temurin ships the complete jmod set.
@@ -351,6 +354,13 @@ jobs:
           [ -f dist-jar/com.katmoda.jterm-256.png ] && ICON_ARG="--icon dist-jar/com.katmoda.jterm-256.png"
           # jpackage rpm/deb versions may not contain dashes, so use the floored
           # numeric app_version (same as the MSI/DMG), not the display version.
+          #
+          # --resource-dir swaps in packaging/rpm/jterm.desktop, whose
+          # StartupWMClass lets GNOME match the running window to the launcher.
+          # The matching WM_CLASS is set reflectively by app.Main, which needs
+          # the explicit --add-opens: the jpackage launcher starts the app in
+          # classpath mode (app.classpath + app.mainclass in jterm.cfg), so the
+          # jar manifest's Add-Opens attribute is never honored.
           jpackage \
             --type rpm \
             --name jterm \
@@ -358,9 +368,11 @@ jobs:
             --input staging \
             --main-jar jterm.jar \
             --main-class com.katmoda.jterm.app.Main \
+            --java-options "--add-opens=java.desktop/sun.awt.X11=ALL-UNNAMED" \
             --vendor "Mark Moses" \
             --description "Tabbed, splittable terminal emulator with SSH sessions" \
-            --linux-shortcut --linux-menu-group "System" \
+            --linux-shortcut --linux-menu-group "System;TerminalEmulator;" \
+            --resource-dir packaging/rpm \
             --dest dist \
             $ICON_ARG
           # jpackage names the file jterm-<app_version>-1.x86_64.rpm; give it the
