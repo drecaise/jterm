@@ -241,10 +241,20 @@
                     <plugin>
                         <groupId>org.owasp</groupId>
                         <artifactId>dependency-check-maven</artifactId>
-                        <version>10.0.4</version>
+                        <version>12.2.2</version>
                         <configuration>
                             <failBuildOnCVSS>7</failBuildOnCVSS>
                             <nvdApiKey>${nvd.api.key}</nvdApiKey>
+                            <!--
+                                Resilience against transient NVD API failures (throttling / empty
+                                error bodies that otherwise NPE out of the update). Retry harder
+                                before giving up, and skip the update entirely when the cached DB
+                                is still fresh so most runs never touch the NVD API. Combined with
+                                the CI-side NVD DB cache, a bad update falls back to cached data
+                                instead of hard-failing.
+                            -->
+                            <nvdMaxRetryCount>10</nvdMaxRetryCount>
+                            <nvdValidForHours>24</nvdValidForHours>
                         </configuration>
                         <executions>
                             <execution>
