@@ -322,6 +322,11 @@ jobs:
     # already produced by build-jar.
     container:
       image: rockylinux/rockylinux:10
+      # The Rocky 10 image ships no PATH in its config (only "container=oci"),
+      # so GitHub's container bootstrap fails with exec: "sh" not found. Define
+      # a standard PATH so the runner can exec sh/node inside the container.
+      env:
+        PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     steps:
       - name: Install RPM build tooling
         # rpm-build provides rpmbuild (jpackage --type rpm shells out to it);
