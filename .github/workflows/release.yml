@@ -323,8 +323,17 @@ jobs:
     container:
       image: rockylinux/rockylinux:10
     steps:
-      - name: Install build tools
-        run: dnf -y install java-21-openjdk-devel rpm-build
+      - name: Install RPM build tooling
+        # rpm-build provides rpmbuild (jpackage --type rpm shells out to it);
+        # tar/gzip let setup-java unpack the Temurin JDK below.
+        run: dnf -y install rpm-build tar gzip
+      # Use Temurin, not the distro OpenJDK: Rocky's java-21-openjdk omits the
+      # jdk.management.jfr jmod, so jpackage's internal jlink fails with
+      # "Module jdk.management.jfr not found". Temurin ships the complete jmod set.
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
       - uses: actions/download-artifact@v8
         with:
           name: jterm-jar
