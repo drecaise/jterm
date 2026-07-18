@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
+    <!--
+        CVE-2026-53914 (JetBrains Kotlin < 2.4.20): code execution via unsafe deserialization
+        of Kotlin *build-cache metadata* — a compiler / build-tooling concern. jterm bundles
+        kotlin-stdlib only as a runtime library (pulled transitively by jediterm-core); it does
+        not read or write the Kotlin build cache, so this code path is not reachable here.
+        dependency-check CPE-matches the CVE onto the stdlib jar and inflates it to CVSS 9.8
+        (the upstream advisory scores it 6.7). No stable fix is published yet — only
+        2.4.20-Beta1 exists on Maven Central — so we cannot upgrade off a beta.
+        Revisit and remove this suppression once kotlin-stdlib 2.4.20 (stable) is available.
+    -->
+    <suppress>
+        <notes><![CDATA[
+            CVE affects Kotlin build-cache deserialization (compiler/build tooling), not the
+            kotlin-stdlib runtime jar bundled via JediTerm. No stable fix released yet.
+        ]]></notes>
+        <packageUrl regex="true">^pkg:maven/org\.jetbrains\.kotlin/kotlin-stdlib@.*$</packageUrl>
+        <cve>CVE-2026-53914</cve>
+    </suppress>
+</suppressions>

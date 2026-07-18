@@ -6,7 +6,7 @@
 
     <groupId>com.katmoda</groupId>
     <artifactId>jterm</artifactId>
-    <version>1.3.0</version>
+    <version>1.3.1</version>
     <packaging>jar</packaging>
     <name>jterm</name>
     <description>Java 21 tabbed/splittable terminal emulator with SSH sessions</description>
@@ -30,7 +30,7 @@
         <pty4j.version>0.13.12</pty4j.version>
         <sshd.version>2.18.0</sshd.version>
         <eddsa.version>0.3.0</eddsa.version>
-        <jackson.version>2.19.0</jackson.version>
+        <jackson.version>2.21.4</jackson.version>
         <slf4j.version>2.0.13</slf4j.version>
         <javakeyring.version>1.0.4</javakeyring.version>
         <junit.version>5.11.3</junit.version>
@@ -245,6 +245,10 @@
                         <configuration>
                             <failBuildOnCVSS>7</failBuildOnCVSS>
                             <nvdApiKey>${nvd.api.key}</nvdApiKey>
+                            <!-- Documented false-positives / not-reachable CVEs. See the file for rationale. -->
+                            <suppressionFiles>
+                                <suppressionFile>owasp-suppressions.xml</suppressionFile>
+                            </suppressionFiles>
                             <!--
                                 Resilience against transient NVD API failures (throttling / empty
                                 error bodies that otherwise NPE out of the update). Retry harder
