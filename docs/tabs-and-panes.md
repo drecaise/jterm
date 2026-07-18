@@ -23,9 +23,10 @@ another monitor. **Attach** sends a detached window's tab back into the main win
 
 ## The pane grid
 
-A tab starts as a single pane. You can split it into a **uniform grid of up to 3 columns × 3
-rows** (a maximum of 9 panes). All panes in a tab are always **equally sized** — jterm re-lays
-the whole grid out evenly on every change, so there are no draggable dividers to fiddle with.
+A tab starts as a single pane. You can split it into a **grid of up to 3 columns × 3
+rows** (a maximum of 9 panes). New splits always open with an **equal share** of the space;
+you can then drag the dividers between panes to change the row and column sizes (see
+[Resizing panes](#resizing-panes)).
 
 ![A tab split into a grid of panes](img/pane-grid-3x3.png)
 
@@ -45,6 +46,23 @@ whole trailing row or column empty, the grid **collapses** it so the layout stay
 !!! tip "Duplicate a session"
     *Duplicate Pane to Split* / *Duplicate Pane to Tab* open another instance of whatever the
     focused pane is running (a fresh local shell, or a new connection to the same SSH session).
+
+## Resizing panes
+
+The gap between panes is a **draggable divider** — hover over it and the cursor changes and
+the divider lights up in the accent colour.
+
+- **Drag** a divider to resize the two neighbouring rows or columns. Sizing is per row and
+  per column (never per individual pane), so the grid always stays rectangular.
+- **Double-click** a divider to reset its axis — all columns, or all rows — back to equal
+  shares.
+- A row or column can't be dragged below a **minimum size**, so no pane ever collapses into
+  an unusable sliver.
+
+Splitting keeps your proportions: the new row or column takes an equal share and the
+existing ones keep their ratio to each other. If closing panes makes the grid **collapse** a
+row or column, the sizes on that axis reset to equal shares (the remaining panes may have
+moved cells, so the old proportions no longer apply).
 
 ## Font size
 

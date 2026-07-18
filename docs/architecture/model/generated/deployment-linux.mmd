@@ -12,11 +12,18 @@ graph TB
     subgraph 96 [Linux workstation]
       style 96 fill:transparent,stroke:#888888,color:#6b7280
 
-      subgraph 102 [ssh-agent]
-        style 102 fill:transparent,stroke:#888888,color:#6b7280
+      subgraph 101 [secret-tool]
+        style 101 fill:transparent,stroke:#888888,color:#6b7280
 
-        103("<div style='font-weight: bold'>SSH agent</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Unix-domain socket, OpenSSH<br />named pipe or PuTTY Pageant.</div>")
-        style 103 fill:#6c757d,stroke:#4b5157,color:#ffffff
+        102("<div style='font-weight: bold'>OS keyring</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>secret-tool (Linux), security<br />(macOS) or Windows Credential<br />Store.</div>")
+        style 102 fill:#6c757d,stroke:#4b5157,color:#ffffff
+      end
+
+      subgraph 105 [ssh-agent]
+        style 105 fill:transparent,stroke:#888888,color:#6b7280
+
+        106("<div style='font-weight: bold'>SSH agent</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Unix-domain socket, OpenSSH<br />named pipe or PuTTY Pageant.</div>")
+        style 106 fill:#6c757d,stroke:#4b5157,color:#ffffff
       end
 
       subgraph 97 [Flatpak sandbox]
@@ -26,15 +33,17 @@ graph TB
         style 98 fill:#1e88e5,stroke:#155fa0,color:#ffffff
       end
 
-      subgraph 99 [secret-tool]
+      subgraph 99 [RPM-installed jterm]
         style 99 fill:transparent,stroke:#888888,color:#6b7280
 
-        100("<div style='font-weight: bold'>OS keyring</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>secret-tool (Linux), security<br />(macOS) or Windows Credential<br />Store.</div>")
-        style 100 fill:#6c757d,stroke:#4b5157,color:#ffffff
+        100("<div style='font-weight: bold'>jterm JVM process</div><div style='font-size: 70%; margin-top: 0px'>[Container: Java 21 / Swing]</div><div style='font-size: 80%; margin-top:10px'>Java 21 Swing app; single OS<br />process hosting every<br />component.</div>")
+        style 100 fill:#1e88e5,stroke:#155fa0,color:#ffffff
       end
 
     end
 
-    98-. "<div style='padding:4px 8px'><div>Reads and writes native OS<br />secret</div><div style='font-size: 70%'></div></div>" .->100
-    98-. "<div style='padding:4px 8px'><div>Named pipe / Pageant on<br />Windows</div><div style='font-size: 70%'></div></div>" .->103
+    100-. "<div style='padding:4px 8px'><div>Reads and writes native OS<br />secret</div><div style='font-size: 70%'></div></div>" .->102
+    98-. "<div style='padding:4px 8px'><div>Reads and writes native OS<br />secret</div><div style='font-size: 70%'></div></div>" .->102
+    100-. "<div style='padding:4px 8px'><div>Named pipe / Pageant on<br />Windows</div><div style='font-size: 70%'></div></div>" .->106
+    98-. "<div style='padding:4px 8px'><div>Named pipe / Pageant on<br />Windows</div><div style='font-size: 70%'></div></div>" .->106
   end

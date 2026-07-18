@@ -1,6 +1,6 @@
 # ADR 0001: Uniform R x C pane grid instead of a binary split tree
 
-**Status:** Accepted
+**Status:** Accepted (amended 2026-07-18: per-axis weights)
 **Date:** 2026-01-04
 
 ## Context
@@ -40,3 +40,13 @@ grid is re-laid-out on every structural change.
 - Uneven splits (e.g. a 30/70 vertical divide) are not possible. This is an explicit
   non-goal; if it ever becomes one, the grid can be extended with per-column weights
   without a full rewrite.
+
+## Amendment (2026-07-18): per-axis weights
+
+The extension anticipated above landed, exactly as predicted: `WeightedGridLayout` now
+sizes rows and columns by per-axis weights that the user adjusts by dragging the gutters
+between cells (double-click resets an axis to equal shares; a minimum cell size keeps
+slivers impossible). The core decision is unchanged — the layout is still a uniform R×C
+grid, not a split tree: weights apply to whole rows and columns, never to individual
+cells, and splitting/collapsing still works purely on the two `rows`/`cols` values. The
+"no user-adjustable sash" consequence no longer holds; "no weird layouts" still does.

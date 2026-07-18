@@ -9,32 +9,32 @@ graph TB
   subgraph diagram ["jterm - Deployment - macOS"]
     style diagram fill:transparent,stroke:transparent
 
-    subgraph 114 [macOS workstation]
-      style 114 fill:transparent,stroke:#888888,color:#6b7280
+    subgraph 118 [macOS workstation]
+      style 118 fill:transparent,stroke:#888888,color:#6b7280
 
-      subgraph 115 [DMG-installed jterm]
-        style 115 fill:transparent,stroke:#888888,color:#6b7280
+      subgraph 119 [DMG-installed jterm]
+        style 119 fill:transparent,stroke:#888888,color:#6b7280
 
-        116("<div style='font-weight: bold'>jterm JVM process</div><div style='font-size: 70%; margin-top: 0px'>[Container: Java 21 / Swing]</div><div style='font-size: 80%; margin-top:10px'>Java 21 Swing app; single OS<br />process hosting every<br />component.</div>")
-        style 116 fill:#1e88e5,stroke:#155fa0,color:#ffffff
+        120("<div style='font-weight: bold'>jterm JVM process</div><div style='font-size: 70%; margin-top: 0px'>[Container: Java 21 / Swing]</div><div style='font-size: 80%; margin-top:10px'>Java 21 Swing app; single OS<br />process hosting every<br />component.</div>")
+        style 120 fill:#1e88e5,stroke:#155fa0,color:#ffffff
       end
 
-      subgraph 117 [security CLI]
-        style 117 fill:transparent,stroke:#888888,color:#6b7280
+      subgraph 121 [security CLI]
+        style 121 fill:transparent,stroke:#888888,color:#6b7280
 
-        118("<div style='font-weight: bold'>OS keyring</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>secret-tool (Linux), security<br />(macOS) or Windows Credential<br />Store.</div>")
-        style 118 fill:#6c757d,stroke:#4b5157,color:#ffffff
+        122("<div style='font-weight: bold'>OS keyring</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>secret-tool (Linux), security<br />(macOS) or Windows Credential<br />Store.</div>")
+        style 122 fill:#6c757d,stroke:#4b5157,color:#ffffff
       end
 
-      subgraph 120 [ssh-agent]
-        style 120 fill:transparent,stroke:#888888,color:#6b7280
+      subgraph 124 [ssh-agent]
+        style 124 fill:transparent,stroke:#888888,color:#6b7280
 
-        121("<div style='font-weight: bold'>SSH agent</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Unix-domain socket, OpenSSH<br />named pipe or PuTTY Pageant.</div>")
-        style 121 fill:#6c757d,stroke:#4b5157,color:#ffffff
+        125("<div style='font-weight: bold'>SSH agent</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Unix-domain socket, OpenSSH<br />named pipe or PuTTY Pageant.</div>")
+        style 125 fill:#6c757d,stroke:#4b5157,color:#ffffff
       end
 
     end
 
-    116-. "<div style='padding:4px 8px'><div>Reads and writes native OS<br />secret</div><div style='font-size: 70%'></div></div>" .->118
-    116-. "<div style='padding:4px 8px'><div>Named pipe / Pageant on<br />Windows</div><div style='font-size: 70%'></div></div>" .->121
+    120-. "<div style='padding:4px 8px'><div>Reads and writes native OS<br />secret</div><div style='font-size: 70%'></div></div>" .->122
+    120-. "<div style='padding:4px 8px'><div>Named pipe / Pageant on<br />Windows</div><div style='font-size: 70%'></div></div>" .->125
   end

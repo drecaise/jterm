@@ -10,10 +10,13 @@ The easiest way to run jterm is a pre-built binary from the
 | Windows | `jterm-<version>.msi` | Run the installer |
 | macOS | `jterm-<version>.dmg` | Open the disk image, drag jterm to Applications |
 | Linux | `jterm-<version>.flatpak` | `flatpak install jterm-<version>.flatpak` |
+| Linux (RHEL family) | `jterm-<version>.x86_64.rpm` | `sudo dnf install ./jterm-<version>.x86_64.rpm` |
+| Linux | `jterm-<version>.snap` | `sudo snap install --classic --dangerous jterm-<version>.snap` |
 | Any OS | `jterm-<version>.jar` | `java -jar jterm-<version>.jar` (needs a JRE 21) |
 
-The MSI, DMG and Flatpak bundle their own Java runtime, so you don't need a separate JDK/JRE.
-Only the bare `.jar` requires one.
+Everything except the bare `.jar` bundles its own Java runtime, so you don't need a separate
+JDK/JRE. The RPM is built on **Rocky Linux 10**, so it's the right pick for Rocky/RHEL/Alma
+10 and friends; on other distros prefer the Flatpak.
 
 !!! warning "macOS first launch"
     The macOS `.dmg` is currently **unsigned**, so Gatekeeper blocks the first launch.

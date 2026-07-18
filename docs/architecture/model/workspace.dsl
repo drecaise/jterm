@@ -24,7 +24,7 @@ workspace "jterm" "Cross-platform Java Swing terminal emulator: tabs, splittable
                 mainWindow          = component "MainWindow"          "Top-level JFrame; installs the global KeyEventDispatcher for keymap shortcuts." "Swing"      "UI"
                 windowTopology      = component "WindowTopology"      "Registry of open windows; routes shortcut dispatch to the focused window."      "Swing"      "UI"
                 tabPane             = component "TabPane"              "JTabbedPane wrapper; hosts one PaneGrid per tab."                                 "Swing"      "UI"
-                paneGrid            = component "PaneGrid"             "Uniform 3x3 R x C grid model; splits and collapses trailing empty rows/cols."     "Swing"      "UI"
+                paneGrid            = component "PaneGrid"             "Uniform 3x3 R x C grid; weight-sized rows/cols with draggable gutter dividers (WeightedGridLayout)." "Swing" "UI"
                 terminalPane        = component "TerminalPane"         "Hosts a JediTermWidget; wires session connector through BroadcastingTtyConnector." "Swing / JediTerm" "UI"
                 sessionSidebar      = component "SessionSidebar"       "Tree of folders and SSH sessions; drag source for DnD launches."                  "Swing"      "UI"
                 sftpPane            = component "SftpPane"             "Remote file browser backed by MINA SFTP client."                                  "Swing / MINA SFTP" "UI"
@@ -137,6 +137,9 @@ workspace "jterm" "Cross-platform Java Swing terminal emulator: tabs, splittable
                 deploymentNode "Flatpak sandbox" "org.flatpak.Flatpak" {
                     linuxJvm = containerInstance jvm
                 }
+                deploymentNode "RPM-installed jterm" "jpackage RPM (Rocky Linux 10)" {
+                    linuxRpmJvm = containerInstance jvm
+                }
                 deploymentNode "secret-tool" "libsecret CLI" {
                     linuxKeyring = softwareSystemInstance osKeyring
                 }
@@ -238,7 +241,7 @@ workspace "jterm" "Cross-platform Java Swing terminal emulator: tabs, splittable
             autolayout lr
         }
 
-        deployment jterm "Linux" "deployment-linux" "Linux Flatpak deployment." {
+        deployment jterm "Linux" "deployment-linux" "Linux deployment: Flatpak sandbox or Rocky Linux 10 RPM." {
             include *
             autolayout tb
         }

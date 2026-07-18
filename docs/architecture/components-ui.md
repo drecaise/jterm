@@ -26,8 +26,15 @@ package that hosts the top-level window and the shortcut dispatcher.
 - `PaneGrid` is the model of the split layout. It is **not** a binary split tree — it's
   a uniform `TerminalPane[3][3]` with live `rows` and `cols` values from 1 to 3.
   Splitting grows a dimension; closing empties a cell and collapses any fully-empty
-  trailing row or column. The grid is re-laid-out via `GridBagLayout` with equal
-  weights on every change. See [ADR 0001](adr/0001-uniform-grid-vs-split-tree.md).
+  trailing row or column. Rows and columns are sized by **per-axis weights**:
+  `WeightedGridLayout` (package-private, next to `PaneGrid`) divides the area purely by
+  those weights — children's preferred sizes are deliberately ignored — and leaves a
+  gutter between cells that doubles as a draggable divider. Dragging resizes the two
+  adjacent rows/columns (clamped to a minimum cell size), double-click resets an axis
+  to equal shares, a new split takes an equal share while the survivors keep their
+  ratio, and collapsing an axis re-equalises it. The mouse listeners live on the grid
+  panel itself: children cover their cells completely, so only gutter pixels ever
+  deliver events there. See [ADR 0001](adr/0001-uniform-grid-vs-split-tree.md).
 
 **Panes (`ui.pane`).**
 

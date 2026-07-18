@@ -10,7 +10,8 @@ forwarding, and light/dark theming that follows your operating system.
 ## What you can do
 
 - Open **local shells** and **SSH sessions** side by side.
-- Split any tab into a uniform grid of up to **3 columns × 3 rows** (9 panes).
+- Split any tab into a grid of up to **3 columns × 3 rows** (9 panes), and drag the
+  dividers to resize rows and columns.
 - Save SSH connections in a **sidebar** of folders, each with its own icon.
 - **Drag** a session onto a pane to open it in a split.
 - Authenticate over SSH with **ssh-agent**, **on-disk keys**, or **passwords** stored in an

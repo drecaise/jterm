@@ -44,7 +44,8 @@ bash packaging/install-desktop-integration.sh
 
 It installs the app icon and a `jterm.desktop` launcher (with `StartupWMClass=jterm`) into your
 user directories. **Re-run it if you move or rebuild the jar to a different path.** (The Flatpak
-already integrates with the desktop, so this is only needed when running the bare `.jar`.)
+and the RPM already install matching desktop entries, so this is only needed when running the
+bare `.jar`.)
 
 ## macOS: "jterm can't be opened" on first launch
 

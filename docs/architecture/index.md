@@ -16,7 +16,7 @@ The docs follow the [**C4 model**](https://c4model.com/): four static levels
     - [Security](components-security.md) — credential vault, keyring integration, trust boundaries.
 - [Runtime views](runtime-views.md) — sequence diagrams for SSH connect, broadcast
   fan-out, and drop-to-split.
-- [Deployment](deployment.md) — per-OS packaging and OS integration (Flatpak, MSI, DMG).
+- [Deployment](deployment.md) — per-OS packaging and OS integration (Flatpak, RPM, MSI, DMG).
 - [Decision records](adr/index.md) — short, dated ADRs for the sharp-edge choices.
 
 ## Reading the diagrams

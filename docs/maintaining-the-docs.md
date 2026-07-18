@@ -102,14 +102,20 @@ The `architecture/` section documents jterm's internal design. Diagrams are auth
 and exported to Mermaid under `docs/architecture/model/generated/*.mmd`. Markdown pages
 include the generated files via `pymdownx.snippets`.
 
-**Install the Structurizr CLI once:**
+**Install the Structurizr CLI once** — use **v2024.03.03**, the version CI pins in
+`.github/workflows/docs.yml`. Newer CLI releases emit differently formatted Mermaid
+(different element numbering and view titles), so a `make export` with a mismatched
+version rewrites every generated file and `make check` fails in CI:
 
 ```bash
 curl -sSL -o /tmp/structurizr-cli.zip \
-  https://github.com/structurizr/cli/releases/latest/download/structurizr-cli.zip
+  https://github.com/structurizr/cli/releases/download/v2024.03.03/structurizr-cli.zip
 mkdir -p ~/.structurizr-cli && unzip /tmp/structurizr-cli.zip -d ~/.structurizr-cli
 sudo ln -sf ~/.structurizr-cli/structurizr.sh /usr/local/bin/structurizr-cli
 ```
+
+If you upgrade the CLI, bump the pinned version in `docs.yml` and regenerate (and
+commit) every `.mmd` in the same change.
 
 The CLI needs a JDK 17+ on PATH. The Java toolchain from the app build is fine.
 
