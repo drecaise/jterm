@@ -49,7 +49,9 @@ import javax.swing.SwingUtilities;
 import javax.swing.border.Border;
 import java.awt.BorderLayout;
 import java.awt.Color;
-import java.awt.GridLayout;
+import java.awt.Cursor;
+import java.awt.Graphics;
+import java.awt.Rectangle;
 import java.awt.dnd.DnDConstants;
 import java.awt.dnd.DropTarget;
 import java.awt.dnd.DropTargetAdapter;
@@ -58,13 +60,16 @@ import java.awt.dnd.DropTargetDropEvent;
 import java.awt.dnd.DropTargetEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.util.Arrays;
+import java.util.Objects;
 import java.util.function.BiConsumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * One tab's pane layout: a uniform grid of up to {@value #MAX}×{@value #MAX} cells,
- * all equally sized. Each in-bounds cell either holds a {@link GridContent} (a terminal
+ * One tab's pane layout: a uniform grid of up to {@value #MAX}×{@value #MAX} cells, sized by
+ * per-row/per-column weights that the user adjusts by dragging the gutters between cells
+ * (see {@link WeightedGridLayout}). Each in-bounds cell either holds a {@link GridContent} (a terminal
  * {@link TerminalPane} or the on-demand SFTP browser) or is empty (re-openable). Splitting
  * grows a dimension; closing empties a cell and collapses a fully-empty trailing row/column
  * so the grid stays rectangular.
@@ -81,6 +86,10 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     public static final int MAX = 3;
 
     private static final int CONTENT_BORDER = 2;
+    /** Width of the draggable gap between cells (also the visible seam). */
+    private static final int GUTTER = 6;
+    /** A row/column can never be dragged below this many pixels. */
+    private static final int MIN_CELL_PX = 80;
 
     private final GridContent[][] panes = new GridContent[MAX][MAX];
     /** How to recreate the session in each cell (for restart), parallel to {@link #panes}. */
@@ -89,6 +98,15 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     private int cols = 1;
     private int activeRow = 0;
     private int activeCol = 0;
+    /** Per-axis size weights (only the first {@link #rows}/{@link #cols} entries are live). */
+    private final double[] rowWeights = equalWeights();
+    private final double[] colWeights = equalWeights();
+    private final WeightedGridLayout gridLayout =
+            new WeightedGridLayout(rowWeights, colWeights, GUTTER);
+    /** Divider currently being dragged, or {@code null}. */
+    private WeightedGridLayout.Divider dragging;
+    /** Divider under the cursor (accent-tinted), or {@code null}. */
+    private WeightedGridLayout.Divider hovered;
     /** Owns broadcast on/off state and the keystroke fan-out over this grid's registered panes. */
     private final PaneBroadcastBus broadcastBus = new PaneBroadcastBus();
     /** True while this grid's tab is the selected (front) one; suppresses activity flagging. */
@@ -101,7 +119,9 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     private BiConsumer<TerminalSession, SessionFactory> onOpenSessionInNewTab;
 
     public PaneGrid() {
-        super(new GridLayout(1, 1));
+        setLayout(gridLayout);
+        setOpaque(true); // the gutters show the themed panel background
+        installResizeHandler();
     }
 
     public void setDropHandler(SessionDropHandler dropHandler) {
@@ -199,6 +219,8 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     public void prepareEmptyGrid(int rows, int cols, int activeRow, int activeCol) {
         this.rows = Math.max(1, Math.min(MAX, rows));
         this.cols = Math.max(1, Math.min(MAX, cols));
+        equalizeWeights(rowWeights, this.rows);
+        equalizeWeights(colWeights, this.cols);
         this.activeRow = Math.max(0, Math.min(this.rows - 1, activeRow));
         this.activeCol = Math.max(0, Math.min(this.cols - 1, activeCol));
         relayout();
@@ -276,6 +298,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     /** Add a column (if room) and open the given session in it; else replace the active cell. */
     public void splitColumnAndOpen(TerminalSession session, SessionFactory factory) {
         if (cols < MAX) {
+            growWeight(colWeights, cols);
             int newCol = cols;
             cols++;
             placeAt(activeRow, newCol, session, factory);
@@ -289,6 +312,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     /** Add a row (if room) and open the given session in it; else replace the active cell. */
     public void splitRowAndOpen(TerminalSession session, SessionFactory factory) {
         if (rows < MAX) {
+            growWeight(rowWeights, rows);
             int newRow = rows;
             rows++;
             placeAt(newRow, activeCol, session, factory);
@@ -329,10 +353,12 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         if (empty != null) {
             placeExistingPaneAt(empty[0], empty[1], content, null);
         } else if (cols < MAX) {
+            growWeight(colWeights, cols);
             int newCol = cols;
             cols++;
             placeExistingPaneAt(activeRow, newCol, content, null);
         } else if (rows < MAX) {
+            growWeight(rowWeights, rows);
             int newRow = rows;
             rows++;
             placeExistingPaneAt(newRow, activeCol, content, null);
@@ -420,10 +446,12 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         if (empty != null) {
             placeAt(empty[0], empty[1], session, factory);
         } else if (cols < MAX) {
+            growWeight(colWeights, cols);
             int newCol = cols;
             cols++;
             placeAt(activeRow, newCol, session, factory);
         } else if (rows < MAX) {
+            growWeight(rowWeights, rows);
             int newRow = rows;
             rows++;
             placeAt(newRow, activeCol, session, factory);
@@ -579,10 +607,12 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
             activeCol = pos[1];
         }
         if (region == DropRegion.COLUMN && cols < MAX) {
+            growWeight(colWeights, cols);
             int newCol = cols;
             cols++;
             placeExistingPaneAt(activeRow, newCol, pane, factory);
         } else if (region == DropRegion.ROW && rows < MAX) {
+            growWeight(rowWeights, rows);
             int newRow = rows;
             rows++;
             placeExistingPaneAt(newRow, activeCol, pane, factory);
@@ -593,9 +623,10 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         focusActive();
     }
 
-    /** Re-apply theme-derived chrome (active-pane accent border) after a theme switch. */
+    /** Re-apply theme-derived chrome (accent border, gutter hover tint) after a theme switch. */
     public void refreshTheme() {
         updateBorders();
+        repaint();
     }
 
     /** Recolor every live cell in this grid for the new theme (no restart). */
@@ -644,6 +675,165 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     @Override
     public void broadcast(TtyConnector source, byte[] data) {
         broadcastBus.broadcast(source, data);
+    }
+
+    // ---- divider resize (drag the gutters between cells) ----
+
+    private static double[] equalWeights() {
+        double[] w = new double[MAX];
+        Arrays.fill(w, 1.0);
+        return w;
+    }
+
+    /** A new trailing row/column gets the mean weight — an equal 1/(n+1) share of the space
+     *  while the existing rows/columns keep their ratio to each other. Call before growing
+     *  {@link #rows}/{@link #cols}, so {@code oldCount} is the index of the new line. */
+    private static void growWeight(double[] w, int oldCount) {
+        double sum = 0;
+        for (int i = 0; i < oldCount; i++) {
+            sum += w[i];
+        }
+        w[oldCount] = oldCount == 0 ? 1.0 : sum / oldCount;
+    }
+
+    /** Reset an axis to equal shares. */
+    private static void equalizeWeights(double[] w, int count) {
+        for (int i = 0; i < count; i++) {
+            w[i] = 1.0;
+        }
+    }
+
+    /**
+     * Divider dragging. The listeners live on the grid panel itself: every child fully covers
+     * its cell, so the only pixels that deliver mouse events here are the gutters between
+     * cells — no conflict with the title-bar drag sources, terminal text selection or the
+     * per-cell drop targets, which all live on children.
+     */
+    private void installResizeHandler() {
+        MouseAdapter handler = new MouseAdapter() {
+            @Override
+            public void mouseMoved(MouseEvent e) {
+                updateHover(e.getX(), e.getY());
+            }
+
+            @Override
+            public void mouseExited(MouseEvent e) {
+                setHover(null);
+            }
+
+            @Override
+            public void mousePressed(MouseEvent e) {
+                WeightedGridLayout.Divider divider =
+                        gridLayout.hitTest(e.getX(), e.getY(), PaneGrid.this);
+                if (divider == null) {
+                    return;
+                }
+                if (e.getClickCount() == 2) {
+                    equalizeAxis(divider.axis());
+                    dragging = null;
+                    return;
+                }
+                dragging = divider;
+            }
+
+            @Override
+            public void mouseDragged(MouseEvent e) {
+                dragDivider(e.getX(), e.getY());
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                dragging = null;
+                updateHover(e.getX(), e.getY());
+            }
+        };
+        addMouseListener(handler);
+        addMouseMotionListener(handler);
+    }
+
+    private void updateHover(int x, int y) {
+        WeightedGridLayout.Divider divider =
+                dragging != null ? dragging : gridLayout.hitTest(x, y, this);
+        if (divider == null) {
+            setCursor(Cursor.getDefaultCursor());
+        } else {
+            setCursor(Cursor.getPredefinedCursor(divider.axis() == WeightedGridLayout.Axis.COLUMN
+                    ? Cursor.E_RESIZE_CURSOR : Cursor.N_RESIZE_CURSOR));
+        }
+        setHover(divider);
+    }
+
+    private void setHover(WeightedGridLayout.Divider divider) {
+        if (!Objects.equals(divider, hovered)) {
+            hovered = divider;
+            repaint();
+        }
+    }
+
+    /** Whether a divider still exists in the current shape (the grid may have collapsed while
+     *  it was hovered/dragged, e.g. an async close during a drag). */
+    private boolean dividerValid(WeightedGridLayout.Divider d) {
+        return d != null
+                && d.index() < (d.axis() == WeightedGridLayout.Axis.COLUMN ? cols : rows);
+    }
+
+    /**
+     * Move the dragged divider: only the two adjacent rows/columns change and their summed
+     * weight is conserved, so every other band keeps its exact size (JSplitPane-like, local
+     * feel). Pixels convert back into weights so the layout stays purely proportional — an OS
+     * window resize keeps the chosen ratios for free.
+     */
+    private void dragDivider(int x, int y) {
+        if (!dividerValid(dragging)) {
+            dragging = null;
+            return;
+        }
+        int i = dragging.index();
+        if (dragging.axis() == WeightedGridLayout.Axis.COLUMN) {
+            resizePair(colWeights, i, gridLayout.colX(this), gridLayout.colW(this), x);
+        } else {
+            resizePair(rowWeights, i, gridLayout.rowY(this), gridLayout.rowH(this), y);
+        }
+        revalidate();
+        repaint();
+    }
+
+    /** Re-split the combined span of bands {@code i-1} and {@code i} so the gutter is centered
+     *  under {@code mouse}, clamped so neither band shrinks below {@link #MIN_CELL_PX} (pinned
+     *  to the middle when the pair is too small to honour both minimums). */
+    private void resizePair(double[] weights, int i, int[] pos, int[] size, int mouse) {
+        int combinedPx = size[i - 1] + size[i];
+        if (combinedPx <= 0) {
+            return;
+        }
+        int first = mouse - pos[i - 1] - GUTTER / 2;
+        first = combinedPx < 2 * MIN_CELL_PX
+                ? combinedPx / 2
+                : Math.max(MIN_CELL_PX, Math.min(combinedPx - MIN_CELL_PX, first));
+        double combinedW = weights[i - 1] + weights[i];
+        weights[i - 1] = combinedW * first / combinedPx;
+        weights[i] = combinedW - weights[i - 1];
+    }
+
+    /** Double-click on a divider: reset that whole axis to equal shares. */
+    private void equalizeAxis(WeightedGridLayout.Axis axis) {
+        if (axis == WeightedGridLayout.Axis.COLUMN) {
+            equalizeWeights(colWeights, cols);
+        } else {
+            equalizeWeights(rowWeights, rows);
+        }
+        revalidate();
+        repaint();
+    }
+
+    @Override
+    protected void paintComponent(Graphics g) {
+        super.paintComponent(g); // themed panel background = the resting gutter color
+        if (dividerValid(hovered)) {
+            Rectangle r = gridLayout.gutterRect(hovered, this);
+            g.setColor(ThemeManager.accentColor());
+            g.fillRect(r.x, r.y, r.width, r.height);
+        }
     }
 
     // ---- internals ----
@@ -1123,6 +1313,14 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
             panes[i / newCols][i % newCols] = keptPanes[i];
             factories[i / newCols][i % newCols] = keptFactories[i];
         }
+        // Re-packing moves survivors into different slots, so per-line weights on a shrunk axis
+        // no longer correspond to the panes now in them — reset that axis to equal shares.
+        if (newRows != rows) {
+            equalizeWeights(rowWeights, newRows);
+        }
+        if (newCols != cols) {
+            equalizeWeights(colWeights, newCols);
+        }
         rows = newRows;
         cols = newCols;
 
@@ -1156,10 +1354,11 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
 
     private void relayout() {
         removeAll();
-        // GridLayout divides the area into genuinely equal cells, ignoring each cell's preferred
-        // size. (GridBagLayout with equal weights only splits the *slack* evenly, so a cell with a
-        // large preferred width — e.g. the SFTP browser's wide toolbar/table — would hog its row.)
-        setLayout(new GridLayout(rows, cols));
+        // WeightedGridLayout divides the area purely by the row/column weights, ignoring each
+        // cell's preferred size. (GridBagLayout with equal weights only splits the *slack*
+        // evenly, so a cell with a large preferred width — e.g. the SFTP browser's wide
+        // toolbar/table — would hog its row.)
+        gridLayout.setGrid(rows, cols);
         for (int r = 0; r < rows; r++) {
             for (int c = 0; c < cols; c++) {
                 GridContent content = panes[r][c];
