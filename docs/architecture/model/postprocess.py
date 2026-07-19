@@ -25,6 +25,12 @@ Transforms applied to each generated/*.mmd (idempotently):
      white text) and colored boundary strokes (e.g. #155fa0) are left untouched.
   4. Wrap each edge label's HTML in a padded div so its background chip doesn't render
      with the text jammed against the border.
+  5. Deployment views only: sort each contiguous block of edge lines by numeric
+     source/target id. When a deployment environment holds several containerInstances of
+     the same container, Structurizr replicates the container's relationships onto every
+     instance and emits them in JVM-hash order — different machines produce different
+     line orders, which breaks `make check`'s byte-for-byte drift detection. Dynamic and
+     static views are emitted in model/sequence order and are left untouched.
 
 Usage: postprocess.py [OUT_DIR]   (OUT_DIR defaults to "generated")
 """
@@ -75,8 +81,32 @@ _LINKSTYLE_DEFAULT = re.compile(r"^\s*linkStyle\s+default\s+fill:#ffffff\s*$", r
 _EDGE_LABEL = re.compile(r"""(-\.\s*")(?!<div style='padding:)(.*?)("\s*\.->)""")
 _EDGE_LABEL_REPL = r"""\1<div style='padding:4px 8px'>\2</div>\3"""
 
+# A relationship line: `<src>-. "<label>" .-><dst>` (any arrow body between the ids).
+_EDGE_LINE = re.compile(r"^\s*(\d+)-.*->(\d+)\s*$")
 
-def process(text: str) -> str:
+
+def _sort_edge_blocks(lines: list[str]) -> list[str]:
+    """Sort every contiguous run of edge lines by (source id, target id, text)."""
+    out: list[str] = []
+    block: list[str] = []
+
+    def flush() -> None:
+        block.sort(key=lambda l: (int(_EDGE_LINE.match(l).group(1)),
+                                  int(_EDGE_LINE.match(l).group(2)), l))
+        out.extend(block)
+        block.clear()
+
+    for line in lines:
+        if _EDGE_LINE.match(line):
+            block.append(line)
+        else:
+            flush()
+            out.append(line)
+    flush()
+    return out
+
+
+def process(text: str, sort_edges: bool = False) -> str:
     lines = text.splitlines()
 
     # 1. Strip any frontmatter block and/or init directive a previous run prepended, so
@@ -109,6 +139,10 @@ def process(text: str) -> str:
         line = _EDGE_LABEL.sub(_EDGE_LABEL_REPL, line)
         out.append(line)
 
+    # 5. Normalize the replicated-relationship edge order of deployment views.
+    if sort_edges:
+        out = _sort_edge_blocks(out)
+
     return "\n".join(out) + "\n"
 
 
@@ -120,7 +154,7 @@ def main(argv: list[str]) -> int:
         return 1
     for f in files:
         original = f.read_text(encoding="utf-8")
-        updated = process(original)
+        updated = process(original, sort_edges=f.name.startswith("deployment-"))
         if updated != original:
             f.write_text(updated, encoding="utf-8")
     print(f"postprocess: styled {len(files)} Mermaid file(s) in {out_dir}")
