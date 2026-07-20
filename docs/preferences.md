@@ -16,6 +16,13 @@ toggle and the keyboard-shortcut editor live in the **Preferences** menu too —
 | **Open a terminal on startup** | When off, jterm starts with no open tabs. |
 | **Auto-accept new host keys** | Trust first-seen SSH hosts without prompting. You are still warned if a known host's key *changes*. |
 
+!!! note "Middle-click paste on Windows and macOS"
+    The primary selection is an X11 feature, so it only exists on Linux. On Windows and macOS
+    there is no separate primary selection, so the toggle falls back to the **regular clipboard**:
+    selecting text copies it to the clipboard and a middle-click pastes from the clipboard. The
+    middle-button gesture still works — it just shares the one clipboard that ++ctrl+c++ /
+    ++ctrl+v++ use, rather than a dedicated selection buffer.
+
 ## Session Defaults
 
 ![Preferences — Session Defaults](img/preferences-session-defaults.png)

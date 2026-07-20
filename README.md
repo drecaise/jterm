@@ -109,11 +109,11 @@ gh run watch <run-id>
 
 # Download just the RPM artifact (other names: jterm-jar, jterm-msi, jterm-dmg,
 # jterm-flatpak, jterm-snap; omit --name to grab everything)
-gh run download <run-id> --name jterm-rpm
+gh run download <run-id> --name jterm-rpm-el10
 ```
 
-The RPM is built inside a Rocky Linux 10 container, so it installs natively there
-(and on compatible EL10 distros):
+The RPMs are built inside a Rocky Linux 9/ 10 containers, so they install natively there
+(and on compatible EL9/ EL10 distros):
 
 ```bash
 sudo dnf install ./jterm-*.x86_64.rpm
