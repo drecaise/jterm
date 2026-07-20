@@ -150,6 +150,23 @@ public final class JTermSettingsProvider extends DefaultSettingsProvider {
         return AppSettings.get().getScrollbackLines();
     }
 
+    /**
+     * X11 primary-selection emulation, driven by the {@code middleClickPaste} preference and read
+     * live at each mouse event. When on, selecting text copies it to the PRIMARY selection and a
+     * middle-click pastes from it — JediTerm's own {@code copyOnSelect}/{@code pasteOnMiddleMouseClick}
+     * plumbing (via {@code Toolkit.getSystemSelection()}) does the work. One preference gates both:
+     * the primary-selection model needs the select-side write and the middle-click read together.
+     */
+    @Override
+    public boolean copyOnSelect() {
+        return AppSettings.get().isMiddleClickPaste();
+    }
+
+    @Override
+    public boolean pasteOnMiddleMouseClick() {
+        return AppSettings.get().isMiddleClickPaste();
+    }
+
     @Override
     public ColorPalette getTerminalColorPalette() {
         return palette;

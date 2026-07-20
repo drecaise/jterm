@@ -46,6 +46,13 @@ public final class AppSettings {
     private boolean copyOnSelect = false;
     private boolean pasteOnRightClick = false;
 
+    // Whether the X11 primary-selection model is emulated: selecting text copies it to the PRIMARY
+    // selection and a middle-click pastes from it. Read live by the terminal settings provider
+    // (JediTerm's copyOnSelect/pasteOnMiddleMouseClick), so toggling takes effect without recreating
+    // panes. Defaults off (the app's original behavior). Independent of copyOnSelect above, which
+    // targets the regular clipboard.
+    private boolean middleClickPaste = false;
+
     // Terminal scrollback size in lines, read by the settings provider when each new widget's
     // buffer is built (so it applies to newly opened terminals). Clamped to
     // [MIN_SCROLLBACK_LINES, MAX_SCROLLBACK_LINES]. Defaults to 10000; a settings file predating
@@ -129,6 +136,14 @@ public final class AppSettings {
 
     public void setPasteOnRightClick(boolean pasteOnRightClick) {
         this.pasteOnRightClick = pasteOnRightClick;
+    }
+
+    public boolean isMiddleClickPaste() {
+        return middleClickPaste;
+    }
+
+    public void setMiddleClickPaste(boolean middleClickPaste) {
+        this.middleClickPaste = middleClickPaste;
     }
 
     /**
@@ -332,7 +347,7 @@ public final class AppSettings {
                 globalHighlightListId, darkTheme, windowMaximized, sidebarWidth,
                 windowX, windowY, windowWidth, windowHeight,
                 defaultUsername, defaultTabColorHex, openTerminalOnStartup,
-                defaultKeyPath, autoAcceptNewHostKeys, scrollbackLines));
+                defaultKeyPath, autoAcceptNewHostKeys, scrollbackLines, middleClickPaste));
     }
 
     private static AppSettings load() {
@@ -392,6 +407,9 @@ public final class AppSettings {
             if (p.scrollbackLines != null) {
                 settings.setScrollbackLines(p.scrollbackLines);
             }
+            if (p.middleClickPaste != null) {
+                settings.middleClickPaste = p.middleClickPaste;
+            }
         }
         return settings;
     }
@@ -411,6 +429,7 @@ public final class AppSettings {
                              Integer windowWidth, Integer windowHeight,
                              String defaultUsername, String defaultTabColorHex,
                              Boolean openTerminalOnStartup, String defaultKeyPath,
-                             Boolean autoAcceptNewHostKeys, Integer scrollbackLines) {
+                             Boolean autoAcceptNewHostKeys, Integer scrollbackLines,
+                             Boolean middleClickPaste) {
     }
 }

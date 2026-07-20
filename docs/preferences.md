@@ -10,8 +10,9 @@ toggle and the keyboard-shortcut editor live in the **Preferences** menu too —
 
 | Setting | Effect |
 |---------|--------|
-| **Copy to clipboard on select** | Selecting text in the terminal copies it automatically. |
+| **Copy to clipboard on select** | Selecting text in the terminal copies it automatically to the regular clipboard. |
 | **Paste on right click** | Right-click pastes. With this on, use ++ctrl++ + right-click for the context menu instead. |
+| **Middle-click paste (primary selection)** | The Linux X11 convention: selecting text copies it to the *primary selection*, and a middle-click pastes it. Independent of, and separate from, the regular clipboard above. |
 | **Open a terminal on startup** | When off, jterm starts with no open tabs. |
 | **Auto-accept new host keys** | Trust first-seen SSH hosts without prompting. You are still warned if a known host's key *changes*. |
 
