@@ -462,10 +462,12 @@ jobs:
             --resource-dir packaging/linux \
             --dest dist \
             $ICON_ARG
-          # jpackage names the file jterm_<app_version>-1_amd64.deb; give it the
-          # display version.
+          # jpackage names the file jterm_<app_version>_amd64.deb; give it the
+          # display version. Skip the rename when they already match (no dashed
+          # prerelease suffix), since mv onto itself errors under `sh -e`.
           src="$(ls dist/*.deb)"
-          mv "$src" "dist/jterm_${{ needs.version.outputs.version }}_amd64.deb"
+          dst="dist/jterm_${{ needs.version.outputs.version }}_amd64.deb"
+          [ "$src" != "$dst" ] && mv "$src" "$dst" || true
           ls -la dist
       - uses: actions/upload-artifact@v7
         with:
