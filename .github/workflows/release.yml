@@ -13,7 +13,9 @@ name: Release
 #   - jterm-<version>.dmg       macOS installer (bundles a JRE, via jpackage)
 #   - jterm-<version>.flatpak   Linux single-file bundle (bundles a JRE)
 #   - jterm-<version>.snap      Linux snap, classic confinement (bundles a JRE)
-#   - jterm-<version>.x86_64.rpm  Rocky Linux 10 RPM (bundles a JRE, via jpackage)
+#   - jterm-<version>-1.el10.x86_64.rpm  Rocky Linux 10 RPM (bundles a JRE, via jpackage)
+#   - jterm-<version>-1.el9.x86_64.rpm   Rocky Linux 9 RPM  (bundles a JRE, via jpackage)
+#   - jterm_<version>_amd64.deb  Ubuntu 26.04 LTS DEB (bundles a JRE, via jpackage)
 
 on:
   push:
@@ -317,12 +319,22 @@ jobs:
   build-rpm:
     needs: [version, build-jar]
     runs-on: ubuntu-latest
-    # Build inside a Rocky Linux 10 container so the RPM (and its dependency
-    # metadata) is native to that distro. Reuse the fat jar + square PNG icons
-    # already produced by build-jar.
+    # Build inside a Rocky Linux container so the RPM (and its dependency
+    # metadata) is native to that distro. A matrix produces one RPM per major
+    # RHEL release; the .elN dist tag in the Release field / filename comes for
+    # free from the build host (see packaging/rpm/jterm.spec). Reuse the fat jar
+    # + square PNG icons already produced by build-jar.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - el: el9
+            image: rockylinux/rockylinux:9
+          - el: el10
+            image: rockylinux/rockylinux:10
     container:
-      image: rockylinux/rockylinux:10
-      # The Rocky 10 image ships no PATH in its config (only "container=oci"),
+      image: ${{ matrix.image }}
+      # The Rocky images ship no PATH in their config (only "container=oci"),
       # so GitHub's container bootstrap fails with exec: "sh" not found. Define
       # a standard PATH so the runner can exec sh/node inside the container.
       env:
@@ -330,9 +342,10 @@ jobs:
     steps:
       - name: Install RPM build tooling
         # rpm-build provides rpmbuild (jpackage --type rpm shells out to it);
+        # redhat-rpm-config defines the %dist macro (.el9/.el10) used by the spec;
         # tar/gzip let setup-java unpack the Temurin JDK below; git lets
         # actions/checkout clone instead of falling back to a tarball download.
-        run: dnf -y install rpm-build tar gzip git
+        run: dnf -y install rpm-build redhat-rpm-config tar gzip git
       # Needed for packaging/rpm/ (jpackage resource overrides).
       - uses: actions/checkout@v7
       # Use Temurin, not the distro OpenJDK: Rocky's java-21-openjdk omits the
@@ -352,15 +365,20 @@ jobs:
           cp dist-jar/jterm.jar staging/
           ICON_ARG=""
           [ -f dist-jar/com.katmoda.jterm-256.png ] && ICON_ARG="--icon dist-jar/com.katmoda.jterm-256.png"
+          # jpackage takes a single --resource-dir, so assemble one holding both
+          # the RPM-specific spec override (packaging/rpm) and the shared desktop
+          # entry (packaging/linux).
+          mkdir -p rpmres
+          cp packaging/rpm/jterm.spec packaging/linux/jterm.desktop rpmres/
           # jpackage rpm/deb versions may not contain dashes, so use the floored
           # numeric app_version (same as the MSI/DMG), not the display version.
           #
-          # --resource-dir swaps in packaging/rpm/jterm.desktop, whose
-          # StartupWMClass lets GNOME match the running window to the launcher.
-          # The matching WM_CLASS is set reflectively by app.Main, which needs
-          # the explicit --add-opens: the jpackage launcher starts the app in
-          # classpath mode (app.classpath + app.mainclass in jterm.cfg), so the
-          # jar manifest's Add-Opens attribute is never honored.
+          # --resource-dir swaps in jterm.desktop, whose StartupWMClass lets GNOME
+          # match the running window to the launcher. The matching WM_CLASS is set
+          # reflectively by app.Main, which needs the explicit --add-opens: the
+          # jpackage launcher starts the app in classpath mode (app.classpath +
+          # app.mainclass in jterm.cfg), so the jar manifest's Add-Opens attribute
+          # is never honored.
           jpackage \
             --type rpm \
             --name jterm \
@@ -372,24 +390,93 @@ jobs:
             --vendor "Mark Moses" \
             --description "Tabbed, splittable terminal emulator with SSH sessions" \
             --linux-shortcut --linux-menu-group "System;TerminalEmulator;" \
-            --resource-dir packaging/rpm \
+            --resource-dir rpmres \
             --dest dist \
             $ICON_ARG
-          # jpackage names the file jterm-<app_version>-1.x86_64.rpm; give it the
-          # display version.
+          # jpackage names the file jterm-<app_version>-1.<dist>.x86_64.rpm; give
+          # it the display version while keeping the release + dist tag (.elN) so
+          # the RPM is self-identifying.
+          dist_tag="$(rpm --eval '%{?dist}')"
           src="$(ls dist/*.rpm)"
-          mv "$src" "dist/jterm-${{ needs.version.outputs.version }}.x86_64.rpm"
+          mv "$src" "dist/jterm-${{ needs.version.outputs.version }}-1${dist_tag}.x86_64.rpm"
           ls -la dist
       - uses: actions/upload-artifact@v7
         with:
-          name: jterm-rpm
+          name: jterm-rpm-${{ matrix.el }}
           path: dist/*.rpm
           if-no-files-found: error
 
-  # Only on a tag: gather the six artifacts and publish them on the Release.
+  build-deb:
+    needs: [version, build-jar]
+    runs-on: ubuntu-latest
+    # Build inside an Ubuntu 26.04 LTS container so the .deb (and its bundled JRE)
+    # targets that release. Reuse the fat jar + square PNG icons from build-jar.
+    container:
+      image: ubuntu:26.04
+    steps:
+      - name: Install DEB build tooling
+        # dpkg-dev/fakeroot/binutils are what jpackage --type deb shells out to;
+        # ca-certificates lets setup-java fetch the Temurin JDK; tar/gzip unpack
+        # it; git lets actions/checkout clone instead of a tarball download.
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            dpkg-dev fakeroot binutils ca-certificates tar gzip git
+      # Needed for packaging/linux/jterm.desktop (the shared WM_CLASS override).
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '21'      # Temurin ships jpackage + the complete jmod set
+          distribution: 'temurin'
+      - uses: actions/download-artifact@v8
+        with:
+          name: jterm-jar
+          path: dist-jar
+      - name: Build DEB
+        run: |
+          mkdir -p staging dist
+          cp dist-jar/jterm.jar staging/
+          ICON_ARG=""
+          [ -f dist-jar/com.katmoda.jterm-256.png ] && ICON_ARG="--icon dist-jar/com.katmoda.jterm-256.png"
+          # rpm/deb versions may not contain dashes, so use the floored numeric
+          # app_version (same as the MSI/DMG), not the display version.
+          #
+          # --resource-dir points at the shared packaging/linux/jterm.desktop
+          # (with StartupWMClass=jterm), which lets GNOME match the running window
+          # to the launcher (one dock icon). The matching WM_CLASS is set
+          # reflectively by app.Main, which needs the explicit --add-opens because
+          # the jpackage launcher runs in classpath mode and never honors the jar
+          # manifest's Add-Opens attribute.
+          jpackage \
+            --type deb \
+            --name jterm \
+            --app-version "${{ needs.version.outputs.app_version }}" \
+            --input staging \
+            --main-jar jterm.jar \
+            --main-class com.katmoda.jterm.app.Main \
+            --java-options "--add-opens=java.desktop/sun.awt.X11=ALL-UNNAMED" \
+            --vendor "Mark Moses" \
+            --description "Tabbed, splittable terminal emulator with SSH sessions" \
+            --linux-shortcut --linux-menu-group "System;TerminalEmulator;" \
+            --linux-deb-maintainer "mark@katmoda.com" \
+            --resource-dir packaging/linux \
+            --dest dist \
+            $ICON_ARG
+          # jpackage names the file jterm_<app_version>-1_amd64.deb; give it the
+          # display version.
+          src="$(ls dist/*.deb)"
+          mv "$src" "dist/jterm_${{ needs.version.outputs.version }}_amd64.deb"
+          ls -la dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: jterm-deb
+          path: dist/*.deb
+          if-no-files-found: error
+
+  # Only on a tag: gather every artifact and publish them on the Release.
   release:
     if: github.ref_type == 'tag'
-    needs: [version, build-jar, build-msi, build-flatpak, build-dmg, build-snap, build-rpm]
+    needs: [version, build-jar, build-msi, build-flatpak, build-dmg, build-snap, build-rpm, build-deb]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v8
@@ -403,7 +490,8 @@ jobs:
           cp artifacts/jterm-flatpak/*.flatpak release/
           cp artifacts/jterm-dmg/*.dmg release/
           cp artifacts/jterm-snap/*.snap release/
-          cp artifacts/jterm-rpm/*.rpm release/
+          cp artifacts/jterm-rpm-*/*.rpm release/
+          cp artifacts/jterm-deb/*.deb release/
           ls -la release
       - uses: softprops/action-gh-release@v3
         with:

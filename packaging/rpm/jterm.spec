@@ -10,7 +10,12 @@
 Summary: APPLICATION_SUMMARY
 Name: APPLICATION_PACKAGE
 Version: APPLICATION_VERSION
-Release: APPLICATION_RELEASE
+# Append the distribution tag (e.g. .el10 / .el9) so the RPM is self-identifying.
+# %{?dist} is defined by redhat-rpm-config (installed in the build-rpm workflow job)
+# and expands from the *build host*, so building in a Rocky 9 vs 10 container yields
+# .el9 vs .el10 automatically. jpackage only substitutes ALL_CAPS tokens, so it
+# leaves %{?dist} intact for rpmbuild to evaluate.
+Release: APPLICATION_RELEASE%{?dist}
 License: APPLICATION_LICENSE_TYPE
 Vendor: APPLICATION_VENDOR
 

@@ -33,12 +33,15 @@ distros; the RPM bundles a Temurin JRE, so neither needs a system Java.
     starts the app in classpath mode (`app.classpath`/`app.mainclass` in `jterm.cfg`),
     where jar-manifest attributes are ignored: the `build-rpm` job passes
     `--java-options "--add-opens=java.desktop/sun.awt.X11=ALL-UNNAMED"` and swaps in
-    `packaging/rpm/jterm.desktop` (a jpackage resource override with
+    the shared `packaging/linux/jterm.desktop` (a jpackage resource override with
     `StartupWMClass=jterm`) via `--resource-dir`. Remove either and GNOME shows two
     dock icons — one for the window, one for the launcher.
 
-    The same resource dir also overrides the RPM spec (`packaging/rpm/jterm.spec`, based
-    on JDK 21's `template.spec`): its `%install` relocates the generated desktop entry
+    Since jpackage takes only one `--resource-dir`, the `build-rpm` job assembles a
+    `rpmres/` dir holding both that desktop file and the RPM-specific
+    `packaging/rpm/jterm.spec` (based on JDK 21's `template.spec`); the `build-deb` job
+    (Ubuntu 26.04, `jpackage --type deb`) points `--resource-dir` straight at
+    `packaging/linux`. The spec's `%install` relocates the generated desktop entry
     to an RPM-owned `/usr/share/applications/jterm.desktop`, replacing the stock
     `xdg-desktop-menu` scriptlets that copied `jterm-jterm.desktop` untracked into
     `/usr/local/share/applications`.

@@ -1,6 +1,6 @@
-# jpackage resource override for the RPM's desktop entry (picked up via
-# --resource-dir in .github/workflows/release.yml). ALL_CAPS tokens are
-# substituted by jpackage; StartupWMClass must stay in sync with
+# Shared jpackage desktop-entry override for the Linux packages (RPM + DEB),
+# picked up via --resource-dir in .github/workflows/release.yml. ALL_CAPS tokens
+# are substituted by jpackage; StartupWMClass must stay in sync with
 # com.katmoda.jterm.app.Main.APP_ID so GNOME matches the running window
 # to this launcher (one dock icon instead of two).
 [Desktop Entry]
