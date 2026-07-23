@@ -45,8 +45,11 @@ import org.slf4j.LoggerFactory;
  * <p>JediTerm opens its context menu from its own internal mouse listener on a right-click, so
  * a listener added from outside can't suppress it. Intercepting {@link #processMouseEvent} —
  * which dispatches to those listeners — lets us paste and swallow the click before the popup is
- * built. When the preference is on, a plain right-click pastes; holding Ctrl still opens the
- * context menu. When it's off, the default context-menu behaviour is untouched.</p>
+ * built. When the preference is on, a plain right-click always pastes — even while a mouse-aware
+ * program (e.g. an editor, or a CLI that enabled xterm mouse reporting) is running, matching the
+ * PuTTY/Windows-Terminal convention. Holding Ctrl opens the context menu; holding Shift bypasses
+ * the paste and falls through to JediTerm's default handling. When the preference is off, the
+ * default context-menu behaviour is untouched.</p>
  */
 final class JtermTerminalPanel extends TerminalPanel {
 
@@ -220,22 +223,26 @@ final class JtermTerminalPanel extends TerminalPanel {
             if (e.getID() == MouseEvent.MOUSE_PRESSED) {
                 requestFocusInWindow();
                 paste();
-            } else if (e.getID() == MouseEvent.MOUSE_CLICKED) {
-                return; // swallow so JediTerm's default context menu doesn't open
             }
+            // Swallow every right-button event (PRESSED/RELEASED/CLICKED): stops JediTerm's
+            // default context menu from opening, and stops a stray button-3 report from
+            // reaching a mouse-aware program that had enabled mouse reporting.
+            return;
         }
         super.processMouseEvent(e);
     }
 
     /**
-     * A plain (no-Ctrl) right-click while the preference is on and the terminal app isn't
-     * itself capturing the mouse (so mouse-aware programs still receive the event).
+     * A plain (no-Ctrl, no-Shift) right-click while the preference is on. This intentionally
+     * ignores mouse reporting: the paste fires even while a mouse-aware program is capturing the
+     * mouse. Holding Ctrl opens the context menu instead; holding Shift falls through to
+     * JediTerm's default handling.
      */
     private boolean isPlainPasteClick(MouseEvent e) {
         return SwingUtilities.isRightMouseButton(e)
                 && AppSettings.get().isPasteOnRightClick()
                 && !e.isControlDown()
-                && !isRemoteMouseAction(e);
+                && !e.isShiftDown();
     }
 
     /** Defers to JediTerm's Paste action, which honours bracketed-paste mode. */

@@ -11,10 +11,17 @@ toggle and the keyboard-shortcut editor live in the **Preferences** menu too —
 | Setting | Effect |
 |---------|--------|
 | **Copy to clipboard on select** | Selecting text in the terminal copies it automatically to the regular clipboard. |
-| **Paste on right click** | Right-click pastes. With this on, use ++ctrl++ + right-click for the context menu instead. |
+| **Paste on right click** | Right-click pastes — always, even while a mouse-aware program is running (see the note below). With this on, use ++ctrl++ + right-click for the context menu, or ++shift++ + right-click to bypass the paste. |
 | **Middle-click paste (primary selection)** | The Linux X11 convention: selecting text copies it to the *primary selection*, and a middle-click pastes it. Independent of, and separate from, the regular clipboard above. |
 | **Open a terminal on startup** | When off, jterm starts with no open tabs. |
 | **Auto-accept new host keys** | Trust first-seen SSH hosts without prompting. You are still warned if a known host's key *changes*. |
+
+!!! note "Right-click paste and mouse-aware programs"
+    Some terminal programs (editors, `htop`, and CLIs such as coding assistants) turn on *xterm
+    mouse reporting* so they can handle clicks themselves. When **Paste on right click** is on,
+    jterm still pastes on a plain right-click in that case rather than forwarding the click — so
+    the paste works consistently regardless of what's running. Hold ++shift++ while right-clicking
+    to bypass the paste and fall through to the terminal's default handling.
 
 !!! note "Middle-click paste on Windows and macOS"
     The primary selection is an X11 feature, so it only exists on Linux. On Windows and macOS
