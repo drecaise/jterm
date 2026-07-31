@@ -19,6 +19,8 @@
  */
 package com.katmoda.jterm.ui.sftp;
 
+import com.formdev.flatlaf.util.UIScale;
+
 import org.apache.sshd.sftp.client.SftpClient;
 import org.apache.sshd.sftp.client.SftpClient.Attributes;
 import org.apache.sshd.sftp.client.SftpClient.DirEntry;
@@ -179,7 +181,7 @@ final class SftpTransfer {
         south.add(cancel);
         dialog.add(center, BorderLayout.CENTER);
         dialog.add(south, BorderLayout.SOUTH);
-        dialog.setMinimumSize(new Dimension(380, 0));
+        dialog.setMinimumSize(new Dimension(UIScale.scale(380), 0));
         dialog.pack();
         dialog.setLocationRelativeTo(parent);
     }

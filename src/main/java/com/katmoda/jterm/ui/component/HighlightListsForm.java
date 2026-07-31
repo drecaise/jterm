@@ -19,6 +19,7 @@
  */
 package com.katmoda.jterm.ui.component;
 
+import com.formdev.flatlaf.util.UIScale;
 import com.katmoda.jterm.highlight.HighlightLibrary;
 import com.katmoda.jterm.highlight.HighlightList;
 import com.katmoda.jterm.highlight.HighlightRule;
@@ -163,7 +164,7 @@ public final class HighlightListsForm {
         JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, left, right);
         split.setResizeWeight(0.35);
         split.setBorder(null);
-        split.setPreferredSize(new Dimension(560, 280));
+        split.setPreferredSize(UIScale.scale(new Dimension(560, 280)));
         return split;
     }
 

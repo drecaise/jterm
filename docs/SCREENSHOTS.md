@@ -39,6 +39,7 @@ window size (~1200×800) so text stays legible.
 | `macro-edit.png` | The macro edit dialog showing Name, Hotkey, and steps | `macros.md` |
 | `shortcuts-dialog.png` | The Keyboard Shortcuts editor | `shortcuts.md` |
 | `preferences-general.png` | Preferences dialog, **General** tab | `preferences.md` |
+| `preferences-appearance.png` | Preferences dialog, **Appearance** tab (UI scale, UI font, font-size override) | `preferences.md` |
 | `preferences-session-defaults.png` | Preferences dialog, **Session Defaults** tab | `preferences.md` |
 | `preferences-terminal.png` | Preferences dialog, **Terminal Settings** tab | `preferences.md` |
 | `preferences-highlighting.png` | Preferences dialog, **Highlighting** tab (a list with several rules and colours) | `preferences.md` |

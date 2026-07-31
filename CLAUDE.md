@@ -79,6 +79,23 @@ reads colors *through* `ThemeColors`, so full configurability can be added later
 touching panes. Live terminal recolor on toggle is **not** implemented (JediTerm bakes default
 fg/bg into each widget at creation); chrome recolors via FlatLaf `updateUI`.
 
+`ThemeManager` also owns the **application UI scale/font** (Preferences → Appearance;
+`AppSettings.uiScalePercent` / `uiFontFamily` / `uiFontSize`) — the chrome only, never the
+terminal panes. It drives FlatLaf's `UIScale.setZoomFactor`, which scales fonts *and* the metrics
+FlatLaf derives through `UIScale`. Applied in `applyLaf()` (not just `install()`) so it survives a
+light/dark toggle, which rebuilds the defaults from scratch. **Order is load-bearing** and is
+documented on `applyUiScaleAndFont()`: the unzoomed font size goes in *first* (FlatLaf re-derives
+its scale factor from `defaultFont`), the zoom *last* — reversed, the two compound (150% + 18pt
+measured 263%). The `setZoomFactor(1f)` reset before the real value is required because the call
+returns early on an unchanged value. Read once at startup, hence the restart notice in Preferences.
+
+When sizing anything in pixels, know which side of `UIScale` it is on: `FlatSVGIcon`,
+`ScaledImageIcon` (what `TitlePane.iconSize` feeds) and so `IconLibrary.icon(id, size)` all apply
+the scale *themselves* — pass design sizes (`SessionIcon.DEFAULT_SIZE`), never `UIScale.scale(16)`,
+or icons come out twice as large. Plain Swing values — `setPreferredSize`/`setMinimumSize`, `new
+Font(...)` sizes, hand-drawn `Graphics` metrics — are *not* scaled and must be wrapped in
+`UIScale.scale(...)`.
+
 ### Drag-and-drop launches sessions into splits
 `dnd.SessionTransferable` (SSH config) and `dnd.LocalTransferable` (local marker) are the drag
 payloads. The sidebar tree and the "Local Terminal" button are drag sources; each `TerminalPane`

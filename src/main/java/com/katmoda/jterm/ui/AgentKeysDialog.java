@@ -19,6 +19,7 @@
  */
 package com.katmoda.jterm.ui;
 
+import com.formdev.flatlaf.util.UIScale;
 import com.katmoda.jterm.terminal.ssh.agent.AgentSupport.AgentKey;
 
 import javax.swing.JOptionPane;
@@ -68,7 +69,7 @@ public final class AgentKeysDialog {
         table.getColumnModel().getColumn(2).setPreferredWidth(180);
 
         JScrollPane scroll = new JScrollPane(table);
-        scroll.setPreferredSize(new Dimension(700, Math.min(70 + keys.size() * 22, 360)));
+        scroll.setPreferredSize(UIScale.scale(new Dimension(700, Math.min(70 + keys.size() * 22, 360))));
 
         JOptionPane.showMessageDialog(parent, scroll,
                 keys.size() + " key(s) available from the ssh-agent", JOptionPane.PLAIN_MESSAGE);

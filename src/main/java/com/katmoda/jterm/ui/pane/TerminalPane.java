@@ -161,7 +161,7 @@ public final class TerminalPane extends JPanel implements GridContent, Broadcast
                 onBroadcastToggle.run();
             }
         });
-        this.titleLabel = new JLabel(session.title(), SessionIcon.forSession(session, 16), SwingConstants.LEADING);
+        this.titleLabel = new JLabel(session.title(), SessionIcon.forSession(session), SwingConstants.LEADING);
         this.titleLabel.setIconTextGap(6);
         this.broadcastBar = new JPanel(new BorderLayout(6, 0));
         this.broadcastBar.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
@@ -289,7 +289,7 @@ public final class TerminalPane extends JPanel implements GridContent, Broadcast
             stoppedPanel = null;
         }
         titleLabel.setText(session.title());
-        titleLabel.setIcon(SessionIcon.forSession(session, 16));
+        titleLabel.setIcon(SessionIcon.forSession(session));
         registerForTitlePolling(this);
         widget.restartWith(inputConnector);
         revalidate();
@@ -709,7 +709,7 @@ public final class TerminalPane extends JPanel implements GridContent, Broadcast
         this.theme = newTheme;
         settingsProvider.setTheme(newTheme);
         // The plain-shell glyph is theme-contrasting, so re-resolve it on a light/dark switch.
-        titleLabel.setIcon(SessionIcon.forSession(session, 16));
+        titleLabel.setIcon(SessionIcon.forSession(session));
         widget.recolor();
     }
 

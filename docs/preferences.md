@@ -1,6 +1,6 @@
 # Preferences
 
-Open **Preferences → Preferences…** for the main settings dialog. It has five tabs. (The theme
+Open **Preferences → Preferences…** for the main settings dialog. It has six tabs. (The theme
 toggle and the keyboard-shortcut editor live in the **Preferences** menu too — see
 [Keyboard shortcuts](shortcuts.md).)
 
@@ -29,6 +29,34 @@ toggle and the keyboard-shortcut editor live in the **Preferences** menu too —
     selecting text copies it to the clipboard and a middle-click pastes from the clipboard. The
     middle-button gesture still works — it just shares the one clipboard that ++ctrl+c++ /
     ++ctrl+v++ use, rather than a dedicated selection buffer.
+
+## Appearance
+
+![Preferences — Appearance](img/preferences-appearance.png)
+
+How large the **application chrome** is drawn — the sessions sidebar, tab strip, menus and
+dialogs. This is the tab to reach for when jterm's own text is too small to read comfortably on
+a high-resolution display.
+
+| Setting | Effect |
+|---------|--------|
+| **UI scale** | Scales the whole interface from **75%** to **300%** — text, spacing *and* icons together, so nothing looks out of proportion. |
+| **UI font** | Draw the interface in a font family of your choice. Leave it on **(System default)** to keep the built-in font. |
+| **Override UI font size** | Set the interface font size explicitly, in points **at 100% scale** — the UI scale then multiplies it. |
+
+Scaling alone is usually enough; the font settings are there for when you also want a different
+typeface or a size the preset percentages don't land on.
+
+!!! note "Takes effect on restart"
+    The UI scale and font are applied while jterm starts up, so the dialog reminds you to restart
+    after changing them. Every other tab in this dialog applies immediately or to newly opened
+    terminals.
+
+!!! tip "This is not the terminal font"
+    The scale deliberately leaves the terminal panes alone, so making menus bigger never disturbs
+    a carefully-sized terminal. Set the terminal's own font under
+    [Terminal Settings](#terminal-settings) (or per session), and adjust a running terminal on the
+    fly with ++ctrl+num-plus++ / ++ctrl+num-minus++ / ++ctrl+num0++.
 
 ## Session Defaults
 

@@ -1,5 +1,13 @@
 # Troubleshooting
 
+## Menus and the sidebar are tiny on a high-resolution display
+
+Raise **UI scale** on the [Appearance tab](preferences.md#appearance) of Preferences — it enlarges
+the sidebar, tabs, menus and dialogs together, and takes effect after you restart jterm. If only
+the *terminal* text is too small, that's a separate setting: see
+[Terminal Settings](preferences.md#terminal-settings), or press ++ctrl+num-plus++ to enlarge the
+focused pane straight away.
+
 ## SSH agent not found / key auth fails
 
 - Confirm an agent is running and holds your keys: `ssh-add -l`.

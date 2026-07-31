@@ -211,7 +211,7 @@ public final class SftpPane extends JPanel implements GridContent {
 
     /** A bottom bar showing the connection's icon + name, mirroring the terminal pane's title bar. */
     private JComponent buildConnectionBar() {
-        JLabel label = new JLabel(hostLabel, SessionIcon.forIconId(iconId, 16), JLabel.LEADING);
+        JLabel label = new JLabel(hostLabel, SessionIcon.forIconId(iconId), JLabel.LEADING);
         label.setIconTextGap(6);
         this.connectionLabel = label;
         JPanel bar = new JPanel(new BorderLayout());

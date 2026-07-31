@@ -19,6 +19,7 @@
  */
 package com.katmoda.jterm.app;
 
+import com.formdev.flatlaf.util.UIScale;
 import com.katmoda.jterm.config.AppSettings;
 import com.katmoda.jterm.icon.IconLibrary;
 import com.katmoda.jterm.keymap.Keymap;
@@ -245,7 +246,17 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         if (s.hasWindowLocation() && isOnScreen(bounds)) {
             frame.setBounds(bounds);
         } else {
-            frame.setSize(s.getWindowWidth(), s.getWindowHeight());
+            // No usable saved geometry. With no saved location at all (a fresh install) the size is
+            // the built-in default, so scale it — a first launch at a large UI scale shouldn't be
+            // cramped. A saved window that has merely gone off-screen keeps its own size, which is
+            // already in scaled pixels.
+            int width = s.getWindowWidth();
+            int height = s.getWindowHeight();
+            if (!s.hasWindowLocation()) {
+                width = UIScale.scale(width);
+                height = UIScale.scale(height);
+            }
+            frame.setSize(width, height);
             frame.setLocationRelativeTo(null);
         }
         lastNormalBounds = frame.getBounds();
@@ -959,11 +970,11 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         area.setEditable(false);
         area.setLineWrap(true);
         area.setWrapStyleWord(true);
-        area.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        area.setFont(new Font(Font.MONOSPACED, Font.PLAIN, UIScale.scale(12)));
         area.setCaretPosition(0);
 
         JScrollPane scroll = new JScrollPane(area);
-        scroll.setPreferredSize(new Dimension(640, 480));
+        scroll.setPreferredSize(UIScale.scale(new Dimension(640, 480)));
 
         JDialog dialog = new JDialog(frame, "Third-Party Licenses", true);
         dialog.getContentPane().add(scroll, BorderLayout.CENTER);

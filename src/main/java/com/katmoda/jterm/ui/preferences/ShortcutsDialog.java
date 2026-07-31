@@ -19,6 +19,7 @@
  */
 package com.katmoda.jterm.ui.preferences;
 
+import com.formdev.flatlaf.util.UIScale;
 import com.katmoda.jterm.keymap.Keymap;
 import com.katmoda.jterm.keymap.TermAction;
 
@@ -71,7 +72,7 @@ public final class ShortcutsDialog extends JDialog {
         setContentPane(buildContent());
         pack();
         clampToScreen();
-        setMinimumSize(new Dimension(380, 240));
+        setMinimumSize(UIScale.scale(new Dimension(380, 240)));
         setLocationRelativeTo(owner);
     }
 

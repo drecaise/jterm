@@ -21,6 +21,7 @@ package com.katmoda.jterm.icon;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.formdev.flatlaf.extras.FlatSVGIcon;
+import com.formdev.flatlaf.util.UIScale;
 import com.katmoda.jterm.config.AppPaths;
 import com.katmoda.jterm.config.JsonStore;
 
@@ -105,7 +106,14 @@ public final class IconLibrary {
         return all;
     }
 
-    /** Resolve an icon id to a sized {@link Icon}, or {@code null} if unknown/unset. */
+    /**
+     * Resolve an icon id to a sized {@link Icon}, or {@code null} if unknown/unset.
+     *
+     * <p>{@code size} is in <em>unscaled</em> pixels — callers pass the design size (16 for inline
+     * icons) and the application UI scale is applied here, so icons stay proportional to the chrome
+     * around them. SVGs get that for free from {@code FlatSVGIcon}, which scales itself; rasters are
+     * scaled explicitly in {@link #scaledRaster} to match.</p>
+     */
     public Icon icon(String iconId, int size) {
         if (iconId == null || iconId.isBlank()) {
             return null;
@@ -164,9 +172,13 @@ public final class IconLibrary {
         return scaledRaster(new ImageIcon(path.toString()), size);
     }
 
-    /** Scales a raster icon to fit within {@code size}×{@code size}, preserving its aspect ratio. */
+    /**
+     * Scales a raster icon to fit within {@code size}×{@code size}, preserving its aspect ratio.
+     * {@code size} is applied through {@link UIScale} so an imported PNG follows the application UI
+     * scale like the SVG icons do ({@code FlatSVGIcon} scales itself, so its callers must not).
+     */
     private static Icon scaledRaster(ImageIcon raw, int size) {
-        int[] d = fit(raw.getIconWidth(), raw.getIconHeight(), size);
+        int[] d = fit(raw.getIconWidth(), raw.getIconHeight(), UIScale.scale(size));
         return new ImageIcon(raw.getImage().getScaledInstance(d[0], d[1], Image.SCALE_SMOOTH));
     }
 

@@ -19,6 +19,7 @@
  */
 package com.katmoda.jterm.app;
 
+import com.formdev.flatlaf.util.UIScale;
 import com.katmoda.jterm.ui.tabs.TabPane;
 import com.katmoda.jterm.ui.windowing.TerminalWindow;
 
@@ -44,7 +45,7 @@ import java.awt.event.WindowEvent;
  */
 public final class DetachedWindow implements TerminalWindow {
 
-    private static final Dimension DEFAULT_SIZE = new Dimension(960, 660);
+    private static final Dimension DEFAULT_SIZE = UIScale.scale(new Dimension(960, 660));
 
     private final JFrame frame = new JFrame("jterm");
     private final TabPane tabPane;

@@ -31,10 +31,29 @@ import javax.swing.Icon;
  * Resolves the display icon for a session, shared by the tab strip and the per-pane title bar so
  * the two never drift: an SSH session uses its saved icon (or the generic server glyph), a WSL
  * distro uses its custom local icon, and a plain shell uses a theme-contrasting terminal glyph.
+ *
+ * <p>The no-size overloads use {@link #DEFAULT_SIZE}, the one definition of "an inline icon" for
+ * tabs, pane title bars and the SFTP connection bar.</p>
  */
 public final class SessionIcon {
 
+    /**
+     * The standard inline icon size, in unscaled pixels — the application UI scale is applied
+     * downstream (by {@code IconLibrary} and {@code FlatSVGIcon}), so this stays a design constant.
+     */
+    public static final int DEFAULT_SIZE = 16;
+
     private SessionIcon() {
+    }
+
+    /** The session's icon at {@link #DEFAULT_SIZE}. */
+    public static Icon forSession(TerminalSession session) {
+        return forSession(session, DEFAULT_SIZE);
+    }
+
+    /** The icon for a saved SSH icon id at {@link #DEFAULT_SIZE}. */
+    public static Icon forIconId(String iconId) {
+        return forIconId(iconId, DEFAULT_SIZE);
     }
 
     public static Icon forSession(TerminalSession session, int size) {

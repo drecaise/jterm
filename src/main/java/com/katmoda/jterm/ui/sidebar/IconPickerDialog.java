@@ -19,6 +19,7 @@
  */
 package com.katmoda.jterm.ui.sidebar;
 
+import com.formdev.flatlaf.util.UIScale;
 import com.katmoda.jterm.icon.IconLibrary;
 import com.katmoda.jterm.ui.theme.ThemeManager;
 
@@ -78,10 +79,14 @@ import java.util.function.Consumer;
  */
 final class IconPickerDialog {
 
+    // The grid's own pixel metrics follow the application UI scale so the cells stay proportional to
+    // the (already scaled) icons they hold. Safe as static state: the dialog class only loads on user
+    // action, long after the look-and-feel — and with it the scale — is installed. ICON_SIZE stays
+    // unscaled: IconLibrary applies the scale when it renders the icon.
     private static final int ICON_SIZE = 22;
-    private static final int CELL = 40;
+    private static final int CELL = UIScale.scale(40);
     private static final int COLUMNS = 6;
-    private static final int BADGE_SIZE = 14;
+    private static final int BADGE_SIZE = UIScale.scale(14);
     private static final Color BADGE_BG = new Color(0xD9, 0x53, 0x4F);
 
     private String result; // null = cancelled, "" = clear, else icon id
@@ -208,7 +213,7 @@ final class IconPickerDialog {
         scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         scroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
         scroll.getVerticalScrollBar().setUnitIncrement(CELL);
-        scroll.setPreferredSize(new Dimension(COLUMNS * CELL + 28, 5 * CELL));
+        scroll.setPreferredSize(new Dimension(COLUMNS * CELL + UIScale.scale(28), 5 * CELL));
 
         // Highlight the grid area with the focus accent (matching the search field's focused look)
         // while either icon grid has keyboard focus, and auto-select the top-left builtin icon when

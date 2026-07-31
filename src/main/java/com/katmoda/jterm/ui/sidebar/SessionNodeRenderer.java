@@ -86,7 +86,7 @@ final class SessionNodeRenderer extends DefaultTreeCellRenderer {
         return this;
     }
 
-    /** A 16px folder glyph with every colour mapped to the WSL blue. */
+    /** A folder glyph at the standard 16px inline size (UI-scaled), every colour mapped to the WSL blue. */
     private static Icon blueFolder(String resource) {
         FlatSVGIcon icon = new FlatSVGIcon(resource).derive(16, 16);
         icon.setColorFilter(new FlatSVGIcon.ColorFilter(c -> WSL_BLUE));

@@ -34,6 +34,7 @@ import com.katmoda.jterm.ui.theme.ThemeManager;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
+import javax.swing.DefaultComboBoxModel;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
@@ -46,6 +47,7 @@ import javax.swing.SpinnerNumberModel;
 import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.FlowLayout;
+import java.awt.GraphicsEnvironment;
 import java.awt.GridLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
@@ -56,6 +58,9 @@ import java.awt.Insets;
  * <ul>
  *   <li><b>General</b> — small terminal-behaviour toggles (read live, so they affect already-open
  *       terminals).</li>
+ *   <li><b>Appearance</b> — the scale and font of the application chrome (sidebar, tabs, menus,
+ *       dialogs), applied by {@code ThemeManager} at startup, so these take effect on the next
+ *       launch and the dialog says so on OK.</li>
  *   <li><b>Terminal Settings</b> — the default terminal type, font, font size and charset applied
  *       to the local terminal and to any saved session that leaves a field unset. These take effect
  *       for newly opened panes/tabs (running JediTerm widgets bake in their font at creation).</li>
@@ -63,6 +68,13 @@ import java.awt.Insets;
  * All choices are persisted in {@link AppSettings}.
  */
 public final class PreferencesDialog {
+
+    /** The UI scale percentages offered; the combo is not editable, so these are the only choices. */
+    private static final String[] UI_SCALE_CHOICES =
+            {"75%", "100%", "125%", "150%", "175%", "200%", "250%", "300%"};
+
+    /** The "keep the look-and-feel's own font" sentinel leading the UI font chooser. */
+    private static final String SYSTEM_FONT_LABEL = "(System default)";
 
     private PreferencesDialog() {
     }
@@ -89,6 +101,33 @@ public final class PreferencesDialog {
         addToggleRow(general, row++, "Auto-accept new host keys:", autoAcceptNewHostKeys);
         addHint(general, row++, "Trust first-seen SSH hosts without prompting. You're still warned"
                 + " if a host's key changes.");
+
+        // Appearance: the scale and font of the application chrome (sidebar, tabs, menus, dialogs).
+        // All three are read by ThemeManager at startup only, hence the restart notice on OK.
+        JComboBox<String> uiScale = new JComboBox<>(UI_SCALE_CHOICES);
+        uiScale.setSelectedItem(settings.getUiScalePercent() + "%");
+        // The family chooser needs no on/off toggle: its leading "(System default)" entry already
+        // expresses "no override". The size spinner has no such empty state, so it keeps one.
+        JComboBox<String> uiFontFamily = uiFontFamilyCombo(settings.getUiFontFamily());
+        ToggleSwitch overrideUiFontSize = new ToggleSwitch(settings.getUiFontSize() > 0);
+        JSpinner uiFontSize = new JSpinner(new SpinnerNumberModel(
+                settings.getUiFontSize() > 0 ? settings.getUiFontSize() : 13,
+                AppSettings.MIN_UI_FONT_SIZE, AppSettings.MAX_UI_FONT_SIZE, 1));
+        Runnable syncUiFontSize = () -> uiFontSize.setEnabled(overrideUiFontSize.isSelected());
+        overrideUiFontSize.addActionListener(a -> syncUiFontSize.run());
+        syncUiFontSize.run();
+
+        JPanel appearance = new JPanel(new GridBagLayout());
+        int apRow = 0;
+        addFieldRow(appearance, apRow++, "UI scale:", uiScale);
+        addHint(appearance, apRow++, "Scales the sessions sidebar, tabs, menus and dialogs — text,"
+                + " spacing and icons together. The terminal font is set separately under Terminal"
+                + " Settings.");
+        addFieldRow(appearance, apRow++, "UI font:", uiFontFamily);
+        addToggleRow(appearance, apRow++, "Override UI font size:", overrideUiFontSize);
+        addFieldRow(appearance, apRow++, "UI font size:", uiFontSize);
+        addHint(appearance, apRow++, "The size is in points at 100% scale; the UI scale multiplies"
+                + " it. Takes effect after restarting jterm.");
 
         TerminalSettingsForm terminalDefaults = new TerminalSettingsForm(false,
                 settings.getDefaultTerminalType(), settings.getDefaultCharset(),
@@ -181,6 +220,7 @@ public final class PreferencesDialog {
 
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("General", general);
+        tabs.addTab("Appearance", appearance);
         tabs.addTab("Session Defaults", sessionDefaults);
         tabs.addTab("Terminal Settings", terminal);
         tabs.addTab("Highlighting", highlighting);
@@ -196,6 +236,12 @@ public final class PreferencesDialog {
         settings.setMiddleClickPaste(middleClickPaste.isSelected());
         settings.setOpenTerminalOnStartup(openTerminalOnStartup.isSelected());
         settings.setAutoAcceptNewHostKeys(autoAcceptNewHostKeys.isSelected());
+        // Remember the pre-edit UI scale/font so we only nag about restarting when one changed.
+        String previousUiAppearance = uiAppearanceKey(settings);
+        settings.setUiScalePercent(percentValue(uiScale.getSelectedItem()));
+        settings.setUiFontFamily(uiFontFamilyValue(uiFontFamily));
+        settings.setUiFontSize(overrideUiFontSize.isSelected() ? (Integer) uiFontSize.getValue() : 0);
+        boolean uiAppearanceChanged = !previousUiAppearance.equals(uiAppearanceKey(settings));
         settings.setDefaultTerminalType(terminalDefaults.terminalType());
         settings.setDefaultCharset(terminalDefaults.charset());
         settings.setDefaultFontFamily(terminalDefaults.fontFamily());
@@ -214,6 +260,59 @@ public final class PreferencesDialog {
         // Persist palette edits and recolor running terminals via the active theme.
         colorForm.commit();
         ThemeManager.get().reapplyColors();
+        if (uiAppearanceChanged) {
+            JOptionPane.showMessageDialog(parent,
+                    "The UI scale and font are applied when jterm starts.\n"
+                            + "Restart jterm to see the change.",
+                    "jterm", JOptionPane.INFORMATION_MESSAGE);
+        }
+    }
+
+    /**
+     * A combo of the installed font families for the UI font override, seeded with {@code selected}.
+     * {@link #SYSTEM_FONT_LABEL} leads the list and is selected when there is no override, so the
+     * chooser never implies the first family alphabetically is the font in use. An unavailable saved
+     * family is added so it stays selectable (as {@code TerminalSettingsForm} does), rather than
+     * silently switching to another font.
+     */
+    private static JComboBox<String> uiFontFamilyCombo(String selected) {
+        JComboBox<String> combo = new JComboBox<>();
+        combo.addItem(SYSTEM_FONT_LABEL);
+        for (String family : GraphicsEnvironment.getLocalGraphicsEnvironment()
+                .getAvailableFontFamilyNames()) {
+            combo.addItem(family);
+        }
+        if (selected.isBlank()) {
+            combo.setSelectedItem(SYSTEM_FONT_LABEL);
+        } else {
+            if (((DefaultComboBoxModel<String>) combo.getModel()).getIndexOf(selected) < 0) {
+                combo.addItem(selected);
+            }
+            combo.setSelectedItem(selected);
+        }
+        return combo;
+    }
+
+    /** The chosen UI font family, mapping {@link #SYSTEM_FONT_LABEL} back to "no override". */
+    private static String uiFontFamilyValue(JComboBox<String> combo) {
+        Object value = combo.getSelectedItem();
+        return (value == null || SYSTEM_FONT_LABEL.equals(value)) ? "" : value.toString();
+    }
+
+    /** Identity of the startup-only appearance settings, used to detect an edit needing a restart. */
+    private static String uiAppearanceKey(AppSettings settings) {
+        return settings.getUiScalePercent() + "|" + settings.getUiFontFamily()
+                + "|" + settings.getUiFontSize();
+    }
+
+    /** Parses a {@code "150%"} choice back to {@code 150}. */
+    private static int percentValue(Object choice) {
+        String text = (choice == null) ? "" : choice.toString().replace("%", "").trim();
+        try {
+            return Integer.parseInt(text);
+        } catch (NumberFormatException e) {
+            return 100;
+        }
     }
 
     /**

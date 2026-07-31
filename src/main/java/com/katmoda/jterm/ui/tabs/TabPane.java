@@ -478,7 +478,7 @@ public final class TabPane extends JPanel {
             return;
         }
         TerminalSession session = pane.session();
-        tabs.setIconAt(idx, SessionIcon.forSession(session, 16));
+        tabs.setIconAt(idx, SessionIcon.forSession(session));
         setTabColor(idx, session.tabColorHex());
         // A plain local shell (no custom icon) shows the generic "Terminal N" tab title; everything
         // else (SSH, or a WSL distro) shows the session's own title.

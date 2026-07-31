@@ -33,6 +33,9 @@ Decision Records.
   transparently remembered in the OS keyring.
 - **Host-key checking** via `~/.ssh/known_hosts` (trust-on-first-use, warns on changes).
 - **Light/dark** themes.
+- **UI scaling** (Preferences → Appearance) — scale the sidebar, tabs, menus and dialogs from 75%
+  to 300%, with an optional font family/size override, for readable chrome on a HiDPI display.
+  Applied at startup; the terminal font stays separately configurable under Terminal Settings.
 
 ## Requirements
 

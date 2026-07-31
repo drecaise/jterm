@@ -19,6 +19,8 @@
  */
 package com.katmoda.jterm.ui.component;
 
+import com.formdev.flatlaf.util.UIScale;
+
 import javax.swing.JButton;
 import javax.swing.JColorChooser;
 import java.awt.Color;
@@ -41,7 +43,7 @@ public final class PaletteSwatch {
     public PaletteSwatch(Color initial, String title) {
         this.title = title;
         this.color = initial;
-        button.setPreferredSize(new Dimension(46, 22));
+        button.setPreferredSize(UIScale.scale(new Dimension(46, 22)));
         button.setToolTipText(title + " — click to change");
         applyColor();
         button.addActionListener(a -> {

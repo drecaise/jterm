@@ -19,6 +19,7 @@
  */
 package com.katmoda.jterm.ui.macro;
 
+import com.formdev.flatlaf.util.UIScale;
 import com.katmoda.jterm.macro.MacroKey;
 import com.katmoda.jterm.macro.MacroStep;
 
@@ -64,7 +65,7 @@ public final class MacroLineDialog extends JDialog {
         populate(initial);
         setContentPane(buildContent());
         pack();
-        setMinimumSize(new Dimension(440, getHeight()));
+        setMinimumSize(new Dimension(UIScale.scale(440), getHeight()));
         setLocationRelativeTo(owner);
     }
 

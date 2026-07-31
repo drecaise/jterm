@@ -19,6 +19,7 @@
  */
 package com.katmoda.jterm.ui.tunnel;
 
+import com.formdev.flatlaf.util.UIScale;
 import com.formdev.flatlaf.FlatClientProperties;
 import com.katmoda.jterm.session.FolderNode;
 import com.katmoda.jterm.session.SessionNode;
@@ -89,7 +90,7 @@ public final class TunnelManagerDialog extends JDialog {
         // dereferences the dialog's Window — null until the dialog has been realized (NPE).
         setIconImages(TunnelEditDialog.tunnelIconImages());
         getRootPane().putClientProperty(FlatClientProperties.TITLE_BAR_SHOW_ICON, true);
-        setMinimumSize(new Dimension(520, 340));
+        setMinimumSize(UIScale.scale(new Dimension(520, 340)));
         setLocationRelativeTo(owner);
     }
 

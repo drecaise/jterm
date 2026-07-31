@@ -19,6 +19,7 @@
  */
 package com.katmoda.jterm.ui.macro;
 
+import com.formdev.flatlaf.util.UIScale;
 import com.katmoda.jterm.keymap.Keymap;
 import com.katmoda.jterm.macro.Macro;
 import com.katmoda.jterm.macro.MacroStep;
@@ -88,7 +89,7 @@ public final class MacroEditDialog extends JDialog {
         setContentPane(buildContent());
         updateHotkeyButton();
         pack();
-        setMinimumSize(new Dimension(560, 420));
+        setMinimumSize(UIScale.scale(new Dimension(560, 420)));
         setLocationRelativeTo(owner);
     }
 

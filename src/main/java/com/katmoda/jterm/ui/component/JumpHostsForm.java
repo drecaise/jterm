@@ -19,6 +19,7 @@
  */
 package com.katmoda.jterm.ui.component;
 
+import com.formdev.flatlaf.util.UIScale;
 import com.katmoda.jterm.session.JumpHostConfig;
 
 import javax.swing.BorderFactory;
@@ -80,7 +81,7 @@ public final class JumpHostsForm {
                 ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         scroll.setBorder(BorderFactory.createEmptyBorder());
         scroll.getVerticalScrollBar().setUnitIncrement(16);
-        scroll.setPreferredSize(new Dimension(420, 280));
+        scroll.setPreferredSize(UIScale.scale(new Dimension(420, 280)));
 
         this.panel = new JPanel(new BorderLayout(0, 6));
         panel.setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));

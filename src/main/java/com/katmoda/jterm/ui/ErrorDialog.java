@@ -19,6 +19,8 @@
  */
 package com.katmoda.jterm.ui;
 
+import com.formdev.flatlaf.util.UIScale;
+
 import javax.swing.JButton;
 import javax.swing.JOptionPane;
 import javax.swing.JScrollPane;
@@ -47,11 +49,11 @@ public final class ErrorDialog {
         area.setEditable(false);
         area.setLineWrap(true);
         area.setWrapStyleWord(true);
-        area.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        area.setFont(new Font(Font.MONOSPACED, Font.PLAIN, UIScale.scale(12)));
         area.setCaretPosition(0);
 
         JScrollPane scroll = new JScrollPane(area);
-        scroll.setPreferredSize(new Dimension(560, 240));
+        scroll.setPreferredSize(UIScale.scale(new Dimension(560, 240)));
 
         JButton copy = new JButton("Copy");
         copy.addActionListener(e -> Toolkit.getDefaultToolkit().getSystemClipboard()

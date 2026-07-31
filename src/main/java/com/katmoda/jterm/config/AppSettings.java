@@ -33,6 +33,9 @@ import java.nio.file.Path;
  * ({@code copyOnSelect}) and the right-click paste handler ({@code pasteOnRightClick}),
  * so toggling them takes effect without recreating panes. Both default off, matching the
  * prior behavior.</p>
+ *
+ * <p>Not every value is live: the UI scale/font ({@link #getUiScalePercent()} and friends) are read
+ * once by {@code ThemeManager} at startup, so changing them takes effect on the next launch.</p>
  */
 public final class AppSettings {
 
@@ -42,6 +45,14 @@ public final class AppSettings {
      *  hand-edited or corrupted settings file can't drive an unbounded buffer allocation. */
     public static final int MIN_SCROLLBACK_LINES = 100;
     public static final int MAX_SCROLLBACK_LINES = 100_000;
+
+    /** Bounds for the application UI scale, in percent (100 = unscaled). */
+    public static final int MIN_UI_SCALE_PERCENT = 75;
+    public static final int MAX_UI_SCALE_PERCENT = 300;
+
+    /** Bounds for the application UI font-size override, in points. */
+    public static final int MIN_UI_FONT_SIZE = 8;
+    public static final int MAX_UI_FONT_SIZE = 48;
 
     private boolean copyOnSelect = false;
     private boolean pasteOnRightClick = false;
@@ -91,6 +102,20 @@ public final class AppSettings {
     private String defaultCharset = "UTF-8";
     private String defaultFontFamily = FontResources.DEFAULT_TERMINAL_FONT_FAMILY;
     private int defaultFontSize = 14;
+
+    // Application UI (chrome) scale and font — the sidebar, tab strip, menus and dialogs, not the
+    // terminal panes (those follow the terminal font settings above). All three are read once at
+    // startup by ThemeManager, so changing them takes effect on the next launch.
+    //
+    // uiScalePercent drives FlatLaf's zoom factor, which scales fonts *and* the metrics FlatLaf
+    // derives through UIScale (paddings, borders, row heights) together. 100 (the default) leaves
+    // the look-and-feel untouched, so existing installs are unaffected.
+    //
+    // uiFontFamily/uiFontSize are optional overrides of the look-and-feel's own font: "" and 0 mean
+    // "keep the look-and-feel's choice". The size is the unzoomed size — the scale multiplies it.
+    private int uiScalePercent = 100;
+    private String uiFontFamily = "";
+    private int uiFontSize = 0;
 
     // Id of the globally-active highlight list (in HighlightLibrary); null means "(None)". Saved
     // sessions inherit this unless they set their own override. Fresh installs (no settings.json)
@@ -261,6 +286,45 @@ public final class AppSettings {
         this.defaultFontSize = defaultFontSize;
     }
 
+    /** The application UI scale in percent; {@code 100} leaves the look-and-feel unscaled. */
+    public int getUiScalePercent() {
+        return uiScalePercent;
+    }
+
+    /** Sets the UI scale, clamped to [{@value #MIN_UI_SCALE_PERCENT}, {@value #MAX_UI_SCALE_PERCENT}] percent. */
+    public void setUiScalePercent(int percent) {
+        this.uiScalePercent = Math.max(MIN_UI_SCALE_PERCENT, Math.min(MAX_UI_SCALE_PERCENT, percent));
+    }
+
+    /** The UI scale as a multiplier ({@code 1.0} = unscaled), for FlatLaf's zoom factor. */
+    public float uiScaleFactor() {
+        return uiScalePercent / 100f;
+    }
+
+    /** The UI font family override, or {@code ""} to keep the look-and-feel's own font. */
+    public String getUiFontFamily() {
+        return uiFontFamily;
+    }
+
+    public void setUiFontFamily(String uiFontFamily) {
+        this.uiFontFamily = (uiFontFamily != null) ? uiFontFamily.trim() : "";
+    }
+
+    /** The UI font-size override in points, or {@code 0} to keep the look-and-feel's own size. */
+    public int getUiFontSize() {
+        return uiFontSize;
+    }
+
+    /**
+     * Sets the UI font-size override, clamped to
+     * [{@value #MIN_UI_FONT_SIZE}, {@value #MAX_UI_FONT_SIZE}] points. Any value {@code <= 0}
+     * clears the override.
+     */
+    public void setUiFontSize(int uiFontSize) {
+        this.uiFontSize = (uiFontSize <= 0) ? 0
+                : Math.max(MIN_UI_FONT_SIZE, Math.min(MAX_UI_FONT_SIZE, uiFontSize));
+    }
+
     /** Id of the globally-active highlight list, or {@code null} for "(None)". */
     public String getGlobalHighlightListId() {
         return globalHighlightListId;
@@ -347,7 +411,8 @@ public final class AppSettings {
                 globalHighlightListId, darkTheme, windowMaximized, sidebarWidth,
                 windowX, windowY, windowWidth, windowHeight,
                 defaultUsername, defaultTabColorHex, openTerminalOnStartup,
-                defaultKeyPath, autoAcceptNewHostKeys, scrollbackLines, middleClickPaste));
+                defaultKeyPath, autoAcceptNewHostKeys, scrollbackLines, middleClickPaste,
+                uiScalePercent, uiFontFamily, uiFontSize));
     }
 
     private static AppSettings load() {
@@ -410,6 +475,13 @@ public final class AppSettings {
             if (p.middleClickPaste != null) {
                 settings.middleClickPaste = p.middleClickPaste;
             }
+            if (p.uiScalePercent != null) {
+                settings.setUiScalePercent(p.uiScalePercent);
+            }
+            settings.setUiFontFamily(p.uiFontFamily);
+            if (p.uiFontSize != null) {
+                settings.setUiFontSize(p.uiFontSize);
+            }
         }
         return settings;
     }
@@ -430,6 +502,7 @@ public final class AppSettings {
                              String defaultUsername, String defaultTabColorHex,
                              Boolean openTerminalOnStartup, String defaultKeyPath,
                              Boolean autoAcceptNewHostKeys, Integer scrollbackLines,
-                             Boolean middleClickPaste) {
+                             Boolean middleClickPaste, Integer uiScalePercent,
+                             String uiFontFamily, Integer uiFontSize) {
     }
 }

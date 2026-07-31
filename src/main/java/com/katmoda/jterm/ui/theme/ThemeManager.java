@@ -20,14 +20,18 @@
 package com.katmoda.jterm.ui.theme;
 
 import com.formdev.flatlaf.FlatDarkLaf;
+import com.formdev.flatlaf.FlatLaf;
 import com.formdev.flatlaf.FlatLightLaf;
+import com.formdev.flatlaf.util.UIScale;
 import com.katmoda.jterm.config.AppSettings;
 
 import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.SwingUtilities;
+import javax.swing.UIDefaults;
 import javax.swing.UIManager;
 import javax.swing.plaf.ColorUIResource;
+import javax.swing.plaf.FontUIResource;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Insets;
@@ -43,6 +47,12 @@ import java.util.function.Consumer;
  * <p>FlatLaf draws its own window decorations (custom title bar) so the app icon and title
  * appear consistently across platforms — notably on GNOME, where the native title bar shows
  * no app icon. The icon is rendered beside the title text.</p>
+ *
+ * <p>This is also where the application <i>UI scale and font</i> are applied (see
+ * {@link #applyUiScaleAndFont()}) — the sidebar, tabs, menus and dialogs, not the terminal
+ * panes, which keep their own font settings. Both are read from {@link AppSettings} on every
+ * look-and-feel install, so they survive a light/dark toggle but only pick up a preference
+ * change on the next launch.</p>
  */
 public final class ThemeManager {
 
@@ -72,6 +82,13 @@ public final class ThemeManager {
     public void install() {
         // Restore the persisted light/dark choice (with any saved color overrides) before any UI.
         current = ThemeColorStore.get().effective(AppSettings.get().isDarkTheme());
+        // The font family is picked up by FlatLaf while it builds its defaults, so it has to be
+        // registered before the first setup() call (unlike the size, applied after — see
+        // applyUiScaleAndFont). Blank means "keep the look-and-feel's own font".
+        String uiFontFamily = AppSettings.get().getUiFontFamily();
+        if (!uiFontFamily.isBlank()) {
+            FlatLaf.setPreferredFontFamily(uiFontFamily);
+        }
         // FlatLaf-drawn title bar so we control the window icon + title (GNOME shows neither
         // natively). Keep the menu bar below the title bar rather than embedded in it.
         System.setProperty("flatlaf.useWindowDecorations", "true");
@@ -133,10 +150,13 @@ public final class ThemeManager {
                 FlatLightLaf.setup();
             }
             // Re-apply our UI defaults after each setup() (setup resets UIManager).
+            applyUiScaleAndFont();
             UIManager.put("TabbedPane.showTabSeparators", true);
             UIManager.put("TitlePane.showIcon", true);
             UIManager.put("TitlePane.showIconBesideTitle", true);
             // Larger title-bar icon (default 16); trim vertical margins so the bar height holds.
+            // Unscaled on purpose: FlatLaf renders it through ScaledImageIcon, which applies the UI
+            // scale itself — scaling here too would size it twice.
             UIManager.put("TitlePane.iconSize", new Dimension(22, 22));
             UIManager.put("TitlePane.iconMargins", new Insets(2, 8, 2, 8));
             // Darker tab strip so the (lighter) selected card tab stands out. Derive it from
@@ -154,6 +174,39 @@ public final class ThemeManager {
         } else {
             SwingUtilities.invokeLater(apply);
         }
+    }
+
+    /**
+     * Applies the configured UI font size and scale to the freshly-installed look-and-feel. Called
+     * from {@link #applyLaf()} because {@code setup()} rebuilds the defaults from scratch, so both
+     * have to be re-asserted on every theme switch.
+     *
+     * <p>The order below matters, and is not interchangeable:</p>
+     * <ol>
+     *   <li>The font size is written as the <i>unzoomed</i> size. FlatLaf watches {@code defaultFont}
+     *       and re-derives its user scale factor from it, so a larger UI font already grows paddings
+     *       and row heights proportionally — that feedback is wanted here.</li>
+     *   <li>The zoom factor is applied last. {@code setZoomFactor} multiplies the (now font-derived)
+     *       scale factor and re-derives {@code defaultFont} from {@code defaultFont.unzoomedSize}
+     *       while suppressing that same feedback — so the zoom lands exactly once. Applying the zoom
+     *       <em>before</em> the font instead makes the two compound (a 150% scale with an 18pt font
+     *       came out at 263%).</li>
+     *   <li>The reset to {@code 1f} is required: {@code setZoomFactor} returns early when the value
+     *       is unchanged, so re-applying the same factor after a theme switch would otherwise be a
+     *       no-op and leave the font unzoomed.</li>
+     * </ol>
+     */
+    private static void applyUiScaleAndFont() {
+        AppSettings settings = AppSettings.get();
+        int fontSize = settings.getUiFontSize();
+        if (fontSize > 0) {
+            UIDefaults defaults = UIManager.getLookAndFeelDefaults();
+            defaults.put("defaultFont.unzoomedSize", fontSize);
+            defaults.put("defaultFont",
+                    new FontUIResource(defaults.getFont("defaultFont").deriveFont((float) fontSize)));
+        }
+        UIScale.setZoomFactor(1f);
+        UIScale.setZoomFactor(settings.uiScaleFactor());
     }
 
     /**
