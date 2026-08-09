@@ -302,6 +302,26 @@ class CredentialResolverTest {
     }
 
     @Test
+    void ephemeralSessionNeverRemembersAPassword() throws Exception {
+        // A quick-connect config's id dies with its tab, so a vault entry under it could never be
+        // reused or deleted: the prompt must not even offer to remember.
+        RecordingPrompts prompts = new RecordingPrompts("typed-pw", true);
+        CredentialResolver r = resolver(prompts);
+        SshSessionConfig cfg = session(false, false);
+        cfg.setEphemeral(true);
+        SshConnect.InteractiveAuth auth = r.interactiveAuth(cfg);
+
+        assertEquals("typed-pw", auth.passwordFor(targetHop(cfg), 0));
+        assertFalse(prompts.lastAllowRemember);
+
+        // Even with the fake ticking "remember" anyway, a successful auth writes nothing.
+        auth.onAuthSucceeded(targetHop(cfg));
+        assertFalse(vault.hasPassword(VaultKeys.sessionPassword(cfg.getId())));
+        assertFalse(cfg.isPasswordAuth());
+        assertFalse(cfg.isSavePassword());
+    }
+
+    @Test
     void challengePassesPromptsThrough() throws Exception {
         RecordingPrompts prompts = new RecordingPrompts("otp", false);
         CredentialResolver r = resolver(prompts);

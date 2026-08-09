@@ -5,7 +5,8 @@ jterm organises terminals into **tabs**, and each tab holds a **grid of panes**.
 ## Tabs
 
 Each tab contains its own pane grid. Use the **+** button on the tab strip to add a tab, or the
-**File** menu / shortcuts below.
+**File** menu / shortcuts below. The sidebar's **Local Terminal** button and **Quick Connect**
+field also open into a new tab (see [Sessions sidebar](sessions-sidebar.md#local-terminal)).
 
 | Action | Menu | Shortcut |
 |--------|------|----------|
@@ -91,8 +92,8 @@ To change the *default* font size for new panes, use **Preferences** (see
 
 ## Drag-and-drop to split
 
-You can open a session directly into a split by **dragging** it from the sidebar (or the **Open
-Local Terminal** entry) onto an existing pane. Where you drop decides the split:
+You can open a session directly into a split by **dragging** it from the sidebar (or the **Local
+Terminal** button) onto an existing pane. Where you drop decides the split:
 
 - drop on the **top ~60%** of the pane → opens a **new column**;
 - drop on the **bottom ~40%** of the pane → opens a **new row**.

@@ -1,8 +1,8 @@
 # Sessions sidebar
 
 The sidebar on the left is where you keep your saved connections. It shows a tree of **folders**
-and **SSH sessions** (each with its own icon), plus an **Open Local Terminal** entry at the top
-for quick local shells.
+and **SSH sessions** (each with its own icon), and underneath the tree a **Quick Connect** field
+for one-off hosts plus a **Local Terminal** button for quick local shells.
 
 ![The sessions sidebar](img/sidebar-tree.png)
 
@@ -15,6 +15,58 @@ for quick local shells.
   duplicate, delete, move, launch SFTP, …).
 
 ![Right-click context menu on a session](img/sidebar-context-menu.png)
+
+## Quick Connect
+
+Under the tree is a **Quick Connect** field for hosts you don't want to save. Type a target and
+press ++enter++ — jterm opens the connection in a **new tab**.
+
+```
+[user@]host[:port]
+```
+
+The user name and port are optional:
+
+- leaving the **user** off uses your global default username
+  (**Preferences → Session Defaults**, which itself defaults to your OS user name);
+- leaving the **port** off uses **22**.
+
+So `db01.example.com`, `root@db01.example.com` and `root@db01.example.com:2222` are all valid.
+An `ssh://` prefix is accepted (handy when pasting), and IPv6 literals work — use brackets if you
+also need a port: `[2001:db8::1]:2222`. If the target can't be parsed, the field turns red and its
+tooltip explains why; nothing is connected.
+
+A quick connection is **not saved**:
+
+- it never appears in the sidebar tree and nothing is written to `sessions.json`;
+- it inherits your global defaults for key file, keep-alive and terminal settings, exactly as a
+  saved session with those fields left blank would;
+- authentication is ssh-agent → your default key → a password prompt if the server offers one.
+  Because the connection has no saved identity to attach a secret to, the password prompt does
+  **not** offer *Remember this password* (see [SSH auth & vault](ssh-auth-and-vault.md)).
+
+Press ++ctrl+shift+q++ from anywhere to jump straight to the field. If you want to keep a host
+around, create a saved [SSH session](ssh-sessions.md) for it instead.
+
+!!! warning "Don't paste passwords here"
+    `user:password@host` is rejected on purpose. Connect first and enter the password at the
+    prompt, where it isn't shown on screen.
+
+## Local Terminal
+
+The **⊕ Local Terminal** button at the bottom opens a local shell in a **new tab** — it never
+replaces whatever is running in the pane you're looking at. The one exception is when the focused
+pane is **empty** (a cell you closed in a split, or a tab whose connection failed): then it fills
+that empty pane instead of leaving it stranded. ++ctrl+shift+t++ does the same thing.
+
+**Right-click** the button for the other placements:
+
+- **Open in New Tab** — the same as clicking;
+- **Open in Active Pane** — deliberately *replaces* the focused pane's session;
+- **Open in Split Pane → Split Right / Split Below**.
+
+You can also **drag** the button onto a pane to open a local shell in a split — see
+[Tabs & panes](tabs-and-panes.md#drag-and-drop-to-split).
 
 ## Creating and editing sessions
 

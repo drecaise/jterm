@@ -173,6 +173,17 @@ never return a sentinel) and `true` from the session dialog. Local sessions skip
 (`AppSettings.defaultProfile()`), which is why a bug here shows up as "local follows the preference,
 SSH doesn't".
 
+The sidebar's **Quick Connect** field (`ui.sidebar.SessionSidebar.quickConnect`) parses
+`[user@]host[:port]` via `session.SshTarget` and hands the resulting **ephemeral**
+`SshSessionConfig` to the ordinary `onOpenSsh(..., NEW_TAB)` callback, so it inherits the whole
+saved-session path (tab title/icon, async connect, error dialog, restart factory) for free. Two
+non-obvious pieces make that safe: the config is never added to `SessionStore`, and
+`ancestorsOf` returns an *empty* chain for a node outside the tree — which is precisely why a blank
+user/key/keep-alive resolves straight to the global defaults with no extra code. And
+`SshSessionConfig.ephemeral` (`@JsonIgnore`, never serialized) tells `security.CredentialResolver`
+to suppress the *"remember"* affordance for both passwords and key passphrases: the config's id is
+a random UUID that dies with the tab, so a vault entry under it could never be reused or deleted.
+
 ### SSH auth & the credential vault (security-critical, has sharp edges)
 Auth order is publickey (agent → on-disk keys) then password — MINA tries them automatically;
 `SshSession.connect` just registers identities and optionally `addPasswordIdentity`.

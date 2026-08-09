@@ -19,6 +19,7 @@
  */
 package com.katmoda.jterm.session;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -41,6 +42,14 @@ public final class SshSessionConfig implements SessionNode {
     private boolean agentForwarding = true;
     private boolean passwordAuth = false;
     private boolean savePassword = false;
+
+    // Quick Connect builds a config that lives only as long as its tab: it is never added to the
+    // SessionStore tree and never serialized, so its random id is unreachable after the tab closes.
+    // Secrets must therefore never be remembered against it (see CredentialResolver) — a vault
+    // entry under a dead id could neither be reused nor deleted through the UI. @JsonIgnore is
+    // belt-and-braces: such a config never reaches the tree in the first place.
+    @JsonIgnore
+    private transient boolean ephemeral = false;
 
     // Path to a private key file to authenticate with (in addition to ssh-agent + default
     // on-disk keys); empty means none. Supports a leading {@code ~/} for the home directory.
@@ -152,6 +161,17 @@ public final class SshSessionConfig implements SessionNode {
 
     public void setSavePassword(boolean savePassword) {
         this.savePassword = savePassword;
+    }
+
+    /** Whether this config has no persistent identity — never remember secrets against its id. */
+    @JsonIgnore
+    public boolean isEphemeral() {
+        return ephemeral;
+    }
+
+    @JsonIgnore
+    public void setEphemeral(boolean ephemeral) {
+        this.ephemeral = ephemeral;
     }
 
     /** Path to a private key file to authenticate with, or empty for none ({@code ~/} expanded). */

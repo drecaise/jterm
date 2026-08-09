@@ -16,7 +16,10 @@ package that hosts the top-level window and the shortcut dispatcher.
   `KeyboardFocusManager`. JediTerm consumes key events, so menu accelerators alone
   would never fire while a terminal has focus; the dispatcher matches every
   `KeyStroke` against the current `Keymap` and **consumes** the event before the
-  widget sees it.
+  widget sees it. It also claims *bare* ++r++ / ++s++ / ++enter++ for a stopped pane's
+  restart/reconnect strip — that branch skips any `JTextComponent` focus owner, because the
+  dispatcher sees every window and would otherwise eat those letters out of the Quick Connect
+  field or a dialog's inputs whenever some pane happened to be dead.
 - `WindowTopology` — registry of open windows; the shortcut dispatcher uses it to
   target the focused window and to move panes between windows.
 
@@ -49,8 +52,24 @@ package that hosts the top-level window and the shortcut dispatcher.
 **Sidebar and DnD (`ui.sidebar`, `dnd`).**
 
 - `SessionSidebar` renders a tree of `FolderNode` and `SshSessionConfig` values loaded
-  by `SessionStore`. Each node is a drag source; the "Local terminal" button is
+  by `SessionStore`. Each node is a drag source; the "Local Terminal" button is
   a separate drag source using `LocalTransferable`.
+- Under the tree sit the two **new-session** entries, both of which open into a *new tab*
+  rather than over the focused pane. The `OpenMode` a callback receives is what distinguishes
+  them: the Local Terminal button sends `NEW_TAB`, which `MainWindow.openLocalPreferringNewTab`
+  resolves to "new tab, unless the focused cell is empty" (`PaneGrid.activeContent() == null`
+  — a hole left by a closed pane, or a tab whose async connect never landed); the context menu's
+  explicit *Open in Active Pane* still sends `ACTIVE`, the only path that replaces a live session.
+- **Quick Connect** parses `[user@]host[:port]` with `session.SshTarget` — a headless record,
+  hence the only unit-tested part of the sidebar — and hands the resulting **ephemeral**
+  `SshSessionConfig` to the same `onOpenSsh(..., NEW_TAB)` callback a saved session uses, so tab
+  title/icon, the async connect, the error dialog and the pane-restart factory all come for free.
+  Two properties make the throwaway config behave: it is never added to `SessionStore`, and
+  `SessionStore.ancestorsOf` returns an *empty* chain for a node outside the tree, so every blank
+  field (user, key path, keep-alive, terminal profile) resolves straight to the global defaults
+  with no special-casing. The `ephemeral` flag it carries is a security marker consumed by
+  `CredentialResolver` — see
+  [components-security](components-security.md#ephemeral-sessions-never-remember).
 - On drop, `SessionDropHandler` classifies the cursor position via `DropRegion` (top
   60% opens a new column, bottom 40% opens a new row), calls `PaneGrid.split()`, and
   hands off session creation to `SessionFactory` (see the

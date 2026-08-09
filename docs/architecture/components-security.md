@@ -62,6 +62,20 @@ authenticates (`InteractiveAuth.onAuthSucceeded`), so a mistyped password is nev
 persisted. Remembering one also flips the session's `passwordAuth` / `savePassword` flags,
 because `resolvePassword` won't consult the vault without them.
 
+### Ephemeral sessions never remember
+
+Vault entries are keyed by `SshSessionConfig.id`, which assumes the config outlives the
+connection — true for anything in `SessionStore`, false for the ad-hoc config that
+[Quick Connect](../sessions-sidebar.md#quick-connect) builds. Its id is a random UUID that is
+never persisted, so a secret stored under it could be neither reused nor deleted through the UI.
+
+`SshSessionConfig.ephemeral` (a `@JsonIgnore` transient flag) marks that case, and
+`CredentialResolver` gates the *remember* affordance on it for both passwords
+(`interactiveAuth`) and key passphrases (`keyPassphraseProvider`): the checkbox is not offered,
+and the corresponding write is skipped even if a caller ticks it anyway. Note it gates
+*remembering* only — an ephemeral session still **reads** inherited secrets such as a saved
+global key passphrase, since those are keyed by something that outlives it.
+
 ## Failure modes
 
 - **Missing keyring backend** (e.g. no `secret-tool` in `$PATH` on Linux) — the

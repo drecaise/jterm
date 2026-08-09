@@ -14,6 +14,7 @@ focus. The menus show the same accelerators for discoverability.
 | Detach tab to a new window | ++ctrl+shift+o++ |
 | Attach tab to the main window | ++ctrl+shift+i++ |
 | Open a local shell | ++ctrl+shift+t++ |
+| Focus the Quick Connect field | ++ctrl+shift+q++ |
 | Split into a new column | ++ctrl+right++ |
 | Split into a new row | ++ctrl+down++ |
 | Close the focused pane | ++ctrl+up++ |

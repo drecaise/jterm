@@ -311,6 +311,14 @@ public final class TabPane extends JPanel {
         }
     }
 
+    /** Puts keyboard focus in the current tab's active pane. No-op when there is no open tab. */
+    public void focusCurrentPane() {
+        PaneGrid grid = currentGrid();
+        if (grid != null) {
+            grid.focusActivePane();
+        }
+    }
+
     /** Terminates every session in this strip (called when a detached window is closed). */
     public void disposeAllGrids() {
         for (PaneGrid grid : realGrids()) {

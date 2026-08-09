@@ -77,6 +77,7 @@ import javax.swing.KeyStroke;
 import javax.swing.SwingWorker;
 import javax.swing.UIManager;
 import javax.swing.event.HyperlinkEvent;
+import javax.swing.text.JTextComponent;
 import java.awt.BorderLayout;
 import java.awt.Desktop;
 import java.awt.Dimension;
@@ -241,6 +242,12 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
 
         frame.setVisible(true);
 
+        // Claim the initial keyboard focus for the terminal. The focus request inside addTab() above
+        // ran while the frame was still invisible and so had no effect, leaving Swing to hand focus
+        // to the first component in the sidebar's traversal order — which is now the Quick Connect
+        // text field, where startup keystrokes would silently land.
+        tabPane.focusCurrentPane();
+
         // Bring up any tunnels the user marked auto-start (resolves credentials as needed).
         startAutoStartTunnels();
     }
@@ -373,32 +380,53 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
 
     // ---- session opening ----
 
-    /** OPEN_LOCAL shortcut: open a local shell in the focused window's active cell. */
+    /** OPEN_LOCAL shortcut: open a local shell in the focused window. */
     private void openLocalInFocused() {
         TabPane active = WindowManager.get().focusedTabPane();
-        if (active == null) {
-            return;
+        if (active != null) {
+            openLocalPreferringNewTab(active);
         }
-        PaneGrid grid = active.currentGrid();
-        if (grid == null) {
-            active.addTab();
-        } else {
+    }
+
+    /**
+     * Open a local shell in a new tab — unless the focused cell is empty (a hole left by a closed
+     * pane, or a tab whose async SSH connect never landed), in which case fill that hole rather
+     * than stranding it. Never replaces a live session; that is what {@link OpenMode#ACTIVE} is for.
+     */
+    private static void openLocalPreferringNewTab(TabPane host) {
+        PaneGrid grid = host.currentGrid();
+        if (grid != null && grid.activeContent() == null) {
             grid.openLocalInActive();
+        } else {
+            // No open tab (e.g. the startup terminal was suppressed), or the focused cell is busy.
+            host.addTab();
         }
     }
 
     private void openLocalInCurrent(OpenMode mode) {
         PaneGrid grid = tabPane.currentGrid();
         if (grid == null) {
-            // No open tab (e.g. the startup terminal was suppressed): open one in a fresh tab.
             tabPane.addTab();
             return;
         }
         switch (mode) {
             case SPLIT_COLUMN -> grid.splitColumn();
             case SPLIT_ROW -> grid.splitRow();
-            default -> grid.openLocalInActive();
+            case ACTIVE -> grid.openLocalInActive();
+            default -> openLocalPreferringNewTab(tabPane);
         }
+    }
+
+    /**
+     * QUICK_CONNECT shortcut: put the caret in the sidebar's Quick Connect field. The sidebar lives
+     * only on the main window, so a shortcut pressed in a detached window raises this one first.
+     */
+    private void focusQuickConnect() {
+        if (sidebar == null) {
+            return;
+        }
+        frame.toFront();
+        sidebar.focusQuickConnect();
     }
 
     private void openSshSession(SshSessionConfig cfg, OpenMode mode) {
@@ -661,8 +689,12 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
             // A stopped pane claims bare Return / R / S so those actions work wherever focus sits in
             // the pane (e.g. on the dead terminal), not only on the small "Session stopped" strip.
             // Restricted to no Ctrl/Alt/Meta so real shortcuts (Ctrl+R, …) are untouched; only fires
-            // while the active pane is genuinely stopped, so live typing is unaffected.
-            if ((e.getModifiersEx() & (KeyEvent.CTRL_DOWN_MASK | KeyEvent.ALT_DOWN_MASK | KeyEvent.META_DOWN_MASK)) == 0) {
+            // while the active pane is genuinely stopped, so live typing is unaffected. Text fields
+            // are exempt: this dispatcher sees every window, and swallowing bare letters would eat
+            // them out of the Quick Connect field (or any dialog's inputs) whenever a pane is dead.
+            if ((e.getModifiersEx() & (KeyEvent.CTRL_DOWN_MASK | KeyEvent.ALT_DOWN_MASK | KeyEvent.META_DOWN_MASK)) == 0
+                    && !(KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner()
+                            instanceof JTextComponent)) {
                 int kc = e.getKeyCode();
                 if (kc == KeyEvent.VK_R || kc == KeyEvent.VK_S || kc == KeyEvent.VK_ENTER) {
                     TabPane stoppedHost = WindowManager.get().focusedTabPane();
@@ -750,6 +782,7 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
                 }
             }
             case OPEN_LOCAL -> openLocalInFocused();
+            case QUICK_CONNECT -> focusQuickConnect();
             case OPEN_SFTP -> openSftpForActivePane();
             case OPEN_TUNNELS -> openTunnelManager();
             case TOGGLE_THEME -> ThemeManager.get().toggle();

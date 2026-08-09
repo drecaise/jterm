@@ -20,7 +20,7 @@ window size (~1200×800) so text stays legible.
 | Filename | What to capture | Used on page |
 |----------|-----------------|--------------|
 | `main-window.png` | The full main window: menu bar, a tab, the sidebar with a few sessions, an open terminal | `index.md`, `getting-started.md` |
-| `sidebar-tree.png` | The sessions sidebar with folders expanded, a couple of SSH sessions with icons, and the "Open Local Terminal" entry | `sessions-sidebar.md` |
+| `sidebar-tree.png` | The sessions sidebar with folders expanded, a couple of SSH sessions with icons, and — under the tree — the **Quick Connect** field and the **⊕ Local Terminal** button | `sessions-sidebar.md` |
 | `sidebar-context-menu.png` | Right-click context menu on a saved session (Edit / Delete / Duplicate / Open … ) | `sessions-sidebar.md` |
 | `icon-picker.png` | The icon picker dialog showing the built-in library | `sessions-sidebar.md` |
 | `pane-grid-3x3.png` | A tab split into several panes (e.g. 2×2 or 3×2), active pane highlighted | `tabs-and-panes.md` |

@@ -33,6 +33,11 @@ save it to the vault, and jterm enables *Password auth* + *Save password* on the
 the next connect won't ask. The password is only saved once it has actually worked, so a typo is
 never stored.
 
+!!! note "Quick connections can't remember"
+    A [Quick Connect](sessions-sidebar.md#quick-connect) target isn't a saved session, so there is
+    nothing for a password to belong to — the prompt appears as usual but without *Remember this
+    password*. Save the host as an [SSH session](ssh-sessions.md) if you want its password kept.
+
 !!! note "No prompt on key-only servers"
     jterm only offers a method the server advertises. If the server has
     `PasswordAuthentication no`, there is nothing to prompt for and the connect fails as before —

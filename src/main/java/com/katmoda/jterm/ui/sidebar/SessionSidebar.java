@@ -36,6 +36,7 @@ import com.katmoda.jterm.session.SessionExportService;
 import com.katmoda.jterm.session.SessionNode;
 import com.katmoda.jterm.session.SessionStore;
 import com.katmoda.jterm.session.SshSessionConfig;
+import com.katmoda.jterm.session.SshTarget;
 import com.katmoda.jterm.session.WslDistroNode;
 import com.katmoda.jterm.terminal.wsl.WslDistributions;
 import com.katmoda.jterm.security.CredentialVault;
@@ -77,6 +78,8 @@ import javax.swing.SwingWorker;
 import javax.swing.TransferHandler;
 import javax.swing.event.AncestorEvent;
 import javax.swing.event.AncestorListener;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.swing.event.TreeExpansionEvent;
 import javax.swing.event.TreeExpansionListener;
 import javax.swing.tree.DefaultMutableTreeNode;
@@ -115,9 +118,17 @@ public final class SessionSidebar extends JPanel {
 
     private static final Logger LOG = LoggerFactory.getLogger(SessionSidebar.class);
 
+    private static final String QUICK_CONNECT_HINT =
+            "<html>Connect to a host without saving a session.<br>"
+            + "The user name and port are optional — they default to the global user name "
+            + "(Preferences ▸ Session defaults) and port 22.</html>";
+
     private final SessionStore store;
     private final JTree tree;
     private final DefaultTreeModel model;
+
+    /** Ad-hoc {@code [user@]host[:port]} entry pinned under the tree. */
+    private final JTextField quickConnectField = new JTextField();
 
     private final BiConsumer<SshSessionConfig, OpenMode> onOpenSsh;
     private final Consumer<OpenMode> onOpenLocal;
@@ -264,9 +275,14 @@ public final class SessionSidebar extends JPanel {
             }
         });
 
+        // Quick Connect and the Local Terminal button share the strip under the tree: both open a
+        // brand-new session, as opposed to the toolbar above, which edits the saved tree.
+        JPanel south = new JPanel(new BorderLayout());
+        south.add(buildQuickConnect(), BorderLayout.NORTH);
+        south.add(buildLocalEntry(), BorderLayout.SOUTH);
         add(buildToolbar(), BorderLayout.NORTH);
         add(new JScrollPane(tree), BorderLayout.CENTER);
-        add(buildLocalEntry(), BorderLayout.SOUTH);
+        add(south, BorderLayout.SOUTH);
         setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
 
         applyExpansionState();
@@ -274,6 +290,95 @@ public final class SessionSidebar extends JPanel {
         if (wslFolder != null) {
             refreshWsl(); // populate the WSL folder on startup (off the EDT)
         }
+    }
+
+    // ---- quick connect ----
+
+    /** "Quick Connect" caption over a {@code [user@]host[:port]} field; Enter opens a new tab. */
+    private JComponent buildQuickConnect() {
+        JLabel caption = new JLabel("Quick Connect");
+        caption.setBorder(BorderFactory.createEmptyBorder(0, 0, 2, 0));
+
+        quickConnectField.putClientProperty("JTextField.placeholderText", "user@host:port");
+        quickConnectField.setToolTipText(QUICK_CONNECT_HINT);
+        quickConnectField.addActionListener(e -> quickConnect());
+        // Any edit clears a stale "bad target" outline, so the field doesn't stay red while the
+        // user is fixing it.
+        quickConnectField.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                clearQuickConnectError();
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                clearQuickConnectError();
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                clearQuickConnectError();
+            }
+        });
+
+        JPanel panel = new JPanel(new BorderLayout());
+        // Breathing room on both sides: above, off the tree's border; below, off the Local Terminal
+        // button (which contributes 4px of its own, so 6 here reads the same as the 6 on top).
+        panel.setBorder(BorderFactory.createEmptyBorder(6, 0, 6, 0));
+        panel.add(caption, BorderLayout.NORTH);
+        panel.add(quickConnectField, BorderLayout.CENTER);
+        return panel;
+    }
+
+    /** Focuses and selects the Quick Connect field (the QUICK_CONNECT shortcut). */
+    public void focusQuickConnect() {
+        quickConnectField.requestFocusInWindow();
+        quickConnectField.selectAll();
+    }
+
+    /** Parses the field and opens the target in a new tab; a bad target is flagged in place. */
+    private void quickConnect() {
+        String input = quickConnectField.getText().trim();
+        if (input.isEmpty()) {
+            return;
+        }
+        SshTarget target;
+        try {
+            target = SshTarget.parse(input);
+        } catch (IllegalArgumentException e) {
+            quickConnectField.putClientProperty("JComponent.outline", "error");
+            quickConnectField.setToolTipText(e.getMessage());
+            return;
+        }
+        // Reuses the saved-session open path, so the tab gets its title/icon and the async connect,
+        // error dialog and pane-restart factory all behave exactly as for a saved session.
+        onOpenSsh.accept(ephemeralConfig(target), OpenMode.NEW_TAB);
+        quickConnectField.selectAll(); // retyping replaces the target
+    }
+
+    private void clearQuickConnectError() {
+        if (quickConnectField.getClientProperty("JComponent.outline") != null) {
+            quickConnectField.putClientProperty("JComponent.outline", null);
+            quickConnectField.setToolTipText(QUICK_CONNECT_HINT);
+        }
+    }
+
+    /**
+     * Builds a throwaway config for {@code target}. It is never added to the store and never
+     * serialized, and it is flagged {@linkplain SshSessionConfig#isEphemeral() ephemeral} so no
+     * secret is ever remembered against its (unreachable) id. Password auth stays off, so auth is
+     * ssh-agent → the global default key → the usual interactive prompt. Everything it leaves
+     * blank — user, key path, keep-alive, terminal profile — resolves through the normal
+     * inheritance chain, which for a config outside the tree is exactly the global defaults.
+     */
+    private SshSessionConfig ephemeralConfig(SshTarget target) {
+        SshSessionConfig cfg = new SshSessionConfig();
+        cfg.setEphemeral(true);
+        cfg.setHost(target.host());
+        cfg.setPort(target.port());
+        cfg.setUser(target.user());
+        cfg.setName(target.label(store.effectiveUser(cfg)));
+        return cfg;
     }
 
     private JComponent buildToolbar() {
@@ -295,9 +400,11 @@ public final class SessionSidebar extends JPanel {
     private JComponent buildLocalEntry() {
         JButton local = new JButton("⊕  Local Terminal");
         local.setHorizontalAlignment(JButton.LEFT);
-        local.setToolTipText("Click to open in the active pane, or drag onto a pane to split");
+        local.setToolTipText("Click to open in a new tab (or fill the empty pane), "
+                + "or drag onto a pane to split");
 
-        local.addActionListener(e -> onOpenLocal.accept(OpenMode.ACTIVE));
+        // NEW_TAB rather than ACTIVE: a click must never close the session in the focused pane.
+        local.addActionListener(e -> onOpenLocal.accept(OpenMode.NEW_TAB));
         local.setComponentPopupMenu(buildLocalPopup());
 
         // Drag onto a pane to split-and-open a local shell (mirrors saved SSH sessions).
@@ -847,6 +954,8 @@ public final class SessionSidebar extends JPanel {
     /** Context menu for the "Local Terminal" button, mirroring the saved-session open options. */
     private JPopupMenu buildLocalPopup() {
         JPopupMenu menu = new JPopupMenu();
+        JMenuItem openTab = new JMenuItem("Open in New Tab");
+        openTab.addActionListener(a -> onOpenLocal.accept(OpenMode.NEW_TAB));
         JMenuItem openActive = new JMenuItem("Open in Active Pane");
         openActive.addActionListener(a -> onOpenLocal.accept(OpenMode.ACTIVE));
         JMenu split = new JMenu("Open in Split Pane");
@@ -856,6 +965,7 @@ public final class SessionSidebar extends JPanel {
         below.addActionListener(a -> onOpenLocal.accept(OpenMode.SPLIT_ROW));
         split.add(right);
         split.add(below);
+        menu.add(openTab);
         menu.add(openActive);
         menu.add(split);
         return menu;

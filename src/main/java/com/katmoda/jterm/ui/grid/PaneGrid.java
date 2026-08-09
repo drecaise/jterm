@@ -1398,6 +1398,11 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         }
     }
 
+    /** Put keyboard focus in the active cell (used to claim the window's initial focus). */
+    public void focusActivePane() {
+        focusActive();
+    }
+
     private void focusActive() {
         GridContent content = panes[activeRow][activeCol];
         if (content != null) {

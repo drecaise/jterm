@@ -61,3 +61,8 @@ Double-click the session, or drag it onto a pane. Authentication is attempted au
 see [SSH auth & vault](ssh-auth-and-vault.md) for the auth order, the credential vault, and
 host-key verification. Once connected you can open an [SFTP browser](sftp.md) or
 [tunnels](tunnels.md) on the same host.
+
+!!! tip "One-off hosts"
+    You don't need a saved session to reach a host once. Type `[user@]host[:port]` into the
+    sidebar's [Quick Connect](sessions-sidebar.md#quick-connect) field and press ++enter++ —
+    it connects in a new tab using your global defaults and saves nothing.

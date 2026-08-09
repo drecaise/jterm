@@ -162,7 +162,8 @@ public final class CredentialResolver {
     /**
      * Builds the passphrase provider for a connect (the SSH connect runs off the EDT, so prompts
      * are marshalled onto it). For the session's effective key it tries the saved passphrase first
-     * (attempt 0) and offers to remember a newly entered one; for any other key (jump-host keys,
+     * (attempt 0) and offers to remember a newly entered one (unless the session is
+     * {@linkplain SshSessionConfig#isEphemeral() ephemeral}); for any other key (jump-host keys,
      * auto-discovered {@code ~/.ssh} identities) it simply prompts. A wrong passphrase re-prompts
      * (with an error) until MINA gives up; cancelling skips the key so other auth still applies.
      *
@@ -184,14 +185,17 @@ public final class CredentialResolver {
                 if (attempt == 0 && isSessionKey && savedPassphrase != null) {
                     return savedPassphrase; // try the saved one silently first
                 }
+                // An ephemeral (quick-connect) session may still *use* an inherited saved
+                // passphrase, but nothing may be remembered against its throwaway id.
+                boolean canRemember = isSessionKey && !cfg.isEphemeral();
                 String error = attempt > 0 ? "Incorrect passphrase — try again." : null;
-                KeyPassphrase result = promptPassphraseOnEdt(keyPath, error, isSessionKey);
+                KeyPassphrase result = promptPassphraseOnEdt(keyPath, error, canRemember);
                 if (result == null) {
                     return null;
                 }
                 String passphrase = new String(result.passphrase());
                 Arrays.fill(result.passphrase(), '\0');
-                if (result.remember() && isSessionKey) {
+                if (result.remember() && canRemember) {
                     pendingRemember.put(SshConnect.resolveKeyPath(keyPath), passphrase);
                 }
                 return passphrase;
@@ -215,8 +219,10 @@ public final class CredentialResolver {
      *
      * <p>The re-prompt carries an error line, so a wrong saved password no longer dead-ends the
      * connect. Remembering is offered only for the hop that <em>is</em> {@code cfg} (not jump
-     * hosts, whose credentials are edited elsewhere), and takes effect once that hop actually
-     * authenticates — a password that turned out to be wrong is never persisted.</p>
+     * hosts, whose credentials are edited elsewhere, and not an
+     * {@linkplain SshSessionConfig#isEphemeral() ephemeral} quick connect, whose id is
+     * throwaway), and takes effect once that hop actually authenticates — a password that turned
+     * out to be wrong is never persisted.</p>
      */
     public SshConnect.InteractiveAuth interactiveAuth(SshSessionConfig cfg) {
         return new SshConnect.InteractiveAuth() {
@@ -229,15 +235,18 @@ public final class CredentialResolver {
             public String passwordFor(SshConnect.HostHop hop, int attempt) {
                 boolean isTarget = hop.id() != null && hop.id().equals(cfg.getId());
                 String name = isTarget ? cfg.getName() : hop.label();
+                // Never offer to remember against an ephemeral (quick-connect) config: its id dies
+                // with the tab, so the vault entry would be unreachable and undeletable.
+                boolean canRemember = isTarget && !cfg.isEphemeral();
                 String error = attempt > 0 ? "Authentication failed — try again." : null;
                 SessionPassword result =
-                        promptSessionPasswordResultOnEdt(name, hop.label(), error, isTarget);
+                        promptSessionPasswordResultOnEdt(name, hop.label(), error, canRemember);
                 if (result == null) {
                     return null;
                 }
                 String password = new String(result.password());
                 Arrays.fill(result.password(), '\0');
-                if (result.remember() && isTarget) {
+                if (result.remember() && canRemember) {
                     pendingRemember = password;
                 }
                 return password;
