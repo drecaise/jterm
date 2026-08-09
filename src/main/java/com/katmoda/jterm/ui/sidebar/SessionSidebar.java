@@ -88,7 +88,9 @@ import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
 import java.awt.BorderLayout;
 import java.awt.GridLayout;
+import java.awt.Point;
 import java.awt.datatransfer.Transferable;
+import java.awt.dnd.DragSource;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -145,6 +147,9 @@ public final class SessionSidebar extends JPanel {
 
     /** Guards the expand/collapse listener while we programmatically restore saved state. */
     private boolean syncingExpansion;
+
+    /** True while the current gesture on the "Local Terminal" button is a drag, not a click. */
+    private boolean localDragged;
 
     public SessionSidebar(SessionStore store,
                           BiConsumer<SshSessionConfig, OpenMode> onOpenSsh,
@@ -404,7 +409,17 @@ public final class SessionSidebar extends JPanel {
                 + "or drag onto a pane to split");
 
         // NEW_TAB rather than ACTIVE: a click must never close the session in the focused pane.
-        local.addActionListener(e -> onOpenLocal.accept(OpenMode.NEW_TAB));
+        local.addActionListener(e -> {
+            // exportAsDrag below swallows the mouse release, so the button still fires its action
+            // once the drop finishes. Left alone that opens a tab on top of the split the drop just
+            // created — invisible while this action was ACTIVE (it merely replaced the fresh pane
+            // with an identical shell), obvious now that it opens a tab.
+            if (localDragged) {
+                localDragged = false;
+                return;
+            }
+            onOpenLocal.accept(OpenMode.NEW_TAB);
+        });
         local.setComponentPopupMenu(buildLocalPopup());
 
         // Drag onto a pane to split-and-open a local shell (mirrors saved SSH sessions).
@@ -419,12 +434,29 @@ public final class SessionSidebar extends JPanel {
                 return new LocalTransferable();
             }
         });
-        local.addMouseMotionListener(new MouseAdapter() {
+        MouseAdapter dragGesture = new MouseAdapter() {
+            private Point pressedAt;
+
+            @Override
+            public void mousePressed(MouseEvent e) {
+                pressedAt = e.getPoint();
+                localDragged = false;
+            }
+
             @Override
             public void mouseDragged(MouseEvent e) {
+                // Only past the platform's drag threshold, so a shaky click stays a click rather
+                // than becoming a zero-distance drag whose action then gets swallowed above.
+                if (localDragged || pressedAt == null
+                        || e.getPoint().distance(pressedAt) < DragSource.getDragThreshold()) {
+                    return;
+                }
+                localDragged = true;
                 local.getTransferHandler().exportAsDrag(local, e, TransferHandler.COPY);
             }
-        });
+        };
+        local.addMouseListener(dragGesture);
+        local.addMouseMotionListener(dragGesture);
 
         JPanel wrap = new JPanel(new BorderLayout());
         wrap.setBorder(BorderFactory.createEmptyBorder(4, 0, 0, 0));
