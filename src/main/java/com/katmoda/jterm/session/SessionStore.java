@@ -40,6 +40,7 @@ public final class SessionStore {
     public SessionStore() {
         this.file = AppPaths.file("sessions.json");
         this.root = load();
+        upgrade();
     }
 
     public FolderNode root() {
@@ -51,6 +52,21 @@ public final class SessionStore {
         // user's sessions aren't silently lost; we still fall back to a fresh tree so launch proceeds.
         FolderNode loaded = JsonStore.load(file, FolderNode.class);
         return loaded != null ? loaded : new FolderNode("Sessions");
+    }
+
+    /**
+     * Applies any pending {@link SessionMigrations} and stamps the current schema version. The stamp
+     * is written even when the migration changed nothing (and on a brand-new tree), because it is
+     * what makes each migration one-shot — see {@link SessionMigrations#migrate}.
+     */
+    private void upgrade() {
+        Integer version = root.getSchemaVersion();
+        if (version != null && version >= SessionMigrations.CURRENT_VERSION) {
+            return;
+        }
+        SessionMigrations.migrate(root);
+        root.setSchemaVersion(SessionMigrations.CURRENT_VERSION);
+        save();
     }
 
     public void save() {

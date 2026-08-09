@@ -19,13 +19,13 @@
  */
 package com.katmoda.jterm.ui.component;
 
+import com.katmoda.jterm.ui.theme.JTermSettingsProvider;
+
 import javax.swing.DefaultComboBoxModel;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
-import javax.swing.JSpinner;
-import javax.swing.SpinnerNumberModel;
 import java.awt.GraphicsEnvironment;
 import java.awt.GridLayout;
 import java.nio.charset.Charset;
@@ -37,10 +37,11 @@ import java.util.List;
  * SSH session dialog and the application Preferences. Both edit the same four fields, so the form
  * lives in one place to keep them from drifting.
  *
- * <p>When {@code allowDefault} is true (per-session editing) the Type/Font/Charset choosers offer a
- * leading {@link #DEFAULT_LABEL} entry meaning "inherit the application default"; selecting it makes
- * the corresponding getter return an empty string. When false (editing the application defaults
- * themselves) only concrete values are offered.</p>
+ * <p>When {@code allowDefault} is true (per-session editing) every chooser offers a leading
+ * {@link #DEFAULT_LABEL} entry meaning "inherit the application default"; selecting it makes the
+ * corresponding getter return an empty string — or {@code 0} for {@link #fontSize()}, the sentinel
+ * {@link com.katmoda.jterm.config.AppSettings#resolve} treats as "unset". When false (editing the
+ * application defaults themselves) only concrete values are offered.</p>
  */
 public final class TerminalSettingsForm {
 
@@ -59,10 +60,19 @@ public final class TerminalSettingsForm {
             "GBK", "GB2312", "Big5", "Shift_JIS", "EUC-JP", "EUC-KR", "KOI8-R"
     };
 
+    /** Point sizes offered; the combo is editable, so any size in range can be typed. */
+    private static final String[] FONT_SIZES = {
+            "8", "9", "10", "11", "12", "13", "14", "16", "18", "20", "24", "28", "32"
+    };
+
+    /** Concrete size used when a field is left unset and inheriting isn't allowed. */
+    private static final int FALLBACK_FONT_SIZE = 14;
+
     private final boolean allowDefault;
     private final JComboBox<String> terminalType;
     private final JComboBox<String> font;
-    private final JSpinner fontSize;
+    private final JComboBox<String> fontSize;
+    private final int initialFontSize;
     private final JComboBox<String> charset;
     private final JPanel panel;
 
@@ -71,7 +81,7 @@ public final class TerminalSettingsForm {
      * @param type         initial terminal type ({@code blank} → "(Default)" or the built-in default)
      * @param charsetName  initial charset ({@code blank} → "(Default)" or UTF-8)
      * @param family       initial font family ({@code blank} → "(Default)" when allowed)
-     * @param size         initial font size in points ({@code <= 0} → 14)
+     * @param size         initial font size in points ({@code <= 0} → "(Default)" or 14)
      */
     public TerminalSettingsForm(boolean allowDefault, String type, String charsetName,
                                 String family, int size) {
@@ -96,7 +106,10 @@ public final class TerminalSettingsForm {
             font.setSelectedItem(family);
         }
 
-        this.fontSize = new JSpinner(new SpinnerNumberModel(size > 0 ? size : 14, 6, 72, 1));
+        this.initialFontSize = size;
+        this.fontSize = editableCombo(FONT_SIZES);
+        this.fontSize.setSelectedItem(size > 0
+                ? String.valueOf(size) : defaultText(String.valueOf(FALLBACK_FONT_SIZE)));
 
         this.charset = editableCombo(supportedCharsets());
         this.charset.setSelectedItem(isBlank(charsetName) ? defaultText("UTF-8") : charsetName);
@@ -129,9 +142,32 @@ public final class TerminalSettingsForm {
         return (value == null || DEFAULT_LABEL.equals(value)) ? "" : value.toString();
     }
 
-    /** Selected font size in points (always concrete). */
+    /**
+     * Selected font size in points, or {@code 0} when inheriting the default. The combo is editable
+     * (so the spinner it replaced no longer guards the input): anything unparseable falls back to
+     * inheriting, or — when inheriting isn't allowed — to the size the form opened with, so a typo
+     * in Preferences can't overwrite a good application default with junk.
+     */
     public int fontSize() {
-        return (Integer) fontSize.getValue();
+        String text = comboText(fontSize);
+        if (text.isEmpty() || DEFAULT_LABEL.equals(text)) {
+            return fallbackFontSize();
+        }
+        try {
+            int parsed = Integer.parseInt(text);
+            return Math.max(JTermSettingsProvider.MIN_FONT_SIZE,
+                    Math.min(JTermSettingsProvider.MAX_FONT_SIZE, parsed));
+        } catch (NumberFormatException ex) {
+            return fallbackFontSize();
+        }
+    }
+
+    /** {@code 0} (inherit) when allowed, otherwise a concrete size that leaves the default intact. */
+    private int fallbackFontSize() {
+        if (allowDefault) {
+            return 0;
+        }
+        return initialFontSize > 0 ? initialFontSize : FALLBACK_FONT_SIZE;
     }
 
     private String defaultText(String concrete) {

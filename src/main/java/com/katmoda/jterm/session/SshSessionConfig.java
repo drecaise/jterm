@@ -190,13 +190,16 @@ public final class SshSessionConfig implements SessionNode {
         this.fontFamily = fontFamily;
     }
 
-    /** Terminal font size in points; {@code 0} means use the application default. */
+    /**
+     * Terminal font size in points; {@code 0} means use the application default. The setter
+     * normalises negatives to {@code 0}, so that is the only "inherit" value stored.
+     */
     public int getFontSize() {
         return fontSize;
     }
 
     public void setFontSize(int fontSize) {
-        this.fontSize = fontSize;
+        this.fontSize = Math.max(fontSize, 0);
     }
 
     /** Id of the macro to run automatically right after connecting, or {@code null} for none. */

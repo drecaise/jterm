@@ -168,11 +168,20 @@
                 <version>3.13.0</version>
             </plugin>
 
-            <!-- JUnit 5 test runner. Surefire 3.x discovers Jupiter tests natively. -->
+            <!-- JUnit 5 test runner. Surefire 3.x discovers Jupiter tests natively.
+                 user.home is redirected into target/ so that tests touching AppPaths (SessionStore,
+                 the credential vault, …) can neither read nor rewrite the developer's real
+                 ~/.config/jterm — SessionStore in particular now persists schema migrations on
+                 construction. -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.2</version>
+                <configuration>
+                    <systemPropertyVariables>
+                        <user.home>${project.build.directory}/test-home</user.home>
+                    </systemPropertyVariables>
+                </configuration>
             </plugin>
 
             <!-- Run during development: mvn exec:java -->

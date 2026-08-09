@@ -31,6 +31,11 @@ There **is** a JUnit 5 suite under `src/test/java` (`mvn -q test`), but it only 
 logic — credential/vault resolution, session-store inheritance, SFTP transfer maths, agent socket
 trust. Nothing Swing-facing is tested, so a green suite is not evidence the UI works.
 
+Surefire redirects `user.home` to `target/test-home` (`pom.xml`), so tests that reach `AppPaths`
+get an empty config dir instead of the developer's real `~/.config/jterm` — needed because
+`SessionStore`'s constructor *writes* (schema migrations, below). Don't remove it, and don't write
+tests that assume real config data exists.
+
 For anything the suite doesn't reach, verify by building + launching. There is a real display
 (`DISPLAY=:0`, Wayland), so the GUI launches, but **no screenshot tool is installed** — verify
 headlessly by watching the startup log for the `pty4j native` line and a spawned `/bin/bash -l`,
@@ -118,6 +123,24 @@ Support/jterm`, `%APPDATA%\jterm`). Stored there: `sessions.json` (recursive `se
 (`icon.IconLibrary`: built-in SVGs under `resources/icons/` + user imports copied into
 `<config>/icons/`), `keymap.json`, and `credentials.json` (see Security). `SshSessionConfig`
 has a stable `id` (UUID) used as the vault key.
+
+`sessions.json` is **schema-versioned** via `schemaVersion` on the *root* `FolderNode` (absent = v0;
+`@JsonInclude(NON_NULL)` keeps it off sub-folders). `SessionStore`'s constructor runs
+`session.SessionMigrations.migrate` and then stamps + saves the version **even when nothing
+changed** — that stamp is the only thing making a migration one-shot, so a value the user later
+chooses that happens to match what a migration rewrites is safe. v1 exists because per-session
+terminal font size gained an "inherit" state (`0`) that the old spinner-based editor could never
+produce, leaving every saved session pinned to its seed value of 14 and deaf to Preferences →
+Terminal Settings → Font Size; the migration clears exactly 14 and nothing else.
+
+Per-session terminal settings inherit **only** session → global, resolved by
+`AppSettings.resolve(...)` at `ConnectionService.java` (there is no folder-level tier for these, unlike
+user/tab-color/key-path/keep-alive). Blank string or `0` means inherit; `ui.component.TerminalSettingsForm`
+is the single editor for all four fields and maps its `(Default)` entry back to those sentinels —
+constructed with `allowDefault=false` from Preferences (editing the globals themselves, so it must
+never return a sentinel) and `true` from the session dialog. Local sessions skip resolution entirely
+(`AppSettings.defaultProfile()`), which is why a bug here shows up as "local follows the preference,
+SSH doesn't".
 
 ### SSH auth & the credential vault (security-critical, has sharp edges)
 Auth order is publickey (agent → on-disk keys) then password — MINA tries them automatically;

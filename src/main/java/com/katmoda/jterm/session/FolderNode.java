@@ -19,6 +19,8 @@
  */
 package com.katmoda.jterm.session;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -45,6 +47,11 @@ public final class FolderNode implements SessionNode {
     // (fall back to an ancestor folder, then the global default), 0 = explicitly off, > 0 =
     // explicitly on at that interval in seconds.
     private Integer keepAliveSeconds;
+
+    // Schema version of sessions.json, meaningful on the root folder only (see SessionMigrations).
+    // Left out of the JSON when null so sub-folders don't all gain a meaningless "schemaVersion".
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Integer schemaVersion;
 
     public FolderNode() {
     }
@@ -136,5 +143,17 @@ public final class FolderNode implements SessionNode {
 
     public void setKeepAliveSeconds(Integer keepAliveSeconds) {
         this.keepAliveSeconds = (keepAliveSeconds == null) ? null : Math.max(0, keepAliveSeconds);
+    }
+
+    /**
+     * Schema version of the {@code sessions.json} this folder is the root of; {@code null} for a
+     * file written before versioning (and for every non-root folder). See {@link SessionMigrations}.
+     */
+    public Integer getSchemaVersion() {
+        return schemaVersion;
+    }
+
+    public void setSchemaVersion(Integer schemaVersion) {
+        this.schemaVersion = schemaVersion;
     }
 }
