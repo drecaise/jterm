@@ -45,6 +45,7 @@ import com.katmoda.jterm.security.VaultKeys;
 import com.katmoda.jterm.security.VaultManager;
 import com.katmoda.jterm.ui.ErrorDialog;
 import com.katmoda.jterm.ui.security.MasterPasswordDialog;
+import com.katmoda.jterm.ui.component.DialogFocus;
 import com.katmoda.jterm.ui.component.HighlightListCombo;
 import com.katmoda.jterm.ui.component.JumpHostsForm;
 import com.katmoda.jterm.ui.component.KeepAliveField;
@@ -71,13 +72,10 @@ import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
-import javax.swing.SwingUtilities;
 import javax.swing.JToolBar;
 import javax.swing.JTree;
 import javax.swing.SwingWorker;
 import javax.swing.TransferHandler;
-import javax.swing.event.AncestorEvent;
-import javax.swing.event.AncestorListener;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.event.TreeExpansionEvent;
@@ -1240,7 +1238,7 @@ public final class SessionSidebar extends JPanel {
     /** Shared name + icon dialog for creating and editing folders. Mutates {@code folder} on OK. */
     private boolean showFolderDialog(FolderNode folder, String title) {
         JTextField name = new JTextField(folder.getName());
-        focusOnShow(name, false);
+        name.setCaretPosition(0);
         String[] iconId = {folder.getIconId()};
         Icon fallback = IconLibrary.get().icon("builtin/folder", 16);
         JButton iconBtn = new JButton();
@@ -1299,8 +1297,7 @@ public final class SessionSidebar extends JPanel {
         form.add(new JLabel("Default password:"));
         form.add(defaultPassword);
 
-        int result = JOptionPane.showConfirmDialog(this, form, title,
-                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        int result = DialogFocus.showConfirm(this, form, title, name);
         if (result != JOptionPane.OK_OPTION) {
             return false;
         }
@@ -1375,7 +1372,6 @@ public final class SessionSidebar extends JPanel {
     private FolderNode showSshDialog(SshSessionConfig cfg, String title, FolderNode initialFolder) {
         // ---- Basic settings ----
         JTextField name = new JTextField(cfg.getName());
-        focusOnShow(name, true);
         JTextField host = new JTextField(cfg.getHost());
         JTextField port = new JTextField(String.valueOf(cfg.getPort()));
         JTextField user = new JTextField(cfg.getUser());
@@ -1482,8 +1478,7 @@ public final class SessionSidebar extends JPanel {
         tabs.addTab("Terminal Settings", terminalSettings.component());
         tabs.addTab("Jump Hosts", jumpHostsForm.component());
 
-        int result = JOptionPane.showConfirmDialog(this, tabs, title,
-                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        int result = DialogFocus.showConfirm(this, tabs, title, name);
         if (result != JOptionPane.OK_OPTION) {
             return null;
         }
@@ -1547,31 +1542,6 @@ public final class SessionSidebar extends JPanel {
     private static void row(JPanel form, String label, JComponent field) {
         form.add(new JLabel(label));
         form.add(field);
-    }
-
-    /**
-     * Focuses {@code field} when its dialog first appears (JOptionPane otherwise lands focus on the
-     * OK button), placing the caret at the end ({@code caretAtEnd}) or the start of the text.
-     */
-    private static void focusOnShow(JTextField field, boolean caretAtEnd) {
-        field.addAncestorListener(new AncestorListener() {
-            @Override
-            public void ancestorAdded(AncestorEvent event) {
-                field.removeAncestorListener(this);
-                SwingUtilities.invokeLater(() -> {
-                    field.requestFocusInWindow();
-                    field.setCaretPosition(caretAtEnd ? field.getText().length() : 0);
-                });
-            }
-
-            @Override
-            public void ancestorRemoved(AncestorEvent event) {
-            }
-
-            @Override
-            public void ancestorMoved(AncestorEvent event) {
-            }
-        });
     }
 
     /**

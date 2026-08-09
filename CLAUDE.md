@@ -116,6 +116,23 @@ event (returns true). Menu items carry the same accelerators only for discoverab
 dispatcher fires first, preventing double-execution. Bindings load from `keymap.json`
 (defaults in `keymap.TermAction`).
 
+### Modal prompts focus their input, via `DialogFocus` rather than `JOptionPane`
+`JOptionPane` focuses the **OK button**, so a password prompt can't be typed into until the user
+clicks or tabs. Any OK/Cancel dialog whose point is a text field therefore goes through
+`ui.component.DialogFocus.showConfirm(parent, message, title, initialFocus)` — same
+`OK_OPTION`/`CANCEL_OPTION`/`CLOSED_OPTION` return, so call sites read unchanged. All seven
+prompts in `ui.security.MasterPasswordDialog` and the sidebar's folder/session editors use it;
+**reach for it instead of `JOptionPane.showConfirmDialog` when adding a prompt.**
+
+It claims focus twice on purpose, because the two mechanisms that decide it are independent: the
+dialog's `FocusTraversalPolicy` supplies the component focused on first activation, and
+`JOptionPane.selectInitialValue()` (called from the pane's own window-focus listener) then
+re-focuses the default button. Dead end already measured: an `AncestorListener` posting
+`requestFocusInWindow()` through `invokeLater` — the obvious fix, and what the sidebar used to do
+— lands *before* that listener as often as after, and was verified to focus the field in only 2 of
+9 prompts. The `initialFocus` client property those prompts used to set was never read by anything
+(it is not a FlatLaf property either).
+
 ### Theming flows through one abstraction
 `ui.theme.ThemeManager` applies a FlatLaf LaF and exposes a `ui.theme.ThemeColors` record
 (terminal fg/bg + 16 ANSI colors). `ui.theme.JTermSettingsProvider` (a JediTerm

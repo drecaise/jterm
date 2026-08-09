@@ -19,6 +19,8 @@
  */
 package com.katmoda.jterm.ui.security;
 
+import com.katmoda.jterm.ui.component.DialogFocus;
+
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
@@ -53,8 +55,7 @@ public final class MasterPasswordDialog {
         form.add(pw2);
 
         while (true) {
-            int result = JOptionPane.showConfirmDialog(parent, form, "Create Master Password",
-                    JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+            int result = DialogFocus.showConfirm(parent, form, "Create Master Password", pw1);
             if (result != JOptionPane.OK_OPTION) {
                 return null;
             }
@@ -67,6 +68,7 @@ public final class MasterPasswordDialog {
             if (!Arrays.equals(a, b)) {
                 Arrays.fill(a, '\0');
                 Arrays.fill(b, '\0');
+                pw1.setText("");
                 pw2.setText("");
                 JOptionPane.showMessageDialog(parent, "Passwords do not match.");
                 continue;
@@ -87,10 +89,8 @@ public final class MasterPasswordDialog {
         }
         form.add(new JLabel("Master password:"));
         form.add(pw);
-        form.putClientProperty("initialFocus", pw);
 
-        int result = JOptionPane.showConfirmDialog(parent, form, "Unlock Saved Passwords",
-                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        int result = DialogFocus.showConfirm(parent, form, "Unlock Saved Passwords", pw);
         if (result != JOptionPane.OK_OPTION) {
             return null;
         }
@@ -126,10 +126,8 @@ public final class MasterPasswordDialog {
         if (allowRemember) {
             form.add(remember);
         }
-        form.putClientProperty("initialFocus", pw);
 
-        int result = JOptionPane.showConfirmDialog(parent, form, "Key Passphrase",
-                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        int result = DialogFocus.showConfirm(parent, form, "Key Passphrase", pw);
         if (result != JOptionPane.OK_OPTION) {
             return null;
         }
@@ -154,11 +152,9 @@ public final class MasterPasswordDialog {
         form.add(pw1);
         form.add(new JLabel("Confirm:"));
         form.add(pw2);
-        form.putClientProperty("initialFocus", pw1);
 
         while (true) {
-            int result = JOptionPane.showConfirmDialog(parent, form, "Encrypt Export",
-                    JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+            int result = DialogFocus.showConfirm(parent, form, "Encrypt Export", pw1);
             if (result != JOptionPane.OK_OPTION) {
                 return null;
             }
@@ -171,6 +167,7 @@ public final class MasterPasswordDialog {
             if (!Arrays.equals(a, b)) {
                 Arrays.fill(a, '\0');
                 Arrays.fill(b, '\0');
+                pw1.setText("");
                 pw2.setText("");
                 JOptionPane.showMessageDialog(parent, "Passphrases do not match.");
                 continue;
@@ -194,10 +191,8 @@ public final class MasterPasswordDialog {
         }
         form.add(new JLabel("This export is encrypted. Enter its passphrase:"));
         form.add(pw);
-        form.putClientProperty("initialFocus", pw);
 
-        int result = JOptionPane.showConfirmDialog(parent, form, "Decrypt Import",
-                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        int result = DialogFocus.showConfirm(parent, form, "Decrypt Import", pw);
         if (result != JOptionPane.OK_OPTION) {
             return null;
         }
@@ -237,10 +232,8 @@ public final class MasterPasswordDialog {
         if (allowRemember) {
             form.add(remember);
         }
-        form.putClientProperty("initialFocus", pw);
 
-        int result = JOptionPane.showConfirmDialog(parent, form, "SSH Password",
-                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        int result = DialogFocus.showConfirm(parent, form, "SSH Password", pw);
         if (result != JOptionPane.OK_OPTION) {
             return null;
         }
@@ -273,12 +266,13 @@ public final class MasterPasswordDialog {
             fields[i] = echo[i] ? new JTextField(20) : new JPasswordField(20);
             form.add((Component) fields[i]);
         }
-        if (fields.length > 0) {
-            form.putClientProperty("initialFocus", fields[0]);
-        }
 
-        int result = JOptionPane.showConfirmDialog(parent, form, "SSH Authentication",
-                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        // A challenge with no prompts (servers use one to push an informational banner) has no
+        // field to focus, so it falls back to the plain pane.
+        int result = fields.length > 0
+                ? DialogFocus.showConfirm(parent, form, "SSH Authentication", fields[0])
+                : JOptionPane.showConfirmDialog(parent, form, "SSH Authentication",
+                        JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
         if (result != JOptionPane.OK_OPTION) {
             return null;
         }

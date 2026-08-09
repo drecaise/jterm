@@ -90,6 +90,16 @@ package that hosts the top-level window and the shortcut dispatcher.
   **not** implemented — JediTerm bakes default fg/bg into each widget at creation;
   chrome recolours via FlatLaf `updateUI`.
 
+**Modal prompts (`ui.component`, `ui.security`).**
+
+- `DialogFocus` is the OK/Cancel dialog used wherever the point of the dialog is a text
+  field — every prompt in `MasterPasswordDialog` plus the sidebar's folder and session
+  editors. A stock `JOptionPane` focuses the **OK button**, so a password prompt cannot be
+  typed into until the user clicks or tabs; `DialogFocus.showConfirm` overrides both
+  mechanisms that decide initial focus (the dialog's `FocusTraversalPolicy` and
+  `JOptionPane.selectInitialValue()`), returning the same option constants so call sites
+  are otherwise unchanged. Overriding only one of the two loses a race against the other.
+
 **Cross-cutting stores.**
 
 - `IconLibrary` (bundled SVGs + user imports), `HighlightLibrary` (keyword
