@@ -6,3 +6,5 @@ dependency-reduced-pom.xml
 site/
 .venv-docs/
 .tokensave
+packaging/flatpak/*.png
+packaging/flatpak/build-dir/

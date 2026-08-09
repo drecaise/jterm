@@ -79,7 +79,6 @@ import javax.swing.UIManager;
 import javax.swing.event.HyperlinkEvent;
 import javax.swing.text.JTextComponent;
 import java.awt.BorderLayout;
-import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GraphicsDevice;
@@ -94,8 +93,6 @@ import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -968,7 +965,7 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
      * A {@link JEditorPane} (unlike the {@link JLabel} {@link JOptionPane} uses for HTML strings)
      * supports hyperlink activation, while still inheriting the dialog's look via the label font.
      */
-    private static JEditorPane hyperlinkPane(String html) {
+    private JEditorPane hyperlinkPane(String html) {
         JEditorPane pane = new JEditorPane("text/html", html);
         pane.setEditable(false);
         pane.setOpaque(false);
@@ -986,16 +983,9 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         return pane;
     }
 
-    /** Opens {@code url} in the host's default browser, ignoring failures. */
-    private static void openInBrowser(String url) {
-        try {
-            if (Desktop.isDesktopSupported()
-                    && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
-                Desktop.getDesktop().browse(new URI(url));
-            }
-        } catch (IOException | URISyntaxException ignored) {
-            // Best-effort: nothing actionable if the browser can't be launched.
-        }
+    /** Opens {@code url} in the host's default browser (see {@link BrowserLauncher}). */
+    private void openInBrowser(String url) {
+        BrowserLauncher.open(frame, url);
     }
 
     /**

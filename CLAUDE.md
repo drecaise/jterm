@@ -102,6 +102,13 @@ just `process.setWinSize(...)`. Sharp edges, all commented in place:
 The **Snap** has none of this: classic confinement spawns the shell directly, in the same namespace
 and devpts as the PTY. Its analogous defect is env leakage, handled by `terminal.local.SnapEnvironment`.
 
+The sandbox also breaks `java.awt.Desktop`: AWT resolves a URL handler through gio, which sees only
+the runtime's filesystem, so `isSupported(BROWSE)` is **false** in the Flatpak and every link (Help →
+User Manual, the About dialog's) silently did nothing while working in the RPM. `app.BrowserLauncher`
+is the single entry point for opening URLs and falls back to `xdg-open` (the runtime's
+flatpak-xdg-utils shim → OpenURI portal), then `flatpak-spawn --host xdg-open`, then a dialog showing
+the URL — off the EDT, since the portal round trip blocks. **Don't call `Desktop.browse` directly.**
+
 ### The pane grid is a uniform R×C model (not a binary split tree)
 `ui.grid.PaneGrid` holds a `TerminalPane[3][3]` plus live `rows`/`cols` (1..3). Cells in
 bounds may be empty (re-openable) or hold a pane. Splitting grows a dimension; closing empties
