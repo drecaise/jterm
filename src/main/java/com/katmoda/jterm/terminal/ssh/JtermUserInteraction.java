@@ -67,6 +67,7 @@ final class JtermUserInteraction implements UserInteraction {
 
     private volatile SshConnect.HostHop currentHop;
     private volatile int prompts;
+    private volatile boolean cancelled;
     private final AtomicBoolean prompting = new AtomicBoolean();
     private final AtomicLong activity = new AtomicLong();
 
@@ -78,6 +79,7 @@ final class JtermUserInteraction implements UserInteraction {
     void setCurrentHop(SshConnect.HostHop hop) {
         this.currentHop = hop;
         this.prompts = 0;
+        this.cancelled = false;
     }
 
     /** Tell the delegate this hop authenticated, so it can persist a remembered password. */
@@ -100,31 +102,52 @@ final class JtermUserInteraction implements UserInteraction {
 
     @Override
     public boolean isInteractionAllowed(ClientSession session) {
-        return currentHop != null && prompts < MAX_PROMPTS_PER_HOP;
+        return canPrompt();
     }
 
     @Override
     public String resolveAuthPasswordAttempt(ClientSession session) {
         SshConnect.HostHop hop = currentHop;
-        if (hop == null || prompts >= MAX_PROMPTS_PER_HOP) {
+        if (!canPrompt()) {
             return null;
         }
         int attempt = prompts++;
-        return prompt(() -> delegate.passwordFor(hop, attempt));
+        return record(prompt(() -> delegate.passwordFor(hop, attempt)));
     }
 
     @Override
     public String[] interactive(ClientSession session, String name, String instruction,
                                 String lang, String[] prompt, boolean[] echo) {
         SshConnect.HostHop hop = currentHop;
-        if (hop == null || prompts >= MAX_PROMPTS_PER_HOP) {
+        if (!canPrompt()) {
             return null;
         }
         prompts++;
         // The server's own instruction is the useful text; its "name" is usually blank, so fall
         // back to it only when there is nothing else to show above the fields.
         String text = instruction != null && !instruction.isBlank() ? instruction : name;
-        return prompt(() -> delegate.challenge(hop, text, prompt, echo));
+        return record(prompt(() -> delegate.challenge(hop, text, prompt, echo)));
+    }
+
+    /** Whether another prompt may be shown for the current hop. */
+    private boolean canPrompt() {
+        return currentHop != null && !cancelled && prompts < MAX_PROMPTS_PER_HOP;
+    }
+
+    /**
+     * Latches "the user gave up" when a prompt comes back empty.
+     *
+     * <p>Without this, cancelling would still be re-asked: {@code UserAuthKeyboardInteractive}
+     * reads a null response as "no answers <em>this round</em>" and re-challenges until its
+     * attempt budget runs out, so the dialog reappeared up to {@link #MAX_PROMPTS_PER_HOP} times.
+     * ({@code UserAuthPassword} stops on the first null, which is why the plain-password path
+     * never showed the bug.) Cancel means cancel — for the whole hop, both methods.</p>
+     */
+    private <T> T record(T answer) {
+        if (answer == null) {
+            cancelled = true;
+        }
+        return answer;
     }
 
     /**

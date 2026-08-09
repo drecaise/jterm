@@ -60,6 +60,11 @@ prompt with it. Only when that is rejected does the user see a dialog, and then 
 - **The prompt cap had to be re-imposed.** `PASSWORD_PROMPTS` is enforced *per auth method*, so a
   server offering both keyboard-interactive and password would ask six times.
   `JtermUserInteraction` counts prompts per hop and stops at three.
+- **Cancel had to be latched.** `UserAuthKeyboardInteractive` reads a null response as "no answers
+  *this round*" and re-challenges until its budget is spent, so cancelling re-showed the dialog
+  three times on a stock PAM-enabled sshd. (`UserAuthPassword` stops on the first null, which is
+  why a password-only server never showed it.) `JtermUserInteraction` now treats an empty answer
+  as "the user gave up" for the whole hop, across both methods.
 - **The "worker never prompts" invariant is gone**, and the documentation says so. The invariant
   that survives is the one that actually matters: Swing is only ever touched on the EDT. Encrypted
   `~/.ssh` default identities already violated the old wording — their passphrase is requested

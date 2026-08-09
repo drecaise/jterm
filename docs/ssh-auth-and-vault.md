@@ -27,7 +27,8 @@ This covers the everyday cases where a connect used to just fail:
 - a **saved password is out of date** — the prompt reappears with *"Authentication failed — try
   again."* instead of dropping you back to an error dialog.
 
-You get up to **three** attempts per host, matching OpenSSH. Tick **Remember this password** to
+You get up to **three** attempts per host, matching OpenSSH. **Cancel** gives up immediately — the
+connect fails rather than asking again. Tick **Remember this password** to
 save it to the vault, and jterm enables *Password auth* + *Save password* on the session for you —
 the next connect won't ask. The password is only saved once it has actually worked, so a typo is
 never stored.

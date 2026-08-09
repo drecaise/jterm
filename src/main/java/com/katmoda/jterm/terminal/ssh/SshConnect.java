@@ -118,8 +118,8 @@ public final class SshConnect {
      * implementation marshals its own prompts — and only for auth methods the server actually
      * offers, so a key-only server never triggers a prompt.
      *
-     * <p>Returning {@code null} gives up on the method (the connect then fails with an
-     * {@link SshAuthException}), which is how a cancelled prompt is expressed.</p>
+     * <p>Returning {@code null} means the user cancelled: no further prompt is shown for that hop
+     * by <em>either</em> method, and the connect fails with an {@link SshAuthException}.</p>
      */
     public interface InteractiveAuth {
 
