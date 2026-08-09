@@ -71,6 +71,37 @@ A `ui.pane.TerminalPane` hosts a JediTerm `JediTermWidget` and calls `setTtyConn
 The connector handed to the widget is **not** the session's raw connector — `ui.grid.PaneGrid`
 wraps it in `broadcast.BroadcastingTtyConnector` so keystrokes can fan out (see Broadcast).
 
+### The Flatpak local shell runs behind a host-side PTY agent (two stacked PTYs)
+A sandboxed shell would see the runtime's filesystem, so `terminal.local.FlatpakHost` runs it on
+the host via `flatpak-spawn --host`. That alone is **not enough**: pty4j allocates the PTY *inside*
+the sandbox and its terminal semantics don't cross the portal. The host shell can't claim a
+controlling terminal owned by a sandbox-side session (`cannot set terminal process group` / `no job
+control`), `ttyname()` fails because bubblewrap gives the sandbox its own devpts instance
+(`tty: ttyname error: No such device`), and SIGWINCH is delivered sandbox-side and never forwarded.
+
+So `resources/flatpak/pty-agent.py` runs on the host, allocates a **second PTY there**
+(`pty.fork()` does `setsid` + `TIOCSCTTY` properly), runs the login shell in it, and relays bytes
+over the sandbox PTY. The sandbox PTY is demoted to transport **plus the window-size channel** —
+`TIOCGWINSZ` on fd 0 still reports live values across the boundary, so the agent polls it and
+mirrors changes onto the host PTY. `TerminalSession`/`PtyTtyConnector` are unaware; resize is still
+just `process.setWinSize(...)`. Sharp edges, all commented in place:
+- The agent must keep fds **blocking**; 0/1/2 share one open file description on a PTY slave, so
+  making fd 0 non-blocking to poll it also makes writes to fd 1 `EAGAIN` and drops output.
+- Fd 0 goes to **raw** mode, or the sandbox PTY's line discipline double-processes echo/`ONLCR`.
+- Dead ends already measured: `setsid --ctty` gets `EPERM` (the sandbox owns the ctty), and
+  `script(1)` fixes job control + `ttyname` but freezes the window size — it's the *fallback* when
+  the host has no `python3`, ahead of a bare shell.
+- Never forward the sandbox's `SSH_AUTH_SOCK` (`/run/flatpak/ssh-auth` doesn't exist on the host).
+  The probe reads the host's from `systemctl --user show-environment`; when it can't, the variable
+  is left **unset** so rc files that repair it when empty still can.
+
+`FlatpakHost.probe()` gathers login shell + `python3` + `script` + `SSH_AUTH_SOCK` in **one**
+`flatpak-spawn` round trip, cached process-wide (it used to run per session start). It needs
+`--env=XDG_RUNTIME_DIR` forwarded or `systemctl --user` can't reach the user manager.
+
+The **Snap** has none of this: classic confinement spawns the shell directly, in the same namespace
+and devpts as the PTY. Its analogous defect is env leakage, handled by `terminal.local.SnapEnvironment`.
+
 ### The pane grid is a uniform R×C model (not a binary split tree)
 `ui.grid.PaneGrid` holds a `TerminalPane[3][3]` plus live `rows`/`cols` (1..3). Cells in
 bounds may be empty (re-openable) or hold a pane. Splitting grows a dimension; closing empties

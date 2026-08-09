@@ -27,15 +27,11 @@ import com.pty4j.PtyProcess;
 import com.pty4j.PtyProcessBuilder;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -73,14 +69,18 @@ public final class LocalSession implements TerminalSession {
 
         TerminalProfile profile = AppSettings.get().defaultProfile();
 
-        Map<String, String> env = new HashMap<>(System.getenv());
+        // Under Snap the runtime's own plumbing (LD_LIBRARY_PATH, snap-prefixed PATH, SNAP_*)
+        // is in our environment and must not follow the user's shell out; no-op elsewhere.
+        Map<String, String> env = new HashMap<>(SnapEnvironment.sanitize(System.getenv()));
         env.put("TERM", profile.terminalType());
         env.putIfAbsent("TERM_PROGRAM", "jterm");
 
         // Inside a Flatpak sandbox a directly-spawned shell runs against the runtime's
         // minimal filesystem (host files appear "missing", system shell config is wrong),
-        // so escape to the host via flatpak-spawn --host.
-        String[] command = isFlatpak() ? flatpakHostShellCommand(profile, dir) : defaultShellCommand();
+        // so escape to the host — see FlatpakHost for why that needs more than flatpak-spawn.
+        String[] command = FlatpakHost.isFlatpak()
+                ? FlatpakHost.shellCommand(profile, dir).toArray(new String[0])
+                : defaultShellCommand();
 
         PtyProcess process = new PtyProcessBuilder(command)
                 .setEnvironment(env)
@@ -121,96 +121,6 @@ public final class LocalSession implements TerminalSession {
                 .start();
 
         return new LocalSession(process, distro, profile, "builtin/wsl");
-    }
-
-    /** True when running inside a Flatpak sandbox. */
-    private static boolean isFlatpak() {
-        String id = System.getenv("FLATPAK_ID");
-        return (id != null && !id.isBlank()) || Files.exists(Path.of("/.flatpak-info"));
-    }
-
-    /**
-     * Builds a command that runs the user's real <em>host</em> login shell via
-     * {@code flatpak-spawn --host}. The host environment is cleared and rebuilt by the
-     * login shell ({@code -l}); only the essentials are seeded so the sandbox's PATH/SHELL
-     * don't leak through. {@code $HOME} is shared with the host, so the path maps 1:1.
-     */
-    private static String[] flatpakHostShellCommand(TerminalProfile profile, String dir) {
-        String shell = hostLoginShell();
-        String home = System.getProperty("user.home", "/");
-        String user = System.getProperty("user.name", "");
-
-        List<String> cmd = new ArrayList<>();
-        cmd.add("flatpak-spawn");
-        cmd.add("--host");
-        cmd.add("--clear-env");
-        cmd.add("--directory=" + dir);
-        cmd.add("--env=TERM=" + profile.terminalType());
-        cmd.add("--env=TERM_PROGRAM=jterm");
-        cmd.add("--env=HOME=" + home);
-        if (!user.isBlank()) {
-            cmd.add("--env=USER=" + user);
-            cmd.add("--env=LOGNAME=" + user);
-        }
-        cmd.add("--env=SHELL=" + shell);
-        // Pass through display/session vars (if present) so GUI apps launched from the
-        // terminal work. With --socket=x11/wayland the sandbox values match the host's.
-        for (String key : new String[]{"DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "XDG_RUNTIME_DIR"}) {
-            String value = System.getenv(key);
-            if (value != null && !value.isBlank()) {
-                cmd.add("--env=" + key + "=" + value);
-            }
-        }
-        cmd.add("--");
-        cmd.add(shell);
-        cmd.add("-l");
-        return cmd.toArray(new String[0]);
-    }
-
-    /**
-     * Resolves the host user's login shell from the host passwd database (the sandbox's
-     * {@code $SHELL} is the runtime's, not the host's). Falls back to {@code /bin/bash}.
-     */
-    private static String hostLoginShell() {
-        String user = System.getProperty("user.name");
-        if (user != null && !user.isBlank()) {
-            try {
-                Process p = new ProcessBuilder("flatpak-spawn", "--host", "getent", "passwd", user)
-                        .redirectError(ProcessBuilder.Redirect.DISCARD)
-                        .start();
-                // Drain stdout on a daemon thread so readAllBytes() can't outlive the waitFor timeout.
-                byte[][] outHolder = new byte[1][];
-                Thread reader = new Thread(() -> {
-                    try {
-                        outHolder[0] = p.getInputStream().readAllBytes();
-                    } catch (IOException e) {
-                        LOG.debug("failed to drain host login-shell probe stdout", e);
-                    }
-                }, "hostLoginShell-stdout-reader");
-                reader.setDaemon(true);
-                reader.start();
-                if (!p.waitFor(3, TimeUnit.SECONDS)) {
-                    p.destroyForcibly();
-                    reader.join(500); // short bound so the reader thread can't leak
-                    return "/bin/bash";
-                }
-                reader.join(500); // stdout is closed by now; bound guards a truly stuck read
-                String out = new String(outHolder[0] != null ? outHolder[0] : new byte[0], StandardCharsets.UTF_8);
-                // passwd line: name:passwd:uid:gid:gecos:home:shell
-                int nl = out.indexOf('\n');
-                String line = (nl >= 0 ? out.substring(0, nl) : out).trim();
-                int idx = line.lastIndexOf(':');
-                if (idx >= 0 && idx < line.length() - 1) {
-                    String shell = line.substring(idx + 1).trim();
-                    if (!shell.isBlank()) {
-                        return shell;
-                    }
-                }
-            } catch (Exception e) {
-                LOG.debug("host login-shell probe failed; falling back to /bin/bash", e);
-            }
-        }
-        return "/bin/bash";
     }
 
     private static String[] defaultShellCommand() {
