@@ -15,6 +15,7 @@ toggle and the keyboard-shortcut editor live in the **Preferences** menu too —
 | **Middle-click paste (primary selection)** | The Linux X11 convention: selecting text copies it to the *primary selection*, and a middle-click pastes it. Independent of, and separate from, the regular clipboard above. |
 | **Open a terminal on startup** | When off, jterm starts with no open tabs. |
 | **Auto-accept new host keys** | Trust first-seen SSH hosts without prompting. You are still warned if a known host's key *changes*. |
+| **Ask for a password if key auth fails** | When ssh-agent and key authentication are rejected, prompt for a password instead of failing the connect — provided the server offers password authentication. On by default; see [SSH auth & vault](ssh-auth-and-vault.md#if-key-authentication-fails). |
 
 !!! note "Right-click paste and mouse-aware programs"
     Some terminal programs (editors, `htop`, and CLIs such as coding assistants) turn on *xterm

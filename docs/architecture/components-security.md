@@ -25,8 +25,10 @@ Concretely:
 ## Component roles
 
 - **`CredentialResolver`** — the collaborator that `ConnectionService` calls when it
-  needs a password. Handles both the main SSH connection and jump-host credentials.
-  Always runs on the EDT.
+  needs a password. Handles the main SSH connection, jump-host credentials, key
+  passphrases, and the interactive fallback when key auth is rejected. Carries no UI
+  itself: prompts go through an injected `Prompts` SPI and are marshalled to the EDT,
+  which is what keeps it headless-testable.
 - **`VaultManager`** — the singleton front door. Ensures the vault is unlocked
   (prompting via `MasterPasswordDialog` if the keyring miss), and passes through
   reads and writes to `CredentialVault`.
@@ -40,12 +42,25 @@ Concretely:
 ## Where the EDT matters
 
 Every unlock step is intentionally synchronous on the EDT because it may need to raise
-a prompt. `ConnectionService` therefore resolves credentials **before** dispatching
-the SSH connect to a `SwingWorker` — that way the blocking off-EDT step never has to
-call back into a modal dialog.
+a prompt. `ConnectionService` therefore resolves *saved* credentials **before**
+dispatching the SSH connect to a `SwingWorker`, so the common path completes without
+the off-EDT step calling back into a dialog at all.
 
 If the master password is already in the OS keyring, no dialog is shown; the whole
 resolution completes in a single EDT tick.
+
+Two things genuinely can't be resolved up front, because only the server can say whether
+they're needed: an **encrypted key's passphrase** and the **interactive password fallback**
+when key auth is rejected. Both are modelled as SPIs that the connect calls back into
+(`SshConnect.PassphraseProvider`, `SshConnect.InteractiveAuth`), and both funnel through
+`CredentialResolver.runOnEdt` — a synchronous `invokeAndWait` — so the dialog is still
+constructed and shown on the EDT while the calling MINA thread blocks. The rule that
+survives is *"Swing is only ever touched on the EDT"*, not *"the worker never prompts"*.
+
+A password entered at that prompt is written to the vault **only** after the hop actually
+authenticates (`InteractiveAuth.onAuthSucceeded`), so a mistyped password is never
+persisted. Remembering one also flips the session's `passwordAuth` / `savePassword` flags,
+because `resolvePassword` won't consult the vault without them.
 
 ## Failure modes
 

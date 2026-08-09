@@ -28,7 +28,8 @@ Decision Records.
 - **Reconnect** a disconnected session (retaining its scrollback) and **save session output**
   to a file from the pane title-bar menu.
 - **Broadcast mode** — type once, send to multiple panes; per-pane checkboxes to opt out.
-- **SSH auth**: ssh-agent (with forwarding) + on-disk keys, plus optional **password auth**.
+- **SSH auth**: ssh-agent (with forwarding) + on-disk keys, falling back to an **interactive
+  password prompt** (and keyboard-interactive/2FA challenges) when key auth is rejected.
   Saved passwords are stored in an **encrypted vault** unlocked by a master password that is
   transparently remembered in the OS keyring.
 - **Host-key checking** via `~/.ssh/known_hosts` (trust-on-first-use, warns on changes).
@@ -196,10 +197,17 @@ Defaults (editable in `keymap.json`):
 ## SSH authentication
 
 When you open a saved SSH session, authentication is attempted in order: **public key**
-(ssh-agent, then on-disk keys in `~/.ssh`), then **password** if you enabled it for that
-session. Enable password auth and optionally "save password" in the session's edit dialog;
-saved passwords go into the encrypted vault. The first time you save a password you'll be asked
-to create a master password; on later launches it's unlocked transparently from the OS keyring.
+(ssh-agent, then on-disk keys in `~/.ssh`), then **password**. Enable password auth and optionally
+"save password" in the session's edit dialog; saved passwords go into the encrypted vault. The
+first time you save a password you'll be asked to create a master password; on later launches it's
+unlocked transparently from the OS keyring.
+
+If key authentication is rejected, jterm **prompts for a password** on the same connection rather
+than failing — including keyboard-interactive challenges (PAM, one-time passwords, 2FA). A stale
+saved password re-prompts with an error rather than dead-ending, you get three attempts per host,
+and a "Remember this password" checkbox saves it to the vault. Servers that don't offer password
+authentication never produce a prompt. Turn the fallback off under
+**Preferences → General → Ask for a password if key auth fails**.
 
 On first connection to a host you'll be asked to confirm its key (trust-on-first-use); it is
 recorded in `~/.ssh/known_hosts`. If a host's key later changes, you'll get a warning.

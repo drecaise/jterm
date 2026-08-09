@@ -39,10 +39,14 @@ graph TB
       style 25 fill:#26a69a,stroke:#1a746b,color:#ffffff
       26("<div style='font-weight: bold'>JtermKnownHostsVerifier</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>TOFU host-key verifier<br />against ~/.ssh/known_hosts.</div>")
       style 26 fill:#26a69a,stroke:#1a746b,color:#ffffff
-      28("<div style='font-weight: bold'>CredentialVault</div><div style='font-size: 70%; margin-top: 0px'>[Component: AES-GCM / PBKDF2]</div><div style='font-size: 80%; margin-top:10px'>AES-GCM vault of SSH<br />passwords; PBKDF2-wrapped<br />random vault key.</div>")
-      style 28 fill:#ef5350,stroke:#a73a38,color:#ffffff
-      29("<div style='font-weight: bold'>CredentialResolver</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>Resolves SSH and jump-host<br />credentials from vault or<br />prompt.</div>")
-      style 29 fill:#ef5350,stroke:#a73a38,color:#ffffff
+      27("<div style='font-weight: bold'>SshConnect</div><div style='font-size: 70%; margin-top: 0px'>[Component: Apache MINA SSHD]</div><div style='font-size: 80%; margin-top:10px'>Connect + auth for every hop<br />(shell, SFTP, tunnels); owns<br />the jump-host chain.</div>")
+      style 27 fill:#26a69a,stroke:#1a746b,color:#ffffff
+      28("<div style='font-weight: bold'>JtermUserInteraction</div><div style='font-size: 70%; margin-top: 0px'>[Component: Apache MINA SSHD]</div><div style='font-size: 80%; margin-top:10px'>MINA UserInteraction:<br />interactive password /<br />keyboard-interactive fallback<br />after publickey auth fails.</div>")
+      style 28 fill:#26a69a,stroke:#1a746b,color:#ffffff
+      30("<div style='font-weight: bold'>CredentialVault</div><div style='font-size: 70%; margin-top: 0px'>[Component: AES-GCM / PBKDF2]</div><div style='font-size: 80%; margin-top:10px'>AES-GCM vault of SSH<br />passwords; PBKDF2-wrapped<br />random vault key.</div>")
+      style 30 fill:#ef5350,stroke:#a73a38,color:#ffffff
+      31("<div style='font-weight: bold'>CredentialResolver</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>Resolves SSH and jump-host<br />credentials from vault or<br />prompt.</div>")
+      style 31 fill:#ef5350,stroke:#a73a38,color:#ffffff
     end
 
     13-. "<div style='padding:4px 8px'><div>Reads title, profile,<br />TtyConnector</div><div style='font-size: 70%'></div></div>" .->18
@@ -50,11 +54,13 @@ graph TB
     13-. "<div style='padding:4px 8px'><div>Requests a session when a<br />cell is filled</div><div style='font-size: 70%'></div></div>" .->21
     21-. "<div style='padding:4px 8px'><div>Creates local / WSL sessions</div><div style='font-size: 70%'></div></div>" .->19
     21-. "<div style='padding:4px 8px'><div>Delegates SSH connect</div><div style='font-size: 70%'></div></div>" .->22
-    22-. "<div style='padding:4px 8px'><div>Resolves passwords on the EDT</div><div style='font-size: 70%'></div></div>" .->29
+    22-. "<div style='padding:4px 8px'><div>Resolves passwords on the EDT</div><div style='font-size: 70%'></div></div>" .->31
     22-. "<div style='padding:4px 8px'><div>Delivers connected session</div><div style='font-size: 70%'></div></div>" .->20
-    20-. "<div style='padding:4px 8px'><div>Verifies host key on connect</div><div style='font-size: 70%'></div></div>" .->26
-    20-. "<div style='padding:4px 8px'><div>Registers agent identities</div><div style='font-size: 70%'></div></div>" .->23
-    20-. "<div style='padding:4px 8px'><div>Adds password identity when<br />needed</div><div style='font-size: 70%'></div></div>" .->28
+    20-. "<div style='padding:4px 8px'><div>Authenticates the connection,<br />then opens ChannelShell</div><div style='font-size: 70%'></div></div>" .->27
+    27-. "<div style='padding:4px 8px'><div>Verifies host key on connect</div><div style='font-size: 70%'></div></div>" .->26
+    27-. "<div style='padding:4px 8px'><div>Registers agent identities</div><div style='font-size: 70%'></div></div>" .->23
+    27-. "<div style='padding:4px 8px'><div>Installs the interactive auth<br />fallback</div><div style='font-size: 70%'></div></div>" .->28
+    28-. "<div style='padding:4px 8px'><div>Prompts for a password when<br />publickey auth is exhausted</div><div style='font-size: 70%'></div></div>" .->31
     23-. "<div style='padding:4px 8px'><div>Talks to Unix ssh-agent<br />socket</div><div style='font-size: 70%'></div></div>" .->24
     23-. "<div style='padding:4px 8px'><div>Named pipe / Pageant on<br />Windows</div><div style='font-size: 70%'></div></div>" .->4
     24-. "<div style='padding:4px 8px'><div>Reads identities and signs<br />challenges</div><div style='font-size: 70%'></div></div>" .->4
@@ -63,4 +69,5 @@ graph TB
     25-. "<div style='padding:4px 8px'><div>Reads and writes the<br />underlying connector</div><div style='font-size: 70%'></div></div>" .->18
     25-. "<div style='padding:4px 8px'><div>Fans writes to sibling<br />connectors via BroadcastBus</div><div style='font-size: 70%'></div></div>" .->25
     22-. "<div style='padding:4px 8px'><div>Hands the connected session<br />back on the EDT</div><div style='font-size: 70%'></div></div>" .->13
+    31-. "<div style='padding:4px 8px'><div>Reads and writes saved<br />secrets once unlocked</div><div style='font-size: 70%'></div></div>" .->30
   end

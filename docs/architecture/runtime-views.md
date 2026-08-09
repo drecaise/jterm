@@ -5,8 +5,9 @@ handoff is load-bearing.
 
 ## SSH connect
 
-Credentials are resolved on the EDT so any prompt lives there. Only the actual channel
-open runs off-EDT, in a `SwingWorker`.
+Saved credentials are resolved on the EDT so any prompt lives there. Only the actual connect and
+channel open run off-EDT, in a `SwingWorker` — with one deliberate callback into the EDT when the
+server demands a password mid-handshake.
 
 ```mermaid
 --8<-- "architecture/model/generated/dynamic-ssh-connect.mmd"
@@ -14,13 +15,20 @@ open runs off-EDT, in a `SwingWorker`.
 
 **Points to notice:**
 
-- `CredentialResolver.resolveCredentials` runs on the EDT before the worker is
-  submitted (step 4). If the vault is locked, `VaultManager.unlock()` shows the
+- `CredentialResolver.resolvePassword` runs on the EDT before the worker is
+  submitted (step 3). If the vault is locked, `VaultManager.unlock()` shows the
   master-password dialog — modal, synchronous.
-- `SshSession.installAgent` also sets `SSH_AUTH_SOCK` as a client property with a
+- `SshConnect.installAgent` also sets `SSH_AUTH_SOCK` as a client property with a
   login-shell fallback so desktop launches without a shell environment still see the
   agent (see [`components-terminal.md`](components-terminal.md#ssh-auth-stack)).
 - Agent I/O (step 10) is blocking, which is why this whole path is off the EDT.
+- **Steps 11–13 are the exception to "resolve everything up front."** Whether a password is
+  needed at all is only knowable once the server has rejected publickey auth and named the
+  methods it still offers, so `JtermUserInteraction` calls back into `CredentialResolver`, which
+  marshals the dialog onto the EDT with `invokeAndWait`. On a key-only server these steps never
+  happen. See the
+  [interactive fallback](components-terminal.md#interactive-fallback) for the timeout and
+  thread-pool consequences.
 - On `SwingWorker.done()` the `SshSession` returns to the EDT so the pane can attach
   it to its `JediTermWidget` without touching Swing state off-thread.
 

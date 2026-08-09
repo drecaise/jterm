@@ -97,10 +97,11 @@ public final class SshSession implements TerminalSession {
 
     /**
      * Dials a <em>fresh, dedicated</em> authenticated connection to this session's host (no shell
-     * channel), reusing the credentials resolved when this session was first opened — so it needs no
-     * UI and won't re-prompt. Used by the SFTP browser to reconnect after the shared session has
-     * died (the SFTP browser then owns and closes the returned connection). May be {@code null} for
-     * sessions created without a dialer.
+     * channel), reusing the credentials resolved when this session was first opened — so it
+     * normally needs no UI (it may still fall back to an interactive password prompt if agent/key
+     * auth fails, exactly as the original connect would). Used by the SFTP browser to reconnect
+     * after the shared session has died (the SFTP browser then owns and closes the returned
+     * connection). May be {@code null} for sessions created without a dialer.
      */
     public Callable<SshConnect.Connected> freshConnectionDialer() {
         return freshConnectionDialer;
@@ -132,7 +133,8 @@ public final class SshSession implements TerminalSession {
      *
      * <p>Authentication tries publickey (ssh-agent then on-disk keys) first; if a
      * {@code password} is supplied it is added as a fallback (also covers
-     * keyboard-interactive).</p>
+     * keyboard-interactive). When those are exhausted and the server still offers password or
+     * keyboard-interactive auth, {@code interactive} is asked for credentials.</p>
      *
      * @param host            remote host
      * @param port            remote port (22 if &lt;= 0)
@@ -142,6 +144,9 @@ public final class SshSession implements TerminalSession {
      * @param keyPath         optional private key file to authenticate with (may be {@code null}/blank)
      * @param jumpHosts       jump hosts to tunnel through, in connection order (may be empty)
      * @param passphrases     supplies passphrases for any encrypted key files (may be {@code null})
+     * @param interactive     prompts for a password once agent/key auth fails (may be {@code null})
+     * @param sessionId       configuration id of the target, so a remembered password can be saved
+     *                        against it (may be {@code null})
      * @param displayName     label for the pane title
      * @param iconId          icon library id for the tab (may be {@code null})
      * @param profile         terminal type, charset and font settings for this session
@@ -155,14 +160,18 @@ public final class SshSession implements TerminalSession {
                                      String password, String keyPath,
                                      List<SshConnect.HostHop> jumpHosts,
                                      SshConnect.PassphraseProvider passphrases,
+                                     SshConnect.InteractiveAuth interactive, String sessionId,
                                      String displayName, String iconId,
                                      TerminalProfile profile, String highlightListId,
                                      String tabColorHex, int keepAliveSeconds) throws IOException {
         List<SshConnect.HostHop> hops = jumpHosts != null ? jumpHosts : List.of();
         SshConnect.PassphraseProvider pp =
                 passphrases != null ? passphrases : SshConnect.PassphraseProvider.NONE;
-        SshConnect.HostHop target = new SshConnect.HostHop(host, port, user, password, keyPath);
-        SshConnect.Connected connection = SshConnect.open(hops, target, pp, keepAliveSeconds);
+        SshConnect.InteractiveAuth ia =
+                interactive != null ? interactive : SshConnect.InteractiveAuth.NONE;
+        SshConnect.HostHop target =
+                new SshConnect.HostHop(host, port, user, password, keyPath, sessionId);
+        SshConnect.Connected connection = SshConnect.open(hops, target, pp, ia, keepAliveSeconds);
         try {
             ChannelShell channel = connection.session().createShellChannel();
             channel.setPtyType(profile.terminalType());
@@ -177,7 +186,7 @@ public final class SshSession implements TerminalSession {
                     ? displayName : user + "@" + host;
             // A dialer for a fresh dedicated connection to the same target with the same resolved
             // credentials — used by the SFTP browser to reconnect independently of this shell.
-            Callable<SshConnect.Connected> dialer = () -> SshConnect.open(hops, target, pp);
+            Callable<SshConnect.Connected> dialer = () -> SshConnect.open(hops, target, pp, ia);
             SshSession session = new SshSession(connection, channel, label, iconId, profile,
                     highlightListId, tabColorHex, dialer);
             session.startKeepAlive(keepAliveSeconds);

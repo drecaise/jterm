@@ -41,6 +41,8 @@ workspace "jterm" "Cross-platform Java Swing terminal emulator: tabs, splittable
                 jdkAgentProxy       = component "JdkAgentProxy"        "JDK 19+ Unix-domain-socket agent client; reuses MINA's AbstractAgentProxy."       "Java NIO"   "Terminal"
                 broadcastConnector  = component "BroadcastingTtyConnector" "Wraps each pane's real connector; fans writes out via BroadcastBus in broadcast mode." "Java" "Terminal"
                 knownHostsVerifier  = component "JtermKnownHostsVerifier" "TOFU host-key verifier against ~/.ssh/known_hosts."                             "Java"       "Terminal"
+                sshConnect          = component "SshConnect"           "Connect + auth for every hop (shell, SFTP, tunnels); owns the jump-host chain."   "Apache MINA SSHD" "Terminal"
+                userInteraction     = component "JtermUserInteraction" "MINA UserInteraction: interactive password / keyboard-interactive fallback after publickey auth fails." "Apache MINA SSHD" "Terminal"
 
                 # ---------- Security layer ----------
                 vaultManager        = component "VaultManager"         "Unlocks CredentialVault on the EDT; remembers master password via OS keyring."    "Java"       "Security"
@@ -84,9 +86,12 @@ workspace "jterm" "Cross-platform Java Swing terminal emulator: tabs, splittable
                 sessionFactory -> connectionService "Delegates SSH connect"
                 connectionService -> credentialResolver "Resolves passwords on the EDT"
                 connectionService -> sshSession "Delivers connected session"
-                sshSession -> knownHostsVerifier "Verifies host key on connect"
-                sshSession -> agentSupport "Registers agent identities"
-                sshSession -> credentialVault "Adds password identity when needed"
+                sshSession -> sshConnect "Authenticates the connection, then opens ChannelShell"
+                sftpPane -> sshConnect "Dials a dedicated connection when reconnecting"
+                sshConnect -> knownHostsVerifier "Verifies host key on connect"
+                sshConnect -> agentSupport "Registers agent identities"
+                sshConnect -> userInteraction "Installs the interactive auth fallback"
+                userInteraction -> credentialResolver "Prompts for a password when publickey auth is exhausted"
                 agentSupport -> jdkAgentProxy "Talks to Unix ssh-agent socket"
                 agentSupport -> sshAgent "Named pipe / Pageant on Windows"
                 jdkAgentProxy -> sshAgent "Reads identities and signs challenges"
@@ -98,6 +103,7 @@ workspace "jterm" "Cross-platform Java Swing terminal emulator: tabs, splittable
 
                 # ---------- Relationships: Security ----------
                 credentialResolver -> vaultManager "Requests vault unlock"
+                credentialResolver -> credentialVault "Reads and writes saved secrets once unlocked"
                 vaultManager -> credentialVault "Decrypts entries after unlock"
                 vaultManager -> masterPwKeyring "Loads or stores master password"
                 masterPwKeyring -> osKeyring "Reads and writes native OS secret"
@@ -198,7 +204,7 @@ workspace "jterm" "Cross-platform Java Swing terminal emulator: tabs, splittable
 
         component jvm "components-terminal" "Terminal / session components inside the JVM process." {
             include terminalPane broadcastConnector
-            include terminalSession localSession sshSession sessionFactory connectionService agentSupport jdkAgentProxy knownHostsVerifier
+            include terminalSession localSession sshSession sshConnect userInteraction sessionFactory connectionService agentSupport jdkAgentProxy knownHostsVerifier
             include credentialResolver credentialVault
             include localShell remoteSshd sshAgent
             autolayout tb
@@ -211,16 +217,20 @@ workspace "jterm" "Cross-platform Java Swing terminal emulator: tabs, splittable
             autolayout tb
         }
 
-        dynamic jvm "dynamic-ssh-connect" "SSH connect: credential resolution on EDT, connect off-EDT." {
+        dynamic jvm "dynamic-ssh-connect" "SSH connect: credential resolution on EDT, connect off-EDT, interactive fallback if key auth fails." {
             terminalPane -> sessionFactory "User drops SSH session on pane"
             sessionFactory -> connectionService "connectSshAsync (EDT)"
-            connectionService -> credentialResolver "Resolve password on EDT"
+            connectionService -> credentialResolver "Resolve saved password on EDT"
             credentialResolver -> vaultManager "Unlock vault"
             vaultManager -> credentialVault "Decrypt saved password"
             connectionService -> sshSession "Open ChannelShell (SwingWorker)"
-            sshSession -> knownHostsVerifier "Verify host key"
-            sshSession -> agentSupport "Install ssh-agent identities"
+            sshSession -> sshConnect "Connect and authenticate each hop"
+            sshConnect -> knownHostsVerifier "Verify host key"
+            sshConnect -> agentSupport "Install ssh-agent identities"
             agentSupport -> jdkAgentProxy "Open Unix socket"
+            sshConnect -> userInteraction "publickey exhausted; server offers password"
+            userInteraction -> credentialResolver "Prompt for a password (marshalled to the EDT)"
+            credentialResolver -> credentialVault "Save it if the user asked to remember"
             connectionService -> terminalPane "Hand connected session back (EDT)"
             autolayout lr
         }

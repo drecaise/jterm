@@ -27,12 +27,21 @@ attaches all three plus the fat jar to a GitHub Release; manual dispatch builds 
 downloadable workflow artifacts. jpackage is driven directly from the workflow (the old
 `-Pinstaller` Maven profile was removed); the Flatpak manifest lives in `packaging/flatpak/`.
 
-There is **no test suite** yet (`-DskipTests` is just defensive). Verification is done by
-building + launching. There is a real display (`DISPLAY=:0`, Wayland), so the GUI launches,
-but **no screenshot tool is installed** — verify headlessly by watching the startup log for
-the `pty4j native` line and a spawned `/bin/bash -l`, and exercise library/protocol code with
-small throwaway `javac`/`java` snippets against the resolved classpath
-(`mvn -q -o dependency:build-classpath -Dmdep.outputFile=/tmp/cp.txt`).
+There **is** a JUnit 5 suite under `src/test/java` (`mvn -q test`), but it only covers headless
+logic — credential/vault resolution, session-store inheritance, SFTP transfer maths, agent socket
+trust. Nothing Swing-facing is tested, so a green suite is not evidence the UI works.
+
+For anything the suite doesn't reach, verify by building + launching. There is a real display
+(`DISPLAY=:0`, Wayland), so the GUI launches, but **no screenshot tool is installed** — verify
+headlessly by watching the startup log for the `pty4j native` line and a spawned `/bin/bash -l`,
+and exercise library/protocol code with small throwaway `javac`/`java` snippets against the
+resolved classpath (`mvn -q -o dependency:build-classpath -Dmdep.outputFile=/tmp/cp.txt`).
+
+For SSH protocol behaviour that snippet approach scales further than it looks: `sshd-core` ships
+the **server** side too, so an in-process `SshServer` (rejecting publickey, accepting a scripted
+password) exercises the real MINA auth state machine end to end. That is how the interactive-auth
+fallback was verified — run such a JVM with `-Duser.home=<tempdir>` so it can't touch the real
+`~/.ssh/known_hosts` or `~/.config/jterm`.
 
 ### Dependency notes (non-obvious)
 - **JediTerm is not on Maven Central** — it resolves from the JetBrains repo declared in
@@ -114,6 +123,24 @@ has a stable `id` (UUID) used as the vault key.
 Auth order is publickey (agent → on-disk keys) then password — MINA tries them automatically;
 `SshSession.connect` just registers identities and optionally `addPasswordIdentity`.
 
+- **Interactive fallback**: when agent/key auth is exhausted, `SshConnect` prompts for a password
+  rather than failing. This rides MINA's own extension point rather than a reconnect loop:
+  `terminal.ssh.JtermUserInteraction` (a MINA `UserInteraction`) is installed on the client, and
+  `UserAuthPassword.resolveAttemptedPassword` consults it once the registered password identities
+  are used up, while `UserAuthKeyboardInteractive` routes PAM/2FA challenges to it. Because MINA
+  only runs a method the server *offers*, a key-only server never produces a prompt — the check
+  is free. `security.CredentialResolver.interactiveAuth(cfg)` implements the
+  `SshConnect.InteractiveAuth` SPI with Swing prompts; `AppSettings.promptPasswordOnAuthFailure`
+  (Preferences → General, default on) gates it, read at the *call sites*
+  (`ConnectionService.interactiveAuth`) so the resolver stays headless-testable.
+  Three sharp edges, all commented in place: MINA's `PASSWORD_PROMPTS` cap is *per method*, so
+  `JtermUserInteraction` imposes its own 3-per-hop total; the 30 s `AUTH_TIMEOUT` would kill a
+  connect while the user is still typing, so `SshConnect.awaitAuth` waits in slices and only gives
+  up on server silence, not think-time; and the prompt blocks a MINA NIO worker, hence the
+  `NIO_WORKERS` floor so a jump host's port-forward keeps flowing. A failed hop now throws
+  `terminal.ssh.SshAuthException` (`Authentication failed for user@host`) instead of surfacing raw
+  MINA text.
+
 - **ssh-agent**: MINA's bundled `UnixAgentFactory` needs Apache APR/tomcat-native (not
   bundled) and reads the socket from *client properties*, not env. So this repo uses a custom
   `terminal.ssh.agent.JdkAgentFactory`, and `terminal.ssh.agent.AgentSupport` picks the
@@ -121,7 +148,7 @@ Auth order is publickey (agent → on-disk keys) then password — MINA tries th
   (`JdkAgentProxy` over `UnixDomainSocketAddress`) reusing MINA's `AbstractAgentProxy`
   protocol layer; on Windows the OpenSSH named-pipe agent (`WindowsPipeAgentProxy`) and/or
   PuTTY **Pageant** (`PageantAgentProxy`), fronted by `CompositeSshAgent` when more than one
-  is live. `SshSession.installAgent` also sets the `SSH_AUTH_SOCK` client property (with a
+  is live. `SshConnect.installAgent` also sets the `SSH_AUTH_SOCK` client property (with a
   login-shell fallback for desktop launches).
 - **Host keys**: `terminal.ssh.JtermKnownHostsVerifier` (TOFU + changed-key warning) against
   `~/.ssh/known_hosts`.

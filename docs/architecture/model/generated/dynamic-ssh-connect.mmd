@@ -26,22 +26,30 @@ graph LR
       style 24 fill:#26a69a,stroke:#1a746b,color:#ffffff
       26("<div style='font-weight: bold'>JtermKnownHostsVerifier</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>TOFU host-key verifier<br />against ~/.ssh/known_hosts.</div>")
       style 26 fill:#26a69a,stroke:#1a746b,color:#ffffff
-      27("<div style='font-weight: bold'>VaultManager</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>Unlocks CredentialVault on<br />the EDT; remembers master<br />password via OS keyring.</div>")
-      style 27 fill:#ef5350,stroke:#a73a38,color:#ffffff
-      28("<div style='font-weight: bold'>CredentialVault</div><div style='font-size: 70%; margin-top: 0px'>[Component: AES-GCM / PBKDF2]</div><div style='font-size: 80%; margin-top:10px'>AES-GCM vault of SSH<br />passwords; PBKDF2-wrapped<br />random vault key.</div>")
-      style 28 fill:#ef5350,stroke:#a73a38,color:#ffffff
-      29("<div style='font-weight: bold'>CredentialResolver</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>Resolves SSH and jump-host<br />credentials from vault or<br />prompt.</div>")
+      27("<div style='font-weight: bold'>SshConnect</div><div style='font-size: 70%; margin-top: 0px'>[Component: Apache MINA SSHD]</div><div style='font-size: 80%; margin-top:10px'>Connect + auth for every hop<br />(shell, SFTP, tunnels); owns<br />the jump-host chain.</div>")
+      style 27 fill:#26a69a,stroke:#1a746b,color:#ffffff
+      28("<div style='font-weight: bold'>JtermUserInteraction</div><div style='font-size: 70%; margin-top: 0px'>[Component: Apache MINA SSHD]</div><div style='font-size: 80%; margin-top:10px'>MINA UserInteraction:<br />interactive password /<br />keyboard-interactive fallback<br />after publickey auth fails.</div>")
+      style 28 fill:#26a69a,stroke:#1a746b,color:#ffffff
+      29("<div style='font-weight: bold'>VaultManager</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>Unlocks CredentialVault on<br />the EDT; remembers master<br />password via OS keyring.</div>")
       style 29 fill:#ef5350,stroke:#a73a38,color:#ffffff
+      30("<div style='font-weight: bold'>CredentialVault</div><div style='font-size: 70%; margin-top: 0px'>[Component: AES-GCM / PBKDF2]</div><div style='font-size: 80%; margin-top:10px'>AES-GCM vault of SSH<br />passwords; PBKDF2-wrapped<br />random vault key.</div>")
+      style 30 fill:#ef5350,stroke:#a73a38,color:#ffffff
+      31("<div style='font-weight: bold'>CredentialResolver</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>Resolves SSH and jump-host<br />credentials from vault or<br />prompt.</div>")
+      style 31 fill:#ef5350,stroke:#a73a38,color:#ffffff
     end
 
     13-. "<div style='padding:4px 8px'><div>1. User drops SSH session on<br />pane</div><div style='font-size: 70%'></div></div>" .->21
     21-. "<div style='padding:4px 8px'><div>2. connectSshAsync (EDT)</div><div style='font-size: 70%'></div></div>" .->22
-    22-. "<div style='padding:4px 8px'><div>3. Resolve password on EDT</div><div style='font-size: 70%'></div></div>" .->29
-    29-. "<div style='padding:4px 8px'><div>4. Unlock vault</div><div style='font-size: 70%'></div></div>" .->27
-    27-. "<div style='padding:4px 8px'><div>5. Decrypt saved password</div><div style='font-size: 70%'></div></div>" .->28
+    22-. "<div style='padding:4px 8px'><div>3. Resolve saved password on<br />EDT</div><div style='font-size: 70%'></div></div>" .->31
+    31-. "<div style='padding:4px 8px'><div>4. Unlock vault</div><div style='font-size: 70%'></div></div>" .->29
+    29-. "<div style='padding:4px 8px'><div>5. Decrypt saved password</div><div style='font-size: 70%'></div></div>" .->30
     22-. "<div style='padding:4px 8px'><div>6. Open ChannelShell<br />(SwingWorker)</div><div style='font-size: 70%'></div></div>" .->20
-    20-. "<div style='padding:4px 8px'><div>7. Verify host key</div><div style='font-size: 70%'></div></div>" .->26
-    20-. "<div style='padding:4px 8px'><div>8. Install ssh-agent<br />identities</div><div style='font-size: 70%'></div></div>" .->23
-    23-. "<div style='padding:4px 8px'><div>9. Open Unix socket</div><div style='font-size: 70%'></div></div>" .->24
-    22-. "<div style='padding:4px 8px'><div>10. Hand connected session<br />back (EDT)</div><div style='font-size: 70%'></div></div>" .->13
+    20-. "<div style='padding:4px 8px'><div>7. Connect and authenticate<br />each hop</div><div style='font-size: 70%'></div></div>" .->27
+    27-. "<div style='padding:4px 8px'><div>8. Verify host key</div><div style='font-size: 70%'></div></div>" .->26
+    27-. "<div style='padding:4px 8px'><div>9. Install ssh-agent<br />identities</div><div style='font-size: 70%'></div></div>" .->23
+    23-. "<div style='padding:4px 8px'><div>10. Open Unix socket</div><div style='font-size: 70%'></div></div>" .->24
+    27-. "<div style='padding:4px 8px'><div>11. publickey exhausted;<br />server offers password</div><div style='font-size: 70%'></div></div>" .->28
+    28-. "<div style='padding:4px 8px'><div>12. Prompt for a password<br />(marshalled to the EDT)</div><div style='font-size: 70%'></div></div>" .->31
+    31-. "<div style='padding:4px 8px'><div>13. Save it if the user asked<br />to remember</div><div style='font-size: 70%'></div></div>" .->30
+    22-. "<div style='padding:4px 8px'><div>14. Hand connected session<br />back (EDT)</div><div style='font-size: 70%'></div></div>" .->13
   end

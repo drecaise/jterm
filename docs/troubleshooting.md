@@ -18,7 +18,26 @@ focused pane straight away.
   supported; make sure the relevant one is running with your keys loaded.
 - Check what the agent is offering via **SSH → Show Agent Keys…**.
 
+If key auth is rejected, jterm falls back to asking for a **password** rather than failing, so a
+misconfigured agent is an inconvenience rather than a blocker. If you get that prompt when you
+expected the agent to work, the agent is the thing to investigate.
+
 See [SSH auth & vault](ssh-auth-and-vault.md) for the full authentication order.
+
+## "Authentication failed for user@host"
+
+Every method jterm and the server share was tried and rejected, or a password prompt was
+cancelled. Things to check, in order:
+
+- Is the **username** right? The message names the user actually offered — a session inheriting a
+  folder/global default may not be using the one you expect.
+- Does the server allow password auth at all? If `PasswordAuthentication no` and
+  `KbdInteractiveAuthentication no` are set in `sshd_config`, jterm never offers you a prompt and
+  key auth is the only way in.
+- Was the fallback turned off? Check **Preferences → General → Ask for a password if key auth
+  fails**.
+- For a **jump host** chain, the message names the hop that failed — an early hop failing means
+  the target was never reached.
 
 ## "Host key has changed" warning
 

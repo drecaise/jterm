@@ -7,10 +7,49 @@ When you open an SSH session, jterm attempts authentication in this order:
 1. **Public key**
     - **ssh-agent** identities (with agent forwarding, if enabled), then
     - **on-disk keys** — the *Key file* set on the session, or your `~/.ssh` identities.
-2. **Password** — only if you enabled *Password auth* for that session.
+2. **Password** — a saved one if you enabled *Password auth* for that session, and otherwise
+   **whatever you type at the prompt** (see below).
 
 You don't choose a method explicitly; jterm offers them in turn and the server picks the first
 that succeeds.
+
+### If key authentication fails
+
+When ssh-agent and key authentication are both rejected, jterm doesn't give up — it **asks you
+for a password** and carries on with the *same* connection.
+
+![SSH password prompt](img/ssh-password-prompt.png)
+
+This covers the everyday cases where a connect used to just fail:
+
+- your agent isn't running, or doesn't hold a key for that host;
+- the server has no `authorized_keys` entry for you yet;
+- a **saved password is out of date** — the prompt reappears with *"Authentication failed — try
+  again."* instead of dropping you back to an error dialog.
+
+You get up to **three** attempts per host, matching OpenSSH. Tick **Remember this password** to
+save it to the vault, and jterm enables *Password auth* + *Save password* on the session for you —
+the next connect won't ask. The password is only saved once it has actually worked, so a typo is
+never stored.
+
+!!! note "No prompt on key-only servers"
+    jterm only offers a method the server advertises. If the server has
+    `PasswordAuthentication no`, there is nothing to prompt for and the connect fails as before —
+    you won't be asked for a password that could never work.
+
+To turn the fallback off entirely, clear **Preferences → General → Ask for a password if key auth
+fails**. Connects then fail immediately when key auth is rejected.
+
+### Two-factor and other challenges
+
+Servers using PAM, one-time passwords or 2FA authenticate with **keyboard-interactive** rather
+than a plain password: the server sends one or more questions and jterm shows them as typed.
+Replies are masked unless the server asks for them to be echoed.
+
+![Keyboard-interactive challenge](img/ssh-challenge-prompt.png)
+
+Jump hosts are prompted for individually, each named `user@host`, so it's always clear which hop
+in the chain is asking.
 
 ### ssh-agent
 
@@ -42,6 +81,9 @@ vault. For encrypted keys, jterm can remember the **key passphrase** too. In bot
 
 - A **blank** secret field keeps whatever is already saved.
 - jterm tries a saved passphrase first and only prompts if it fails.
+
+You can also save a password without opening the session dialog at all: tick **Remember this
+password** on the connect-time prompt described [above](#if-key-authentication-fails).
 
 You can also set **default** passwords/passphrases at the folder or global level — see
 [Preferences → Session Defaults](preferences.md).

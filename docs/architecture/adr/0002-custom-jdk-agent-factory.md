@@ -30,7 +30,7 @@ layer and only replace the transport). `AgentSupport` picks the source per OS:
 - **Windows** — `WindowsPipeAgentProxy` (OpenSSH named pipe) and/or
   `PageantAgentProxy`, fronted by `CompositeSshAgent` if both are live.
 
-`SshSession.installAgent` also **writes the resolved socket path back into the MINA
+`SshConnect.installAgent` also **writes the resolved socket path back into the MINA
 client property** so any code path that consults the property (including MINA's own
 internals) sees the same value.
 

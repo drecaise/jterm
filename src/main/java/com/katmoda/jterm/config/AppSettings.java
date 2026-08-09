@@ -75,6 +75,11 @@ public final class AppSettings {
     // regardless of this setting — see terminal.ssh.JtermKnownHostsVerifier.
     private boolean autoAcceptNewHostKeys = false;
 
+    // Whether a connect whose agent/key authentication was rejected falls back to prompting for a
+    // password (and answering keyboard-interactive challenges) instead of failing outright. Only
+    // ever reached for auth methods the server actually offers — see terminal.ssh.SshConnect.
+    private boolean promptPasswordOnAuthFailure = true;
+
     // Whether a local terminal tab is opened automatically on launch. Defaults to true (the app's
     // original behavior); read once at startup, so toggling it only affects the next launch.
     private boolean openTerminalOnStartup = true;
@@ -181,6 +186,18 @@ public final class AppSettings {
 
     public void setAutoAcceptNewHostKeys(boolean autoAcceptNewHostKeys) {
         this.autoAcceptNewHostKeys = autoAcceptNewHostKeys;
+    }
+
+    /**
+     * Whether a connect prompts for a password once ssh-agent/key authentication has been
+     * rejected. Read live at each connect.
+     */
+    public boolean isPromptPasswordOnAuthFailure() {
+        return promptPasswordOnAuthFailure;
+    }
+
+    public void setPromptPasswordOnAuthFailure(boolean promptPasswordOnAuthFailure) {
+        this.promptPasswordOnAuthFailure = promptPasswordOnAuthFailure;
     }
 
     /** Whether a local terminal tab is opened automatically on launch (read once at startup). */
@@ -412,7 +429,7 @@ public final class AppSettings {
                 windowX, windowY, windowWidth, windowHeight,
                 defaultUsername, defaultTabColorHex, openTerminalOnStartup,
                 defaultKeyPath, autoAcceptNewHostKeys, scrollbackLines, middleClickPaste,
-                uiScalePercent, uiFontFamily, uiFontSize));
+                uiScalePercent, uiFontFamily, uiFontSize, promptPasswordOnAuthFailure));
     }
 
     private static AppSettings load() {
@@ -424,6 +441,9 @@ public final class AppSettings {
             settings.pasteOnRightClick = p.pasteOnRightClick;
             if (p.autoAcceptNewHostKeys != null) {
                 settings.autoAcceptNewHostKeys = p.autoAcceptNewHostKeys;
+            }
+            if (p.promptPasswordOnAuthFailure != null) {
+                settings.promptPasswordOnAuthFailure = p.promptPasswordOnAuthFailure;
             }
             if (p.openTerminalOnStartup != null) {
                 settings.openTerminalOnStartup = p.openTerminalOnStartup;
@@ -503,6 +523,7 @@ public final class AppSettings {
                              Boolean openTerminalOnStartup, String defaultKeyPath,
                              Boolean autoAcceptNewHostKeys, Integer scrollbackLines,
                              Boolean middleClickPaste, Integer uiScalePercent,
-                             String uiFontFamily, Integer uiFontSize) {
+                             String uiFontFamily, Integer uiFontSize,
+                             Boolean promptPasswordOnAuthFailure) {
     }
 }

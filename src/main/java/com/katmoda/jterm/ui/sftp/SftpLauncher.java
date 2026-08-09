@@ -88,14 +88,17 @@ public final class SftpLauncher {
 
     /** Open SFTP over a fresh, dedicated SSH connection (owned and closed by the pane). */
     public static void openFresh(String host, int port, String user, String password, String keyPath,
-                                 SshConnect.PassphraseProvider passphrases, String hostLabel, String iconId,
+                                 SshConnect.PassphraseProvider passphrases,
+                                 SshConnect.InteractiveAuth interactive, String sessionId,
+                                 String hostLabel, String iconId,
                                  Consumer<GridContent> onReady, Consumer<Throwable> onError) {
         // A full reconnect: re-auth a fresh dedicated connection and open SFTP on it. Used both for the
         // initial open and for the pane's reconnector (this path owns the credentials).
         Callable<SftpConnection> builder = () -> {
             SshConnect.Connected conn = SshConnect.open(List.of(),
-                    new SshConnect.HostHop(host, port, user, password, keyPath),
-                    passphrases != null ? passphrases : SshConnect.PassphraseProvider.NONE);
+                    new SshConnect.HostHop(host, port, user, password, keyPath, sessionId),
+                    passphrases != null ? passphrases : SshConnect.PassphraseProvider.NONE,
+                    interactive != null ? interactive : SshConnect.InteractiveAuth.NONE);
             try {
                 SftpClient client = SftpClientFactory.instance().createSftpClient(conn.session());
                 return new SftpConnection(client, conn::close);

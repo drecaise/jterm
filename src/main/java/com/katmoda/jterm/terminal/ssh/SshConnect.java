@@ -23,9 +23,11 @@ import com.katmoda.jterm.terminal.ssh.agent.AgentSupport;
 import com.katmoda.jterm.terminal.ssh.agent.JdkAgentFactory;
 import org.apache.sshd.agent.SshAgent;
 import org.apache.sshd.client.SshClient;
+import org.apache.sshd.client.future.AuthFuture;
 import org.apache.sshd.client.keyverifier.RejectAllServerKeyVerifier;
 import org.apache.sshd.client.session.ClientSession;
 import org.apache.sshd.common.NamedResource;
+import org.apache.sshd.common.SshException;
 import org.apache.sshd.common.config.keys.FilePasswordProvider;
 import org.apache.sshd.core.CoreModuleProperties;
 import org.apache.sshd.common.keyprovider.FileKeyPairProvider;
@@ -67,8 +69,24 @@ public final class SshConnect {
      * One host in a connection chain: a jump host or the final target. {@code keyPath} is an
      * optional private key file to authenticate with (in addition to the shared agent/default
      * identities); {@code password} is an optional password fallback. Either may be blank/null.
+     *
+     * <p>{@code id} is the configuration id this hop came from ({@code SshSessionConfig} or
+     * {@code JumpHostConfig}) — it lets an {@link InteractiveAuth} key the credential vault when
+     * the user asks to remember a password entered at the prompt. {@code null} for ad-hoc dials
+     * with no stored configuration.</p>
      */
-    public record HostHop(String host, int port, String user, String password, String keyPath) {
+    public record HostHop(String host, int port, String user, String password, String keyPath,
+                          String id) {
+
+        /** A hop with no backing configuration (nothing to remember a password against). */
+        public HostHop(String host, int port, String user, String password, String keyPath) {
+            this(host, port, user, password, keyPath, null);
+        }
+
+        /** {@code user@host}, for prompts and error messages. */
+        public String label() {
+            return user + "@" + host;
+        }
     }
 
     /**
@@ -94,8 +112,63 @@ public final class SshConnect {
         PassphraseProvider NONE = (keyPath, attempt) -> null;
     }
 
+    /**
+     * Supplies credentials interactively <em>during</em> authentication, as the fallback for when
+     * publickey auth (ssh-agent, then on-disk keys) has been exhausted. Invoked off the EDT — the
+     * implementation marshals its own prompts — and only for auth methods the server actually
+     * offers, so a key-only server never triggers a prompt.
+     *
+     * <p>Returning {@code null} gives up on the method (the connect then fails with an
+     * {@link SshAuthException}), which is how a cancelled prompt is expressed.</p>
+     */
+    public interface InteractiveAuth {
+
+        /**
+         * Password for {@code hop}. {@code attempt} is 0 the first time the server asks and
+         * increments after each rejected password, so an implementation can show an error on the
+         * re-prompt.
+         */
+        String passwordFor(HostHop hop, int attempt);
+
+        /**
+         * Answers a {@code keyboard-interactive} challenge (PAM, 2FA/OTP). {@code prompts} and
+         * {@code echo} are parallel arrays; {@code echo[i]} false means the reply must be masked.
+         * The returned array must have one entry per prompt.
+         */
+        String[] challenge(HostHop hop, String instruction, String[] prompts, boolean[] echo);
+
+        /**
+         * Called once {@code hop} has authenticated, so an implementation can persist a password
+         * the user asked to remember. Default: no-op.
+         */
+        default void onAuthSucceeded(HostHop hop) {
+        }
+
+        /** A provider that never prompts (authentication simply fails as before). */
+        InteractiveAuth NONE = new InteractiveAuth() {
+            @Override
+            public String passwordFor(HostHop hop, int attempt) {
+                return null;
+            }
+
+            @Override
+            public String[] challenge(HostHop hop, String instruction, String[] prompts,
+                                      boolean[] echo) {
+                return null;
+            }
+        };
+    }
+
     /** How many times a single encrypted key is offered a passphrase before it is skipped. */
     private static final int MAX_PASSPHRASE_ATTEMPTS = 3;
+
+    /**
+     * Minimum size of the client's NIO worker pool. An interactive auth prompt blocks the MINA
+     * worker that is driving the handshake for as long as the dialog is up; on a jump-host chain
+     * the upstream session's port-forward still needs a worker to keep the tunnel flowing, so the
+     * pool must not be a single thread on a low-core machine.
+     */
+    private static final int MIN_NIO_WORKERS = 8;
 
     /**
      * An authenticated SSH connection: the shared client, the target session, and any upstream
@@ -136,7 +209,7 @@ public final class SshConnect {
      * connecting through it.</p>
      */
     public static Connected open(List<HostHop> jumpHosts, HostHop target) throws IOException {
-        return open(jumpHosts, target, PassphraseProvider.NONE, 0);
+        return open(jumpHosts, target, PassphraseProvider.NONE, InteractiveAuth.NONE, 0);
     }
 
     /**
@@ -145,19 +218,33 @@ public final class SshConnect {
      */
     public static Connected open(List<HostHop> jumpHosts, HostHop target,
                                  PassphraseProvider passphrases) throws IOException {
-        return open(jumpHosts, target, passphrases, 0);
+        return open(jumpHosts, target, passphrases, InteractiveAuth.NONE, 0);
     }
 
     /**
-     * As {@link #open(List, HostHop, PassphraseProvider)}, but when {@code keepAliveSeconds > 0}
-     * the SSH-protocol heartbeat ({@code keepalive@openssh.com} via {@code SSH_MSG_IGNORE}) is
-     * enabled at that interval on the client before it starts, guarding against NAT/firewall idle
-     * drops and detecting a dead peer. A value of {@code 0} leaves heartbeats off.
+     * As {@link #open(List, HostHop, PassphraseProvider)}, but {@code interactive} supplies a
+     * password (or keyboard-interactive answers) on demand once publickey auth has been exhausted.
      */
     public static Connected open(List<HostHop> jumpHosts, HostHop target,
-                                 PassphraseProvider passphrases, int keepAliveSeconds)
+                                 PassphraseProvider passphrases, InteractiveAuth interactive)
+            throws IOException {
+        return open(jumpHosts, target, passphrases, interactive, 0);
+    }
+
+    /**
+     * As {@link #open(List, HostHop, PassphraseProvider, InteractiveAuth)}, but when
+     * {@code keepAliveSeconds > 0} the SSH-protocol heartbeat ({@code keepalive@openssh.com} via
+     * {@code SSH_MSG_IGNORE}) is enabled at that interval on the client before it starts, guarding
+     * against NAT/firewall idle drops and detecting a dead peer. A value of {@code 0} leaves
+     * heartbeats off.
+     */
+    public static Connected open(List<HostHop> jumpHosts, HostHop target,
+                                 PassphraseProvider passphrases, InteractiveAuth interactive,
+                                 int keepAliveSeconds)
             throws IOException {
         SshClient client = SshClient.setUpDefaultClient();
+        CoreModuleProperties.NIO_WORKERS.set(client,
+                Math.max(MIN_NIO_WORKERS, Runtime.getRuntime().availableProcessors()));
         // Set the heartbeat on the client (created fresh per open) before start(), so it is active
         // from session setup — more reliable than mutating the session post-auth. The request type
         // defaults to keepalive@openssh.com.
@@ -175,6 +262,15 @@ public final class SshConnect {
         // ssh-agent over a JDK Unix socket (no APR); also enables agent forwarding on channels.
         installAgent(client);
 
+        // Interactive password / keyboard-interactive fallback. MINA consults this only after
+        // publickey auth is exhausted and only for methods the server offers, so installing it
+        // never changes the outcome on a key-only server.
+        JtermUserInteraction userInteraction = null;
+        if (interactive != null && interactive != InteractiveAuth.NONE) {
+            userInteraction = new JtermUserInteraction(interactive);
+            client.setUserInteraction(userInteraction);
+        }
+
         // Default on-disk identities. Encrypted ones are prompted for via the same passphrase
         // finder as configured keys (previously they were silently unusable without the agent).
         List<Path> keys = defaultIdentityFiles();
@@ -189,10 +285,11 @@ public final class SshConnect {
         try {
             ClientSession via = null;
             for (HostHop hop : jumpHosts) {
-                via = connectHop(client, verifier, via, hop, passphrases);
+                via = connectHop(client, verifier, userInteraction, via, hop, passphrases);
                 upstream.add(via);
             }
-            ClientSession targetSession = connectHop(client, verifier, via, target, passphrases);
+            ClientSession targetSession =
+                    connectHop(client, verifier, userInteraction, via, target, passphrases);
             return new Connected(client, targetSession, upstream);
         } catch (IOException e) {
             for (int i = upstream.size() - 1; i >= 0; i--) {
@@ -223,6 +320,7 @@ public final class SshConnect {
      * known_hosts handling uses the true name even when connecting via 127.0.0.1.
      */
     private static ClientSession connectHop(SshClient client, JtermKnownHostsVerifier verifier,
+                                            JtermUserInteraction interaction,
                                             ClientSession via, HostHop hop,
                                             PassphraseProvider passphrases) throws IOException {
         int port = hop.port() <= 0 ? 22 : hop.port();
@@ -235,6 +333,9 @@ public final class SshConnect {
             connectPort = bound.getPort();
         }
         verifier.setIntendedHost(hop.host(), port);
+        if (interaction != null) {
+            interaction.setCurrentHop(hop);
+        }
         try {
             ClientSession session = client.connect(hop.user(), connectHost, connectPort)
                     .verify(CONNECT_TIMEOUT)
@@ -244,7 +345,10 @@ public final class SshConnect {
                 if (hop.password() != null && !hop.password().isEmpty()) {
                     session.addPasswordIdentity(hop.password());
                 }
-                session.auth().verify(AUTH_TIMEOUT);
+                awaitAuth(session, hop, interaction);
+                if (interaction != null) {
+                    interaction.authSucceeded();
+                }
                 return session;
             } catch (IOException e) {
                 session.close(true);
@@ -252,6 +356,43 @@ public final class SshConnect {
             }
         } finally {
             verifier.clearIntendedHost();
+        }
+    }
+
+    /**
+     * Authenticates {@code session}, waiting out any interactive prompt.
+     *
+     * <p>{@code AuthFuture.verify(AUTH_TIMEOUT)} can't be used directly once prompting is in play:
+     * the timeout exists to catch a wedged server, but a user typing a password would trip it just
+     * the same. So the wait is done in {@link #AUTH_TIMEOUT} slices and only abandoned when the
+     * slice elapsed with no prompt open and none shown since the previous slice — server silence,
+     * not user think-time.</p>
+     */
+    private static void awaitAuth(ClientSession session, HostHop hop, JtermUserInteraction interaction)
+            throws IOException {
+        AuthFuture future = session.auth();
+        long lastActivity = interaction == null ? 0 : interaction.promptActivity();
+        while (!future.await(AUTH_TIMEOUT)) {
+            long activity = interaction == null ? 0 : interaction.promptActivity();
+            boolean busy = interaction != null && (interaction.isPrompting() || activity != lastActivity);
+            if (!busy) {
+                throw new SshAuthException(hop.user(), hop.host(),
+                        new SshException("Authentication timed out after " + AUTH_TIMEOUT.toSeconds()
+                                + "s"));
+            }
+            lastActivity = activity;
+        }
+        if (!future.isSuccess()) {
+            IOException cause;
+            try {
+                // The future is already done, so this only unwraps MINA's own failure reason
+                // (typically "No more authentication methods available").
+                future.verify();
+                cause = new SshException("Authentication was not granted");
+            } catch (IOException e) {
+                cause = e;
+            }
+            throw new SshAuthException(hop.user(), hop.host(), cause);
         }
     }
 
@@ -344,6 +485,9 @@ public final class SshConnect {
      */
     private static void installAgent(SshClient client) {
         if (!AgentSupport.isAgentAvailable()) {
+            // Logged rather than silent: "the agent wasn't even tried" is otherwise invisible when
+            // a connect later fails with a generic authentication error.
+            LOG.info("no ssh-agent available; relying on key/password authentication");
             return;
         }
         // The endpoint may be null on Windows when only Pageant (which has no socket/pipe path)

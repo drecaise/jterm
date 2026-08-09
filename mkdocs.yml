@@ -110,4 +110,5 @@ nav:
       - 0005 Per-OS keyring CLIs: architecture/adr/0005-per-os-keyring-clis.md
       - 0006 C4 via Structurizr + Mermaid: architecture/adr/0006-c4-with-structurizr-and-mermaid.md
       - 0007 Debounced highlight scans: architecture/adr/0007-debounced-highlight-scans.md
+      - 0008 Interactive auth via UserInteraction: architecture/adr/0008-interactive-auth-via-mina-userinteraction.md
   - Troubleshooting: troubleshooting.md

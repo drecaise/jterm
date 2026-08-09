@@ -31,6 +31,8 @@ window size (~1200×800) so text stays legible.
 | `master-password-prompt.png` | The "create / enter master password" dialog | `ssh-auth-and-vault.md` |
 | `host-key-prompt.png` | The trust-on-first-use host key confirmation dialog | `ssh-auth-and-vault.md` |
 | `agent-keys.png` | The "Show Agent Keys" dialog listing ssh-agent identities | `ssh-auth-and-vault.md` |
+| `ssh-password-prompt.png` | The connect-time **SSH Password** prompt as it appears after key auth is rejected — ideally showing the "Authentication failed — try again." error line, the `user@host` sub-label and the **Remember this password** checkbox | `ssh-auth-and-vault.md` |
+| `ssh-challenge-prompt.png` | The **SSH Authentication** keyboard-interactive dialog: `user@host` heading and at least one server-supplied prompt (e.g. `Password:`, or a 2FA `Verification code:`) | `ssh-auth-and-vault.md` |
 | `sftp-browser.png` | An SFTP browser pane showing a remote directory listing and the path field | `sftp.md` |
 | `tunnels-dialog.png` | The Tunneling… manager dialog with one or more tunnels listed | `tunnels.md` |
 | `tunnel-edit.png` | The tunnel New/Edit dialog showing Type (Local/Remote/SOCKS) and fields | `tunnels.md` |

@@ -66,6 +66,7 @@ public final class ConnectionService {
         String effectiveKeyPath = sessionStore.effectiveKeyPath(cfg);
         int effectiveKeepAlive = sessionStore.effectiveKeepAliveSeconds(cfg);
         SshConnect.PassphraseProvider passphrases = credentials.keyPassphraseProvider(cfg, effectiveKeyPath);
+        SshConnect.InteractiveAuth interactive = interactiveAuth(cfg);
         new SwingWorker<SshSession, Void>() {
             @Override
             protected SshSession doInBackground() throws Exception {
@@ -73,6 +74,7 @@ public final class ConnectionService {
                         cfg.getTerminalCharset(), cfg.getFontFamily(), cfg.getFontSize());
                 return SshSession.connect(cfg.getHost(), cfg.getPort(), effectiveUser,
                         cfg.isAgentForwarding(), password, effectiveKeyPath, jumpHosts, passphrases,
+                        interactive, cfg.getId(),
                         cfg.getName(), cfg.getIconId(), profile, cfg.getHighlightListId(),
                         effectiveTabColorHex, effectiveKeepAlive);
             }
@@ -90,6 +92,17 @@ public final class ConnectionService {
                 }
             }
         }.execute();
+    }
+
+    /**
+     * The interactive-auth fallback to use for {@code cfg}, or
+     * {@link SshConnect.InteractiveAuth#NONE} when the user has turned it off. The preference is
+     * read here rather than inside {@link CredentialResolver} so the resolver stays free of
+     * settings and remains headless-testable. Shared with the tunnel and SFTP connect paths.
+     */
+    public SshConnect.InteractiveAuth interactiveAuth(SshSessionConfig cfg) {
+        return AppSettings.get().isPromptPasswordOnAuthFailure()
+                ? credentials.interactiveAuth(cfg) : SshConnect.InteractiveAuth.NONE;
     }
 
     /** If the session has a configured run-on-connect macro, replay it into the new channel. */

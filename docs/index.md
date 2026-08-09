@@ -15,7 +15,7 @@ forwarding, and light/dark theming that follows your operating system.
 - Save SSH connections in a **sidebar** of folders, each with its own icon.
 - **Drag** a session onto a pane to open it in a split.
 - Authenticate over SSH with **ssh-agent**, **on-disk keys**, or **passwords** stored in an
-  encrypted vault.
+  encrypted vault — with a password prompt as fallback when key auth is rejected.
 - Hop through **jump hosts (bastions)**, browse remote files over **SFTP**, and set up
   **port-forwarding tunnels**.
 - **Broadcast** your typing to several panes at once.

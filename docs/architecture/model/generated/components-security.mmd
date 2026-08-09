@@ -17,28 +17,29 @@ graph TB
     subgraph 8 [jterm JVM process]
       style 8 fill:transparent,stroke:#155fa0,color:#155fa0
 
-      27("<div style='font-weight: bold'>VaultManager</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>Unlocks CredentialVault on<br />the EDT; remembers master<br />password via OS keyring.</div>")
-      style 27 fill:#ef5350,stroke:#a73a38,color:#ffffff
-      28("<div style='font-weight: bold'>CredentialVault</div><div style='font-size: 70%; margin-top: 0px'>[Component: AES-GCM / PBKDF2]</div><div style='font-size: 80%; margin-top:10px'>AES-GCM vault of SSH<br />passwords; PBKDF2-wrapped<br />random vault key.</div>")
-      style 28 fill:#ef5350,stroke:#a73a38,color:#ffffff
-      29("<div style='font-weight: bold'>CredentialResolver</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>Resolves SSH and jump-host<br />credentials from vault or<br />prompt.</div>")
+      29("<div style='font-weight: bold'>VaultManager</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>Unlocks CredentialVault on<br />the EDT; remembers master<br />password via OS keyring.</div>")
       style 29 fill:#ef5350,stroke:#a73a38,color:#ffffff
-      30("<div style='font-weight: bold'>MasterPasswordKeyring</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java + native CLI]</div><div style='font-size: 80%; margin-top:10px'>Wraps native OS keyring:<br />secret-tool / security /<br />java-keyring JNA.</div>")
+      30("<div style='font-weight: bold'>CredentialVault</div><div style='font-size: 70%; margin-top: 0px'>[Component: AES-GCM / PBKDF2]</div><div style='font-size: 80%; margin-top:10px'>AES-GCM vault of SSH<br />passwords; PBKDF2-wrapped<br />random vault key.</div>")
       style 30 fill:#ef5350,stroke:#a73a38,color:#ffffff
-      31("<div style='font-weight: bold'>SessionStore</div><div style='font-size: 70%; margin-top: 0px'>[Component: Jackson]</div><div style='font-size: 80%; margin-top:10px'>Loads and saves the<br />SshSessionConfig / FolderNode<br />tree from sessions.json.</div>")
-      style 31 fill:#8d6e63,stroke:#624d45,color:#ffffff
-      32("<div style='font-weight: bold'>JsonStore</div><div style='font-size: 70%; margin-top: 0px'>[Component: Jackson]</div><div style='font-size: 80%; margin-top:10px'>Atomic Jackson-based<br />persistence with corrupt-file<br />preservation.</div>")
-      style 32 fill:#8d6e63,stroke:#624d45,color:#ffffff
-      33("<div style='font-weight: bold'>AppSettings</div><div style='font-size: 70%; margin-top: 0px'>[Component: Jackson]</div><div style='font-size: 80%; margin-top:10px'>Mutable singleton; persists<br />settings.json (theme, font,<br />TOFU, scrollback, etc.).</div>")
+      31("<div style='font-weight: bold'>CredentialResolver</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>Resolves SSH and jump-host<br />credentials from vault or<br />prompt.</div>")
+      style 31 fill:#ef5350,stroke:#a73a38,color:#ffffff
+      32("<div style='font-weight: bold'>MasterPasswordKeyring</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java + native CLI]</div><div style='font-size: 80%; margin-top:10px'>Wraps native OS keyring:<br />secret-tool / security /<br />java-keyring JNA.</div>")
+      style 32 fill:#ef5350,stroke:#a73a38,color:#ffffff
+      33("<div style='font-weight: bold'>SessionStore</div><div style='font-size: 70%; margin-top: 0px'>[Component: Jackson]</div><div style='font-size: 80%; margin-top:10px'>Loads and saves the<br />SshSessionConfig / FolderNode<br />tree from sessions.json.</div>")
       style 33 fill:#8d6e63,stroke:#624d45,color:#ffffff
+      34("<div style='font-weight: bold'>JsonStore</div><div style='font-size: 70%; margin-top: 0px'>[Component: Jackson]</div><div style='font-size: 80%; margin-top:10px'>Atomic Jackson-based<br />persistence with corrupt-file<br />preservation.</div>")
+      style 34 fill:#8d6e63,stroke:#624d45,color:#ffffff
+      35("<div style='font-weight: bold'>AppSettings</div><div style='font-size: 70%; margin-top: 0px'>[Component: Jackson]</div><div style='font-size: 80%; margin-top:10px'>Mutable singleton; persists<br />settings.json (theme, font,<br />TOFU, scrollback, etc.).</div>")
+      style 35 fill:#8d6e63,stroke:#624d45,color:#ffffff
     end
 
-    29-. "<div style='padding:4px 8px'><div>Requests vault unlock</div><div style='font-size: 70%'></div></div>" .->27
-    27-. "<div style='padding:4px 8px'><div>Decrypts entries after unlock</div><div style='font-size: 70%'></div></div>" .->28
-    27-. "<div style='padding:4px 8px'><div>Loads or stores master<br />password</div><div style='font-size: 70%'></div></div>" .->30
-    30-. "<div style='padding:4px 8px'><div>Reads and writes native OS<br />secret</div><div style='font-size: 70%'></div></div>" .->3
-    28-. "<div style='padding:4px 8px'><div>Persists credentials.json</div><div style='font-size: 70%'></div></div>" .->32
-    31-. "<div style='padding:4px 8px'><div>Persists sessions.json</div><div style='font-size: 70%'></div></div>" .->32
-    33-. "<div style='padding:4px 8px'><div>Persists settings.json</div><div style='font-size: 70%'></div></div>" .->32
-    32-. "<div style='padding:4px 8px'><div>Atomic writes to the OS<br />config dir</div><div style='font-size: 70%'></div></div>" .->6
+    31-. "<div style='padding:4px 8px'><div>Requests vault unlock</div><div style='font-size: 70%'></div></div>" .->29
+    31-. "<div style='padding:4px 8px'><div>Reads and writes saved<br />secrets once unlocked</div><div style='font-size: 70%'></div></div>" .->30
+    29-. "<div style='padding:4px 8px'><div>Decrypts entries after unlock</div><div style='font-size: 70%'></div></div>" .->30
+    29-. "<div style='padding:4px 8px'><div>Loads or stores master<br />password</div><div style='font-size: 70%'></div></div>" .->32
+    32-. "<div style='padding:4px 8px'><div>Reads and writes native OS<br />secret</div><div style='font-size: 70%'></div></div>" .->3
+    30-. "<div style='padding:4px 8px'><div>Persists credentials.json</div><div style='font-size: 70%'></div></div>" .->34
+    33-. "<div style='padding:4px 8px'><div>Persists sessions.json</div><div style='font-size: 70%'></div></div>" .->34
+    35-. "<div style='padding:4px 8px'><div>Persists settings.json</div><div style='font-size: 70%'></div></div>" .->34
+    34-. "<div style='padding:4px 8px'><div>Atomic writes to the OS<br />config dir</div><div style='font-size: 70%'></div></div>" .->6
   end

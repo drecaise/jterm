@@ -24,14 +24,17 @@ import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
+import javax.swing.JTextField;
+import javax.swing.text.JTextComponent;
 import java.awt.Component;
 import java.awt.GridLayout;
 import java.io.File;
 import java.util.Arrays;
 
 /**
- * Modal prompts for the vault master password: one to create it (with confirmation) and one
- * to enter it (with an optional error message after a failed attempt).
+ * Modal prompts for the vault master password (create, with confirmation; enter, with an optional
+ * error message after a failed attempt) plus the connect-time SSH credential prompts: session
+ * password, key passphrase and keyboard-interactive challenges.
  */
 public final class MasterPasswordDialog {
 
@@ -202,18 +205,88 @@ public final class MasterPasswordDialog {
         return value.length == 0 ? null : value;
     }
 
-    /** Connect-time prompt for a (non-saved) session password. */
-    public static char[] promptSessionPassword(Component parent, String sessionName) {
+    /** Outcome of a session-password prompt: the entered password and whether to remember it. */
+    public record SessionPasswordResult(char[] password, boolean remember) {
+    }
+
+    /**
+     * Connect-time prompt for a session password. Used both before a connect (when password auth
+     * is configured but nothing is stored) and as the interactive fallback once agent/key auth has
+     * failed — {@code errorMessage} carries "authentication failed, try again" in the latter case,
+     * and {@code allowRemember} offers to save the password for the session. {@code hostLabel}
+     * ({@code user@host}) disambiguates jump hosts from the target; it may be {@code null}.
+     * Returns {@code null} if cancelled or left blank.
+     */
+    public static SessionPasswordResult promptSessionPassword(Component parent, String sessionName,
+            String hostLabel, String errorMessage, boolean allowRemember) {
         JPasswordField pw = new JPasswordField(20);
+        JCheckBox remember = new JCheckBox("Remember this password");
         JPanel form = new JPanel(new GridLayout(0, 1, 0, 4));
+        if (errorMessage != null) {
+            JLabel error = new JLabel(errorMessage);
+            error.putClientProperty("FlatLaf.styleClass", "h4");
+            form.add(error);
+        }
         form.add(new JLabel("Password for " + sessionName + ":"));
+        if (hostLabel != null && !hostLabel.isBlank() && !hostLabel.equals(sessionName)) {
+            JLabel hostLine = new JLabel(hostLabel);
+            hostLine.setEnabled(false);
+            form.add(hostLine);
+        }
         form.add(pw);
+        if (allowRemember) {
+            form.add(remember);
+        }
+        form.putClientProperty("initialFocus", pw);
+
         int result = JOptionPane.showConfirmDialog(parent, form, "SSH Password",
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
         if (result != JOptionPane.OK_OPTION) {
             return null;
         }
         char[] value = pw.getPassword();
-        return value.length == 0 ? null : value;
+        if (value.length == 0) {
+            return null;
+        }
+        return new SessionPasswordResult(value, allowRemember && remember.isSelected());
+    }
+
+    /**
+     * Answers a server-driven {@code keyboard-interactive} challenge (PAM, 2FA/OTP): one field per
+     * prompt, masked unless the server asked for the reply to be echoed. Returns one answer per
+     * prompt, or {@code null} if cancelled.
+     */
+    public static String[] promptChallenge(Component parent, String hostLabel, String instruction,
+            String[] prompts, boolean[] echo) {
+        JPanel form = new JPanel(new GridLayout(0, 1, 0, 4));
+        if (hostLabel != null && !hostLabel.isBlank()) {
+            JLabel host = new JLabel(hostLabel);
+            host.putClientProperty("FlatLaf.styleClass", "h4");
+            form.add(host);
+        }
+        if (instruction != null && !instruction.isBlank()) {
+            form.add(new JLabel(instruction));
+        }
+        JTextComponent[] fields = new JTextComponent[prompts.length];
+        for (int i = 0; i < prompts.length; i++) {
+            form.add(new JLabel(prompts[i]));
+            fields[i] = echo[i] ? new JTextField(20) : new JPasswordField(20);
+            form.add((Component) fields[i]);
+        }
+        if (fields.length > 0) {
+            form.putClientProperty("initialFocus", fields[0]);
+        }
+
+        int result = JOptionPane.showConfirmDialog(parent, form, "SSH Authentication",
+                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (result != JOptionPane.OK_OPTION) {
+            return null;
+        }
+        String[] answers = new String[prompts.length];
+        for (int i = 0; i < fields.length; i++) {
+            answers[i] = fields[i] instanceof JPasswordField p
+                    ? new String(p.getPassword()) : fields[i].getText();
+        }
+        return answers;
     }
 }

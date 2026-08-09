@@ -15,10 +15,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 /**
@@ -55,7 +59,8 @@ class CredentialResolverTest {
     private static CredentialResolver.Prompts noPrompts() {
         return new CredentialResolver.Prompts() {
             @Override
-            public char[] promptSessionPassword(String sessionName) {
+            public CredentialResolver.SessionPassword promptSessionPassword(String sessionName,
+                    String hostLabel, String error, boolean allowRemember) {
                 fail("promptSessionPassword should not have been called");
                 return null;
             }
@@ -66,23 +71,70 @@ class CredentialResolverTest {
                 fail("promptKeyPassphrase should not have been called");
                 return null;
             }
+
+            @Override
+            public String[] promptChallenge(String hostLabel, String instruction, String[] prompts,
+                    boolean[] echo) {
+                fail("promptChallenge should not have been called");
+                return null;
+            }
         };
     }
 
     /** A prompt fake whose session-password prompt returns {@code answer} (may be {@code null}). */
     private static CredentialResolver.Prompts sessionPassword(String answer) {
-        return new CredentialResolver.Prompts() {
-            @Override
-            public char[] promptSessionPassword(String sessionName) {
-                return answer == null ? null : answer.toCharArray();
-            }
+        return new RecordingPrompts(answer, false);
+    }
 
-            @Override
-            public CredentialResolver.KeyPassphrase promptKeyPassphrase(String keyPath, String error,
-                    boolean allowRemember) {
-                return fail("promptKeyPassphrase should not have been called");
-            }
-        };
+    /**
+     * A prompt fake that answers the session-password prompt with {@code answer} (null =
+     * cancelled), optionally ticking "remember", and records what it was shown so the interactive
+     * fallback's error text / remember affordance can be asserted.
+     */
+    private static final class RecordingPrompts implements CredentialResolver.Prompts {
+        private final String answer;
+        private final boolean remember;
+        String lastSessionName;
+        String lastHostLabel;
+        String lastError;
+        boolean lastAllowRemember;
+        String[] lastPrompts;
+        boolean[] lastEcho;
+        int passwordPrompts;
+
+        RecordingPrompts(String answer, boolean remember) {
+            this.answer = answer;
+            this.remember = remember;
+        }
+
+        @Override
+        public CredentialResolver.SessionPassword promptSessionPassword(String sessionName,
+                String hostLabel, String error, boolean allowRemember) {
+            passwordPrompts++;
+            lastSessionName = sessionName;
+            lastHostLabel = hostLabel;
+            lastError = error;
+            lastAllowRemember = allowRemember;
+            return answer == null ? null
+                    : new CredentialResolver.SessionPassword(answer.toCharArray(), remember);
+        }
+
+        @Override
+        public CredentialResolver.KeyPassphrase promptKeyPassphrase(String keyPath, String error,
+                boolean allowRemember) {
+            return fail("promptKeyPassphrase should not have been called");
+        }
+
+        @Override
+        public String[] promptChallenge(String hostLabel, String instruction, String[] prompts,
+                boolean[] echo) {
+            lastHostLabel = hostLabel;
+            lastPrompts = prompts;
+            lastEcho = echo;
+            String[] answers = new String[prompts.length];
+            Arrays.fill(answers, answer);
+            return answers;
+        }
     }
 
     private static SshSessionConfig session(boolean passwordAuth, boolean savePassword) {
@@ -167,5 +219,102 @@ class CredentialResolverTest {
 
         assertNull(r.resolveSavedPassphrase(cfg, null));
         assertNull(r.resolveSavedPassphrase(cfg, "  "));
+    }
+
+    /** The hop the interactive fallback is asked about, standing in for {@code cfg}'s target. */
+    private static SshConnect.HostHop targetHop(SshSessionConfig cfg) {
+        return new SshConnect.HostHop(cfg.getHost(), 22, cfg.getUser(), null, null, cfg.getId());
+    }
+
+    @Test
+    void interactiveFirstAttemptHasNoErrorAndOffersRemember() throws Exception {
+        RecordingPrompts prompts = new RecordingPrompts("typed-pw", false);
+        CredentialResolver r = resolver(prompts);
+        SshSessionConfig cfg = session(false, false);
+
+        assertEquals("typed-pw", r.interactiveAuth(cfg).passwordFor(targetHop(cfg), 0));
+        assertNull(prompts.lastError);
+        assertEquals("test", prompts.lastSessionName);
+        assertEquals("me@host.example", prompts.lastHostLabel);
+        assertTrue(prompts.lastAllowRemember);
+    }
+
+    @Test
+    void interactiveRetryShowsAuthenticationError() throws Exception {
+        RecordingPrompts prompts = new RecordingPrompts("typed-pw", false);
+        CredentialResolver r = resolver(prompts);
+        SshSessionConfig cfg = session(false, false);
+
+        r.interactiveAuth(cfg).passwordFor(targetHop(cfg), 1);
+        assertEquals("Authentication failed — try again.", prompts.lastError);
+    }
+
+    @Test
+    void interactiveDoesNotOfferRememberForOtherHops() throws Exception {
+        RecordingPrompts prompts = new RecordingPrompts("hop-pw", false);
+        CredentialResolver r = resolver(prompts);
+        SshSessionConfig cfg = session(false, false);
+        // A jump host carries its own id, so remembering would key the wrong session.
+        SshConnect.HostHop hop =
+                new SshConnect.HostHop("jump.example", 22, "hopuser", null, null, "other-id");
+
+        assertEquals("hop-pw", r.interactiveAuth(cfg).passwordFor(hop, 0));
+        assertFalse(prompts.lastAllowRemember);
+        assertEquals("hopuser@jump.example", prompts.lastSessionName);
+    }
+
+    @Test
+    void interactiveCancelGivesUp() throws Exception {
+        CredentialResolver r = resolver(new RecordingPrompts(null, false));
+        SshSessionConfig cfg = session(false, false);
+
+        assertNull(r.interactiveAuth(cfg).passwordFor(targetHop(cfg), 0));
+    }
+
+    @Test
+    void rememberedPasswordIsSavedOnlyAfterAuthSucceeds() throws Exception {
+        CredentialResolver r = resolver(new RecordingPrompts("typed-pw", true));
+        SshSessionConfig cfg = session(false, false);
+        SshConnect.InteractiveAuth auth = r.interactiveAuth(cfg);
+
+        auth.passwordFor(targetHop(cfg), 0);
+        // Nothing is written while the password is still unproven.
+        assertFalse(vault.hasPassword(VaultKeys.sessionPassword(cfg.getId())));
+
+        auth.onAuthSucceeded(targetHop(cfg));
+        assertEquals("typed-pw", vault.getPassword(VaultKeys.sessionPassword(cfg.getId())));
+        // Both flags are needed for resolvePassword to read the vault entry next time.
+        assertTrue(cfg.isPasswordAuth());
+        assertTrue(cfg.isSavePassword());
+    }
+
+    @Test
+    void unrememberedPasswordIsNotSaved() throws Exception {
+        CredentialResolver r = resolver(new RecordingPrompts("typed-pw", false));
+        SshSessionConfig cfg = session(false, false);
+        SshConnect.InteractiveAuth auth = r.interactiveAuth(cfg);
+
+        auth.passwordFor(targetHop(cfg), 0);
+        auth.onAuthSucceeded(targetHop(cfg));
+
+        assertFalse(vault.hasPassword(VaultKeys.sessionPassword(cfg.getId())));
+        assertFalse(cfg.isPasswordAuth());
+    }
+
+    @Test
+    void challengePassesPromptsThrough() throws Exception {
+        RecordingPrompts prompts = new RecordingPrompts("otp", false);
+        CredentialResolver r = resolver(prompts);
+        SshSessionConfig cfg = session(false, false);
+        String[] questions = {"Password: ", "Verification code: "};
+        boolean[] echo = {false, true};
+
+        String[] answers = r.interactiveAuth(cfg)
+                .challenge(targetHop(cfg), "Two-factor", questions, echo);
+
+        assertArrayEquals(new String[]{"otp", "otp"}, answers);
+        assertArrayEquals(questions, prompts.lastPrompts);
+        assertArrayEquals(echo, prompts.lastEcho);
+        assertEquals("me@host.example", prompts.lastHostLabel);
     }
 }

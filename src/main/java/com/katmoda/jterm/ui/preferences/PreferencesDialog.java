@@ -88,6 +88,8 @@ public final class PreferencesDialog {
         ToggleSwitch middleClickPaste = new ToggleSwitch(settings.isMiddleClickPaste());
         ToggleSwitch openTerminalOnStartup = new ToggleSwitch(settings.isOpenTerminalOnStartup());
         ToggleSwitch autoAcceptNewHostKeys = new ToggleSwitch(settings.isAutoAcceptNewHostKeys());
+        ToggleSwitch promptPasswordOnAuthFailure =
+                new ToggleSwitch(settings.isPromptPasswordOnAuthFailure());
         JPanel general = new JPanel(new GridBagLayout());
         int row = 0;
         addToggleRow(general, row++, "Copy to clipboard on select:", copyOnSelect);
@@ -101,6 +103,10 @@ public final class PreferencesDialog {
         addToggleRow(general, row++, "Auto-accept new host keys:", autoAcceptNewHostKeys);
         addHint(general, row++, "Trust first-seen SSH hosts without prompting. You're still warned"
                 + " if a host's key changes.");
+        addToggleRow(general, row++, "Ask for a password if key auth fails:",
+                promptPasswordOnAuthFailure);
+        addHint(general, row++, "When ssh-agent and key authentication are rejected, prompt for a"
+                + " password instead of failing — if the server offers password auth.");
 
         // Appearance: the scale and font of the application chrome (sidebar, tabs, menus, dialogs).
         // All three are read by ThemeManager at startup only, hence the restart notice on OK.
@@ -236,6 +242,7 @@ public final class PreferencesDialog {
         settings.setMiddleClickPaste(middleClickPaste.isSelected());
         settings.setOpenTerminalOnStartup(openTerminalOnStartup.isSelected());
         settings.setAutoAcceptNewHostKeys(autoAcceptNewHostKeys.isSelected());
+        settings.setPromptPasswordOnAuthFailure(promptPasswordOnAuthFailure.isSelected());
         // Remember the pre-edit UI scale/font so we only nag about restarting when one changed.
         String previousUiAppearance = uiAppearanceKey(settings);
         settings.setUiScalePercent(percentValue(uiScale.getSelectedItem()));

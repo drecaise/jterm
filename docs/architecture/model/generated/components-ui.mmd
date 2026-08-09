@@ -32,14 +32,14 @@ graph TB
       style 18 fill:#26a69a,stroke:#1a746b,color:#ffffff
       25("<div style='font-weight: bold'>BroadcastingTtyConnector</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>Wraps each pane's real<br />connector; fans writes out<br />via BroadcastBus in broadcast<br />mode.</div>")
       style 25 fill:#26a69a,stroke:#1a746b,color:#ffffff
-      31("<div style='font-weight: bold'>SessionStore</div><div style='font-size: 70%; margin-top: 0px'>[Component: Jackson]</div><div style='font-size: 80%; margin-top:10px'>Loads and saves the<br />SshSessionConfig / FolderNode<br />tree from sessions.json.</div>")
-      style 31 fill:#8d6e63,stroke:#624d45,color:#ffffff
-      34("<div style='font-weight: bold'>Keymap</div><div style='font-size: 70%; margin-top: 0px'>[Component: Jackson]</div><div style='font-size: 80%; margin-top:10px'>Action-to-KeyStroke bindings<br />from keymap.json; defaults in<br />TermAction.</div>")
-      style 34 fill:#8d6e63,stroke:#624d45,color:#ffffff
-      35("<div style='font-weight: bold'>IconLibrary</div><div style='font-size: 70%; margin-top: 0px'>[Component: Jackson]</div><div style='font-size: 80%; margin-top:10px'>Bundled SVG icons plus user<br />imports persisted to<br />icons.json.</div>")
-      style 35 fill:#8d6e63,stroke:#624d45,color:#ffffff
-      37("<div style='font-weight: bold'>HighlightLibrary</div><div style='font-size: 70%; margin-top: 0px'>[Component: Jackson]</div><div style='font-size: 80%; margin-top:10px'>Keyword highlight lists from<br />highlights.json.</div>")
+      33("<div style='font-weight: bold'>SessionStore</div><div style='font-size: 70%; margin-top: 0px'>[Component: Jackson]</div><div style='font-size: 80%; margin-top:10px'>Loads and saves the<br />SshSessionConfig / FolderNode<br />tree from sessions.json.</div>")
+      style 33 fill:#8d6e63,stroke:#624d45,color:#ffffff
+      36("<div style='font-weight: bold'>Keymap</div><div style='font-size: 70%; margin-top: 0px'>[Component: Jackson]</div><div style='font-size: 80%; margin-top:10px'>Action-to-KeyStroke bindings<br />from keymap.json; defaults in<br />TermAction.</div>")
+      style 36 fill:#8d6e63,stroke:#624d45,color:#ffffff
+      37("<div style='font-weight: bold'>IconLibrary</div><div style='font-size: 70%; margin-top: 0px'>[Component: Jackson]</div><div style='font-size: 80%; margin-top:10px'>Bundled SVG icons plus user<br />imports persisted to<br />icons.json.</div>")
       style 37 fill:#8d6e63,stroke:#624d45,color:#ffffff
+      39("<div style='font-weight: bold'>HighlightLibrary</div><div style='font-size: 70%; margin-top: 0px'>[Component: Jackson]</div><div style='font-size: 80%; margin-top:10px'>Keyword highlight lists from<br />highlights.json.</div>")
+      style 39 fill:#8d6e63,stroke:#624d45,color:#ffffff
       9("<div style='font-weight: bold'>MainWindow</div><div style='font-size: 70%; margin-top: 0px'>[Component: Swing]</div><div style='font-size: 80%; margin-top:10px'>Top-level JFrame; installs<br />the global KeyEventDispatcher<br />for keymap shortcuts.</div>")
       style 9 fill:#42a5f5,stroke:#2e73ab,color:#ffffff
     end
@@ -47,16 +47,16 @@ graph TB
     9-. "<div style='padding:4px 8px'><div>Registers window and routes<br />shortcuts</div><div style='font-size: 70%'></div></div>" .->10
     9-. "<div style='padding:4px 8px'><div>Hosts tabs</div><div style='font-size: 70%'></div></div>" .->11
     9-. "<div style='padding:4px 8px'><div>Applies LaF and terminal<br />colors</div><div style='font-size: 70%'></div></div>" .->16
-    9-. "<div style='padding:4px 8px'><div>Reads shortcut bindings</div><div style='font-size: 70%'></div></div>" .->34
+    9-. "<div style='padding:4px 8px'><div>Reads shortcut bindings</div><div style='font-size: 70%'></div></div>" .->36
     11-. "<div style='padding:4px 8px'><div>One grid per tab</div><div style='font-size: 70%'></div></div>" .->12
     12-. "<div style='padding:4px 8px'><div>Owns each cell</div><div style='font-size: 70%'></div></div>" .->13
     12-. "<div style='padding:4px 8px'><div>Wraps every pane's connector</div><div style='font-size: 70%'></div></div>" .->25
     13-. "<div style='padding:4px 8px'><div>Reads title, profile,<br />TtyConnector</div><div style='font-size: 70%'></div></div>" .->18
     13-. "<div style='padding:4px 8px'><div>Drives JediTermWidget through<br />the wrapper</div><div style='font-size: 70%'></div></div>" .->25
-    13-. "<div style='padding:4px 8px'><div>Applies highlight rules to<br />output</div><div style='font-size: 70%'></div></div>" .->37
+    13-. "<div style='padding:4px 8px'><div>Applies highlight rules to<br />output</div><div style='font-size: 70%'></div></div>" .->39
     13-. "<div style='padding:4px 8px'><div>Reads ThemeColors</div><div style='font-size: 70%'></div></div>" .->16
-    14-. "<div style='padding:4px 8px'><div>Reads and edits the session<br />tree</div><div style='font-size: 70%'></div></div>" .->31
-    14-. "<div style='padding:4px 8px'><div>Renders session icons</div><div style='font-size: 70%'></div></div>" .->35
+    14-. "<div style='padding:4px 8px'><div>Reads and edits the session<br />tree</div><div style='font-size: 70%'></div></div>" .->33
+    14-. "<div style='padding:4px 8px'><div>Renders session icons</div><div style='font-size: 70%'></div></div>" .->37
     17-. "<div style='padding:4px 8px'><div>Calls split on drop</div><div style='font-size: 70%'></div></div>" .->12
     14-. "<div style='padding:4px 8px'><div>Drags a session onto a pane<br />drop target</div><div style='font-size: 70%'></div></div>" .->17
     25-. "<div style='padding:4px 8px'><div>Reads and writes the<br />underlying connector</div><div style='font-size: 70%'></div></div>" .->18

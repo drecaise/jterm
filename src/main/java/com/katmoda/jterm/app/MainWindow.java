@@ -150,8 +150,13 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         };
         CredentialResolver.Prompts prompts = new CredentialResolver.Prompts() {
             @Override
-            public char[] promptSessionPassword(String sessionName) {
-                return MasterPasswordDialog.promptSessionPassword(frame, sessionName);
+            public CredentialResolver.SessionPassword promptSessionPassword(String sessionName,
+                    String hostLabel, String error, boolean allowRemember) {
+                MasterPasswordDialog.SessionPasswordResult result =
+                        MasterPasswordDialog.promptSessionPassword(frame, sessionName, hostLabel,
+                                error, allowRemember);
+                return result == null ? null
+                        : new CredentialResolver.SessionPassword(result.password(), result.remember());
             }
 
             @Override
@@ -161,6 +166,12 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
                         MasterPasswordDialog.promptKeyPassphrase(frame, keyPath, error, allowRemember);
                 return result == null ? null
                         : new CredentialResolver.KeyPassphrase(result.passphrase(), result.remember());
+            }
+
+            @Override
+            public String[] promptChallenge(String hostLabel, String instruction, String[] prompts,
+                    boolean[] echo) {
+                return MasterPasswordDialog.promptChallenge(frame, hostLabel, instruction, prompts, echo);
             }
         };
         this.credentialResolver = new CredentialResolver(sessionStore, vaultAccess, prompts);
@@ -479,7 +490,8 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         String effectiveKeyPath = sessionStore.effectiveKeyPath(cfg);
         String label = (!effectiveUser.isBlank() ? effectiveUser + "@" : "") + cfg.getHost();
         SftpLauncher.openFresh(cfg.getHost(), cfg.getPort(), effectiveUser, password,
-                effectiveKeyPath, credentialResolver.keyPassphraseProvider(cfg, effectiveKeyPath), label, cfg.getIconId(),
+                effectiveKeyPath, credentialResolver.keyPassphraseProvider(cfg, effectiveKeyPath),
+                connectionService.interactiveAuth(cfg), cfg.getId(), label, cfg.getIconId(),
                 this::placeSftp,
                 cause -> ErrorDialog.show(frame, "SFTP", "SFTP connection failed:", cause));
     }
@@ -581,13 +593,14 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         String effectiveUser = sessionStore.effectiveUser(cfg);
         String effectiveKeyPath = sessionStore.effectiveKeyPath(cfg);
         SshConnect.PassphraseProvider passphrases = credentialResolver.keyPassphraseProvider(cfg, effectiveKeyPath);
+        SshConnect.InteractiveAuth interactive = connectionService.interactiveAuth(cfg);
         new SwingWorker<SshConnect.Connected, Void>() {
             @Override
             protected SshConnect.Connected doInBackground() throws Exception {
                 return SshConnect.open(jumpHosts,
                         new SshConnect.HostHop(cfg.getHost(), cfg.getPort(), effectiveUser,
-                                password, effectiveKeyPath),
-                        passphrases);
+                                password, effectiveKeyPath, cfg.getId()),
+                        passphrases, interactive);
             }
 
             @Override
