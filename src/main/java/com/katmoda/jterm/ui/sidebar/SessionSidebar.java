@@ -20,6 +20,7 @@
 package com.katmoda.jterm.ui.sidebar;
 
 import com.formdev.flatlaf.extras.FlatSVGIcon;
+import com.formdev.flatlaf.util.UIScale;
 import com.katmoda.jterm.dnd.FolderTransferable;
 import com.katmoda.jterm.dnd.LocalTransferable;
 import com.katmoda.jterm.dnd.SessionTransferable;
@@ -46,6 +47,7 @@ import com.katmoda.jterm.security.VaultManager;
 import com.katmoda.jterm.ui.ErrorDialog;
 import com.katmoda.jterm.ui.security.MasterPasswordDialog;
 import com.katmoda.jterm.ui.component.DialogFocus;
+import com.katmoda.jterm.ui.component.FooterFileChooser;
 import com.katmoda.jterm.ui.component.HighlightListCombo;
 import com.katmoda.jterm.ui.component.JumpHostsForm;
 import com.katmoda.jterm.ui.component.KeepAliveField;
@@ -85,6 +87,7 @@ import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
 import java.awt.BorderLayout;
+import java.awt.Dimension;
 import java.awt.GridLayout;
 import java.awt.Point;
 import java.awt.datatransfer.Transferable;
@@ -695,8 +698,11 @@ public final class SessionSidebar extends JPanel {
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle("Export Sessions");
         chooser.setSelectedFile(new File(safeFileName(folder.getName()) + ".json"));
-        chooser.setAccessory(includeCreds);
-        if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) {
+        // Not setAccessory: that would stand the checkbox beside the file list instead of under it
+        // (see FooterFileChooser), leaving the browser a fraction of the dialog width.
+        chooser.setPreferredSize(UIScale.scale(new Dimension(700, 460)));
+        if (FooterFileChooser.showSaveDialog(this, chooser, includeCreds)
+                != JFileChooser.APPROVE_OPTION) {
             return;
         }
 
