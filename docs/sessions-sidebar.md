@@ -6,6 +6,20 @@ for one-off hosts plus a **Local Terminal** button for quick local shells.
 
 ![The sessions sidebar](img/sidebar-tree.png)
 
+## Showing and hiding
+
+The sidebar can be closed to give the terminals the full window width. Three ways, all equivalent:
+
+- **View → Sessions Sidebar** — the check mark tracks the current state.
+- ++ctrl+shift+s++ — works even while a terminal has focus, and is rebindable under
+  [Keyboard shortcuts](shortcuts.md).
+- **Drag the divider** to the left edge of the window.
+
+jterm remembers whether the sidebar was open and how wide it was, so it comes back the way you
+left it on the next launch. While it is closed there is no divider to drag, so reopen it from the
+menu or with the shortcut — pressing ++ctrl+shift+q++ (Quick Connect) also reopens it and puts the
+caret in the field.
+
 ## Opening a session
 
 - **Double-click** a session to open it in the active pane (or a new tab if appropriate).

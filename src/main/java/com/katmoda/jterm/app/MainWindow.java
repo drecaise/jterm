@@ -57,12 +57,14 @@ import com.katmoda.jterm.ui.security.MasterPasswordDialog;
 import com.katmoda.jterm.ui.sidebar.FolderOpenMode;
 import com.katmoda.jterm.ui.sidebar.OpenMode;
 import com.katmoda.jterm.ui.sidebar.SessionSidebar;
+import com.katmoda.jterm.ui.sidebar.SidebarSplit;
 import com.katmoda.jterm.ui.tabs.TabPane;
 import com.katmoda.jterm.ui.theme.ThemeManager;
 import com.katmoda.jterm.ui.windowing.TerminalServices;
 import com.katmoda.jterm.ui.windowing.TerminalWindow;
 
 import javax.swing.Icon;
+import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JEditorPane;
 import javax.swing.JFrame;
 import javax.swing.JMenu;
@@ -71,7 +73,6 @@ import javax.swing.JMenuItem;
 import javax.swing.JDialog;
 import javax.swing.JOptionPane;
 import javax.swing.JScrollPane;
-import javax.swing.JSplitPane;
 import javax.swing.JTextArea;
 import javax.swing.KeyStroke;
 import javax.swing.SwingWorker;
@@ -124,7 +125,9 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
     /** While true, the global terminal-shortcut dispatcher stands down so the editor can capture keys. */
     private boolean shortcutCaptureActive = false;
     private SessionSidebar sidebar;
-    private JSplitPane split;
+    private SidebarSplit split;
+    /** The View menu's sidebar checkbox, kept so a shortcut/drag toggle can re-check it. */
+    private JCheckBoxMenuItem sidebarMenuItem;
     /** The window's most recent restored-down (non-maximized) bounds, tracked so a maximized exit
      *  still persists the monitor + size to reopen at when un-maximized. */
     private Rectangle lastNormalBounds;
@@ -183,9 +186,15 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
                 this::openLocalInCurrent, this::openWslSession, this::openSftpForConfig,
                 this::openFolderSessions);
 
-        split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, sidebar, tabPane);
-        split.setDividerLocation(AppSettings.get().getSidebarWidth());
-        split.setResizeWeight(0.0);
+        split = new SidebarSplit(sidebar, tabPane, AppSettings.get().getSidebarWidth(),
+                AppSettings.get().isSidebarVisible());
+        // Keep the View menu's checkmark honest when the sidebar is closed by a shortcut or by
+        // dragging the divider to the edge, not by the menu item itself.
+        split.onVisibilityChanged(visible -> {
+            if (sidebarMenuItem != null) {
+                sidebarMenuItem.setSelected(visible);
+            }
+        });
 
         frame.setJMenuBar(buildMenuBar());
         frame.setLayout(new BorderLayout());
@@ -298,8 +307,8 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
 
     /**
      * Persists the window's maximized state, restored-down bounds (so it reopens on the same
-     * monitor at the same size), and the sidebar (split divider) width. Called on close from both
-     * the window's X and the Quit menu item. The divider location is the sidebar's pixel width
+     * monitor at the same size), and the sidebar's open/closed state plus its width. Called on
+     * close from both the window's X and the Quit menu item. The divider location is the sidebar's pixel width
      * regardless of window size (a left-anchored horizontal split), so it's captured the same way
      * whether or not the window is maximized; the bounds come from the tracked restored-down
      * geometry so a maximized exit doesn't persist the maximized size.
@@ -309,7 +318,10 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         boolean maximized = (frame.getExtendedState() & JFrame.MAXIMIZED_BOTH) == JFrame.MAXIMIZED_BOTH;
         settings.setWindowMaximized(maximized);
         if (split != null) {
-            settings.setSidebarWidth(split.getDividerLocation());
+            // expandedWidth() rather than the divider location, so quitting with the sidebar
+            // closed still persists the width to reopen at.
+            settings.setSidebarWidth(split.expandedWidth());
+            settings.setSidebarVisible(split.isSidebarVisible());
         }
         Rectangle b = (lastNormalBounds != null) ? lastNormalBounds : frame.getBounds();
         settings.setWindowBounds(b.x, b.y, b.width, b.height);
@@ -416,14 +428,30 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
 
     /**
      * QUICK_CONNECT shortcut: put the caret in the sidebar's Quick Connect field. The sidebar lives
-     * only on the main window, so a shortcut pressed in a detached window raises this one first.
+     * only on the main window, so a shortcut pressed in a detached window raises this one first,
+     * and a closed sidebar is reopened — focusing a hidden field would silently swallow typing.
      */
     private void focusQuickConnect() {
         if (sidebar == null) {
             return;
         }
+        if (split != null) {
+            split.setSidebarVisible(true);
+        }
         frame.toFront();
         sidebar.focusQuickConnect();
+    }
+
+    /** TOGGLE_SIDEBAR shortcut / View menu: open or close the sessions sidebar. */
+    private void toggleSidebar() {
+        if (split != null) {
+            split.toggleSidebar();
+        }
+    }
+
+    /** True when the sidebar is on screen, so its selection-driven actions have something to act on. */
+    private boolean sidebarActive() {
+        return sidebar != null && split != null && split.isSidebarVisible();
     }
 
     private void openSshSession(SshSessionConfig cfg, OpenMode mode) {
@@ -783,23 +811,26 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
             case OPEN_SFTP -> openSftpForActivePane();
             case OPEN_TUNNELS -> openTunnelManager();
             case TOGGLE_THEME -> ThemeManager.get().toggle();
+            case TOGGLE_SIDEBAR -> toggleSidebar();
             case TOGGLE_BROADCAST -> {
                 if (grid != null) {
                     grid.toggleBroadcast();
                 }
             }
+            // Selection-driven sidebar actions: no-ops while the sidebar is closed, so they can't
+            // reorder or duplicate against a selection the user can't see.
             case MOVE_SESSION_UP -> {
-                if (sidebar != null) {
+                if (sidebarActive()) {
                     sidebar.moveSelectedUp();
                 }
             }
             case MOVE_SESSION_DOWN -> {
-                if (sidebar != null) {
+                if (sidebarActive()) {
                     sidebar.moveSelectedDown();
                 }
             }
             case DUPLICATE_SESSION -> {
-                if (sidebar != null) {
+                if (sidebarActive()) {
                     sidebar.duplicateSelected();
                 }
             }
@@ -885,6 +916,13 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         });
         file.add(quit);
 
+        JMenu view = new JMenu("View");
+        // Seeded from the live split rather than a remembered field: buildMenuBar() is re-run
+        // wholesale when the keymap or the macro list changes.
+        sidebarMenuItem = checkMenuItem("Sessions Sidebar", TermAction.TOGGLE_SIDEBAR,
+                split == null || split.isSidebarVisible());
+        view.add(sidebarMenuItem);
+
         JMenu terminal = new JMenu("Terminal");
         terminal.add(menuItem("Open Local Shell", TermAction.OPEN_LOCAL));
         terminal.add(menuItem("Split Column", TermAction.SPLIT_COLUMN));
@@ -925,6 +963,7 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         help.add(licenses);
 
         bar.add(file);
+        bar.add(view);
         bar.add(terminal);
         bar.add(ssh);
         bar.add(buildMacrosMenu());
@@ -1131,6 +1170,20 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         JMenuItem item = new JMenuItem(label);
         item.setAccelerator(keymap.strokeFor(action));
         item.setEnabled(true);
+        item.addActionListener(e -> handle(action));
+        return item;
+    }
+
+    /**
+     * Checkbox variant of {@link #menuItem} for actions that toggle a visible state. The check mark
+     * is driven by the model — {@code selected} seeds it and the owning state's change callback
+     * re-syncs it, so a toggle from the shortcut or the divider keeps the menu honest. Clicking the
+     * item flips its own state first, but the callback then sets it from the model, so the two
+     * always agree.
+     */
+    private JCheckBoxMenuItem checkMenuItem(String label, TermAction action, boolean selected) {
+        JCheckBoxMenuItem item = new JCheckBoxMenuItem(label, selected);
+        item.setAccelerator(keymap.strokeFor(action));
         item.addActionListener(e -> handle(action));
         return item;
     }

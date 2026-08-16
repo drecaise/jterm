@@ -24,6 +24,7 @@ focus. The menus show the same accelerators for discoverability.
 | Tunneling… | ++ctrl+shift+p++ |
 | Toggle broadcast input | ++ctrl+shift+b++ |
 | Toggle light/dark theme | ++ctrl+shift+l++ |
+| Toggle the sessions sidebar | ++ctrl+shift+s++ |
 | Duplicate session | ++ctrl+shift+d++ |
 | Move session up / down | ++ctrl+shift+up++ / ++ctrl+shift+down++ |
 | Increase pane font size | ++ctrl+num-plus++ |

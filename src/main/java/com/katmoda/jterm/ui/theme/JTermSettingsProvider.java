@@ -167,6 +167,16 @@ public final class JTermSettingsProvider extends DefaultSettingsProvider {
         return AppSettings.get().isMiddleClickPaste();
     }
 
+    /**
+     * Caret blink period in ms; {@code 0} disables blinking (JediTerm renders a steady caret).
+     * Driven by the {@code blinkCursor} preference and read live on every repaint tick, so
+     * toggling takes effect on already-open terminals with no pane rebuild.
+     */
+    @Override
+    public int caretBlinkingMs() {
+        return AppSettings.get().isBlinkCursor() ? 505 : 0;
+    }
+
     @Override
     public ColorPalette getTerminalColorPalette() {
         return palette;

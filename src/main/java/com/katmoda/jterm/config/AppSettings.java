@@ -64,6 +64,12 @@ public final class AppSettings {
     // targets the regular clipboard.
     private boolean middleClickPaste = false;
 
+    // Whether the terminal caret blinks. Read live by the terminal settings provider
+    // (JediTerm's caretBlinkingMs()), so toggling takes effect on already-open terminals without
+    // recreating panes. Defaults on, matching JediTerm's own default (and prior jterm behavior,
+    // which never overrode it).
+    private boolean blinkCursor = true;
+
     // Terminal scrollback size in lines, read by the settings provider when each new widget's
     // buffer is built (so it applies to newly opened terminals). Clamped to
     // [MIN_SCROLLBACK_LINES, MAX_SCROLLBACK_LINES]. Defaults to 10000; a settings file predating
@@ -89,9 +95,12 @@ public final class AppSettings {
     private boolean darkTheme = true;
 
     // Window state restored on launch. Whether the frame was maximized, and the sidebar (split
-    // divider) width in pixels. Defaults match the original hard-coded values.
+    // divider) width in pixels. Defaults match the original hard-coded values. sidebarVisible is
+    // the sessions sidebar's open/closed state; the width is the one to reopen at, so it stays
+    // meaningful while the sidebar is closed. Defaults to open, so existing installs are unaffected.
     private boolean windowMaximized = false;
     private int sidebarWidth = 240;
+    private boolean sidebarVisible = true;
 
     // The window's restored-down (non-maximized) bounds, so it reopens on the same monitor at the
     // same size. Location defaults to Integer.MIN_VALUE ("unset" → center on the primary screen);
@@ -176,6 +185,14 @@ public final class AppSettings {
         this.middleClickPaste = middleClickPaste;
     }
 
+    public boolean isBlinkCursor() {
+        return blinkCursor;
+    }
+
+    public void setBlinkCursor(boolean blinkCursor) {
+        this.blinkCursor = blinkCursor;
+    }
+
     /**
      * Whether an unknown host's key is trusted automatically (no first-use prompt). Read live by
      * the SSH host-key verifier. A <em>changed</em> host key always prompts regardless of this.
@@ -236,6 +253,15 @@ public final class AppSettings {
         if (sidebarWidth > 0) {
             this.sidebarWidth = sidebarWidth;
         }
+    }
+
+    /** Whether the sessions sidebar is open, restored on launch. */
+    public boolean isSidebarVisible() {
+        return sidebarVisible;
+    }
+
+    public void setSidebarVisible(boolean sidebarVisible) {
+        this.sidebarVisible = sidebarVisible;
     }
 
     public int getWindowX() {
@@ -429,7 +455,8 @@ public final class AppSettings {
                 windowX, windowY, windowWidth, windowHeight,
                 defaultUsername, defaultTabColorHex, openTerminalOnStartup,
                 defaultKeyPath, autoAcceptNewHostKeys, scrollbackLines, middleClickPaste,
-                uiScalePercent, uiFontFamily, uiFontSize, promptPasswordOnAuthFailure));
+                uiScalePercent, uiFontFamily, uiFontSize, promptPasswordOnAuthFailure,
+                sidebarVisible, blinkCursor, defaultKeepAliveSeconds));
     }
 
     private static AppSettings load() {
@@ -468,6 +495,9 @@ public final class AppSettings {
             if (p.defaultKeyPath != null) {
                 settings.defaultKeyPath = p.defaultKeyPath.trim();
             }
+            if (p.defaultKeepAliveSeconds != null) {
+                settings.setDefaultKeepAliveSeconds(p.defaultKeepAliveSeconds);
+            }
             if (p.darkTheme != null) {
                 settings.darkTheme = p.darkTheme;
             }
@@ -476,6 +506,9 @@ public final class AppSettings {
             }
             if (p.sidebarWidth != null && p.sidebarWidth > 0) {
                 settings.sidebarWidth = p.sidebarWidth;
+            }
+            if (p.sidebarVisible != null) {
+                settings.sidebarVisible = p.sidebarVisible;
             }
             if (p.windowX != null) {
                 settings.windowX = p.windowX;
@@ -494,6 +527,9 @@ public final class AppSettings {
             }
             if (p.middleClickPaste != null) {
                 settings.middleClickPaste = p.middleClickPaste;
+            }
+            if (p.blinkCursor != null) {
+                settings.blinkCursor = p.blinkCursor;
             }
             if (p.uiScalePercent != null) {
                 settings.setUiScalePercent(p.uiScalePercent);
@@ -524,6 +560,7 @@ public final class AppSettings {
                              Boolean autoAcceptNewHostKeys, Integer scrollbackLines,
                              Boolean middleClickPaste, Integer uiScalePercent,
                              String uiFontFamily, Integer uiFontSize,
-                             Boolean promptPasswordOnAuthFailure) {
+                             Boolean promptPasswordOnAuthFailure, Boolean sidebarVisible,
+                             Boolean blinkCursor, Integer defaultKeepAliveSeconds) {
     }
 }

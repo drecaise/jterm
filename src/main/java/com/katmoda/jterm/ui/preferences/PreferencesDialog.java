@@ -86,6 +86,7 @@ public final class PreferencesDialog {
         ToggleSwitch copyOnSelect = new ToggleSwitch(settings.isCopyOnSelect());
         ToggleSwitch pasteOnRightClick = new ToggleSwitch(settings.isPasteOnRightClick());
         ToggleSwitch middleClickPaste = new ToggleSwitch(settings.isMiddleClickPaste());
+        ToggleSwitch blinkCursor = new ToggleSwitch(settings.isBlinkCursor());
         ToggleSwitch openTerminalOnStartup = new ToggleSwitch(settings.isOpenTerminalOnStartup());
         ToggleSwitch autoAcceptNewHostKeys = new ToggleSwitch(settings.isAutoAcceptNewHostKeys());
         ToggleSwitch promptPasswordOnAuthFailure =
@@ -98,6 +99,7 @@ public final class PreferencesDialog {
         addToggleRow(general, row++, "Middle-click paste (primary selection):", middleClickPaste);
         addHint(general, row++, "Linux style: selecting text copies it to the primary selection;"
                 + " middle-click pastes it.");
+        addToggleRow(general, row++, "Blink cursor:", blinkCursor);
         addToggleRow(general, row++, "Open a terminal on startup:", openTerminalOnStartup);
         addHint(general, row++, "With this off, jterm starts with no open tabs.");
         addToggleRow(general, row++, "Auto-accept new host keys:", autoAcceptNewHostKeys);
@@ -240,6 +242,7 @@ public final class PreferencesDialog {
         settings.setCopyOnSelect(copyOnSelect.isSelected());
         settings.setPasteOnRightClick(pasteOnRightClick.isSelected());
         settings.setMiddleClickPaste(middleClickPaste.isSelected());
+        settings.setBlinkCursor(blinkCursor.isSelected());
         settings.setOpenTerminalOnStartup(openTerminalOnStartup.isSelected());
         settings.setAutoAcceptNewHostKeys(autoAcceptNewHostKeys.isSelected());
         settings.setPromptPasswordOnAuthFailure(promptPasswordOnAuthFailure.isSelected());

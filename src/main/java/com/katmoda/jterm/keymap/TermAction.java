@@ -36,6 +36,7 @@ public enum TermAction {
     OPEN_TUNNELS("open-tunnels", "Tunneling…", "control shift P"),
     TOGGLE_BROADCAST("toggle-broadcast", "Toggle Broadcast", "control shift B"),
     TOGGLE_THEME("toggle-theme", "Toggle Light/Dark", "control shift L"),
+    TOGGLE_SIDEBAR("toggle-sidebar", "Toggle Sessions Sidebar", "control shift S"),
     DUPLICATE_SESSION("duplicate-session", "Duplicate Session", "control shift D"),
     DUPLICATE_PANE_SPLIT("duplicate-pane-split", "Duplicate Pane to Split", "control alt D"),
     DUPLICATE_PANE_TAB("duplicate-pane-tab", "Duplicate Pane to Tab", "control alt shift D"),
