@@ -916,13 +916,6 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         });
         file.add(quit);
 
-        JMenu view = new JMenu("View");
-        // Seeded from the live split rather than a remembered field: buildMenuBar() is re-run
-        // wholesale when the keymap or the macro list changes.
-        sidebarMenuItem = checkMenuItem("Sessions Sidebar", TermAction.TOGGLE_SIDEBAR,
-                split == null || split.isSidebarVisible());
-        view.add(sidebarMenuItem);
-
         JMenu terminal = new JMenu("Terminal");
         terminal.add(menuItem("Open Local Shell", TermAction.OPEN_LOCAL));
         terminal.add(menuItem("Split Column", TermAction.SPLIT_COLUMN));
@@ -940,15 +933,22 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         agentKeys.addActionListener(e -> showAgentKeys());
         ssh.add(agentKeys);
 
-        JMenu preferences = new JMenu("Preferences");
-        preferences.add(menuItem("Toggle Light/Dark", TermAction.TOGGLE_THEME));
-        preferences.addSeparator();
+        JMenu settings = new JMenu("Settings");
+        settings.add(menuItem("Toggle Light/Dark", TermAction.TOGGLE_THEME));
+        settings.addSeparator();
         JMenuItem shortcuts = new JMenuItem("Keyboard Shortcuts…");
         shortcuts.addActionListener(e -> openShortcutsEditor());
-        preferences.add(shortcuts);
+        settings.add(shortcuts);
         JMenuItem prefsDialog = new JMenuItem("Preferences…");
         prefsDialog.addActionListener(e -> PreferencesDialog.show(frame));
-        preferences.add(prefsDialog);
+        settings.add(prefsDialog);
+
+        JMenu view = new JMenu("View");
+        // Seeded from the live split rather than a remembered field: buildMenuBar() is re-run
+        // wholesale when the keymap or the macro list changes.
+        sidebarMenuItem = checkMenuItem("Sessions Sidebar", TermAction.TOGGLE_SIDEBAR,
+                split == null || split.isSidebarVisible());
+        view.add(sidebarMenuItem);
 
         JMenu help = new JMenu("Help");
         JMenuItem manual = new JMenuItem("User Manual…");
@@ -963,11 +963,11 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         help.add(licenses);
 
         bar.add(file);
-        bar.add(view);
         bar.add(terminal);
         bar.add(ssh);
         bar.add(buildMacrosMenu());
-        bar.add(preferences);
+        bar.add(settings);
+        bar.add(view);
         bar.add(help);
         return bar;
     }

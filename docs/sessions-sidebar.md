@@ -42,7 +42,7 @@ press ++enter++ — jterm opens the connection in a **new tab**.
 The user name and port are optional:
 
 - leaving the **user** off uses your global default username
-  (**Preferences → Session Defaults**, which itself defaults to your OS user name);
+  (**Settings → Session Defaults**, which itself defaults to your OS user name);
 - leaving the **port** off uses **22**.
 
 So `db01.example.com`, `root@db01.example.com` and `root@db01.example.com:2222` are all valid.

@@ -43,7 +43,7 @@ never stored.
     `PasswordAuthentication no`, there is nothing to prompt for and the connect fails as before —
     you won't be asked for a password that could never work.
 
-To turn the fallback off entirely, clear **Preferences → General → Ask for a password if key auth
+To turn the fallback off entirely, clear **Settings → General → Ask for a password if key auth
 fails**. Connects then fail immediately when key auth is rejected.
 
 ### Two-factor and other challenges
@@ -92,7 +92,7 @@ You can also save a password without opening the session dialog at all: tick **R
 password** on the connect-time prompt described [above](#if-key-authentication-fails).
 
 You can also set **default** passwords/passphrases at the folder or global level — see
-[Preferences → Session Defaults](preferences.md).
+[Settings → Session Defaults](settings.md).
 
 ### OS keyring (remembering the master password)
 
@@ -120,5 +120,5 @@ jterm checks host keys against `~/.ssh/known_hosts` using **trust-on-first-use (
 
 ![Host key confirmation prompt](img/host-key-prompt.png)
 
-To trust first-seen hosts without prompting, enable **Preferences → General → Auto-accept new
+To trust first-seen hosts without prompting, enable **Settings → General → Auto-accept new
 host keys**. You're still warned about *changed* keys.

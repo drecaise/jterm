@@ -28,7 +28,7 @@ If you prefer to build from source, see the [README](https://github.com/drecaise
 
 When jterm starts it opens a window with:
 
-- a **menu bar** — *File, Terminal, SSH, Macros, Preferences, Help*;
+- a **menu bar** — *File, Terminal, SSH, Macros, Settings, View, Help*;
 - a **sessions sidebar** on the left — your saved SSH sessions and folders, plus an
   **Open Local Terminal** entry;
 - a **tab strip** with a **+** button to add tabs; and
@@ -37,7 +37,7 @@ When jterm starts it opens a window with:
 ![The jterm main window](img/main-window.png)
 
 By default jterm opens a local shell on startup. You can turn that off in
-**Preferences → General → Open a terminal on startup** (see [Preferences](preferences.md)).
+**Settings → General → Open a terminal on startup** (see [Settings](settings.md)).
 
 ## Opening your first terminal
 

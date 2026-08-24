@@ -63,7 +63,8 @@ import java.awt.Insets;
  *       launch and the dialog says so on OK.</li>
  *   <li><b>Terminal Settings</b> — the default terminal type, font, font size and charset applied
  *       to the local terminal and to any saved session that leaves a field unset. These take effect
- *       for newly opened panes/tabs (running JediTerm widgets bake in their font at creation).</li>
+ *       for newly opened panes/tabs (running JediTerm widgets bake in their font at creation). The
+ *       caret-blink toggle sits here too, but is read live, so it does affect open terminals.</li>
  * </ul>
  * All choices are persisted in {@link AppSettings}.
  */
@@ -86,7 +87,6 @@ public final class PreferencesDialog {
         ToggleSwitch copyOnSelect = new ToggleSwitch(settings.isCopyOnSelect());
         ToggleSwitch pasteOnRightClick = new ToggleSwitch(settings.isPasteOnRightClick());
         ToggleSwitch middleClickPaste = new ToggleSwitch(settings.isMiddleClickPaste());
-        ToggleSwitch blinkCursor = new ToggleSwitch(settings.isBlinkCursor());
         ToggleSwitch openTerminalOnStartup = new ToggleSwitch(settings.isOpenTerminalOnStartup());
         ToggleSwitch autoAcceptNewHostKeys = new ToggleSwitch(settings.isAutoAcceptNewHostKeys());
         ToggleSwitch promptPasswordOnAuthFailure =
@@ -99,7 +99,6 @@ public final class PreferencesDialog {
         addToggleRow(general, row++, "Middle-click paste (primary selection):", middleClickPaste);
         addHint(general, row++, "Linux style: selecting text copies it to the primary selection;"
                 + " middle-click pastes it.");
-        addToggleRow(general, row++, "Blink cursor:", blinkCursor);
         addToggleRow(general, row++, "Open a terminal on startup:", openTerminalOnStartup);
         addHint(general, row++, "With this off, jterm starts with no open tabs.");
         addToggleRow(general, row++, "Auto-accept new host keys:", autoAcceptNewHostKeys);
@@ -143,24 +142,44 @@ public final class PreferencesDialog {
         JSpinner scrollback = new JSpinner(new SpinnerNumberModel(
                 settings.getScrollbackLines(),
                 AppSettings.MIN_SCROLLBACK_LINES, AppSettings.MAX_SCROLLBACK_LINES, 500));
+        ToggleSwitch blinkCursor = new ToggleSwitch(settings.isBlinkCursor());
         // Same two-equal-column grid as TerminalSettingsForm so the label and field line up with
         // the Type/Font/Size/Charset rows above it.
         JPanel scrollbackRow = new JPanel(new GridLayout(0, 2, 6, 6));
         scrollbackRow.add(new JLabel("Scrollback lines:"));
         scrollbackRow.add(scrollback);
-        // Stack the form and the scrollback row at the top without stretching either vertically.
+        JPanel blinkRow = new JPanel(new GridLayout(0, 2, 6, 6));
+        blinkRow.add(new JLabel("Blink cursor:"));
+        // The switch paints a fixed-size icon, so left-align it in its own panel rather than
+        // letting the grid cell stretch its click target across half the tab.
+        JPanel blinkSwitch = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        blinkSwitch.add(blinkCursor);
+        blinkRow.add(blinkSwitch);
+        // Unlike the defaults above it, this one is read live by JTermSettingsProvider on every
+        // repaint tick, so it needs its own hint contradicting the "newly opened" one below.
+        JLabel blinkHint = hint("Takes effect immediately, including in terminals that are"
+                + " already open.");
+        // Stack the form and the extra rows at the top without stretching them vertically.
         JPanel terminalTop = new JPanel();
         terminalTop.setLayout(new BoxLayout(terminalTop, BoxLayout.PAGE_AXIS));
         terminalDefaults.component().setAlignmentX(Component.LEFT_ALIGNMENT);
         scrollbackRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        blinkRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        blinkHint.setAlignmentX(Component.LEFT_ALIGNMENT);
         terminalTop.add(terminalDefaults.component());
         terminalTop.add(Box.createVerticalStrut(6));
         terminalTop.add(scrollbackRow);
+        terminalTop.add(Box.createVerticalStrut(6));
+        terminalTop.add(blinkRow);
+        terminalTop.add(blinkHint);
         JPanel terminal = new JPanel(new BorderLayout(0, 6));
         terminal.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
         terminal.add(terminalTop, BorderLayout.NORTH);
-        JLabel defaultsHint = hint("Defaults for the local terminal and saved sessions that don't"
-                + " override them. Applies to newly opened terminals.");
+        // Scoped to the fields above the blink row on purpose — that one is read live, and its own
+        // hint sits directly above this one.
+        JLabel defaultsHint = hint("Type, font, size, charset and scrollback are defaults for the"
+                + " local terminal and saved sessions that don't override them, and apply to newly"
+                + " opened terminals.");
         terminal.add(defaultsHint, BorderLayout.SOUTH);
 
         // Highlighting: a global-default selector above the named-list editor.
@@ -242,7 +261,6 @@ public final class PreferencesDialog {
         settings.setCopyOnSelect(copyOnSelect.isSelected());
         settings.setPasteOnRightClick(pasteOnRightClick.isSelected());
         settings.setMiddleClickPaste(middleClickPaste.isSelected());
-        settings.setBlinkCursor(blinkCursor.isSelected());
         settings.setOpenTerminalOnStartup(openTerminalOnStartup.isSelected());
         settings.setAutoAcceptNewHostKeys(autoAcceptNewHostKeys.isSelected());
         settings.setPromptPasswordOnAuthFailure(promptPasswordOnAuthFailure.isSelected());
@@ -257,6 +275,7 @@ public final class PreferencesDialog {
         settings.setDefaultFontFamily(terminalDefaults.fontFamily());
         settings.setDefaultFontSize(terminalDefaults.fontSize());
         settings.setScrollbackLines((Integer) scrollback.getValue());
+        settings.setBlinkCursor(blinkCursor.isSelected());
         highlightForm.commit();
         settings.setGlobalHighlightListId(HighlightListCombo.selectedId(highlightDefault));
         settings.setDefaultUsername(defaultUser.getText());

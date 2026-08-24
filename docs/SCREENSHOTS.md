@@ -40,10 +40,10 @@ window size (~1200×800) so text stays legible.
 | `macro-manager.png` | The Manage Macros… dialog listing macros | `macros.md` |
 | `macro-edit.png` | The macro edit dialog showing Name, Hotkey, and steps | `macros.md` |
 | `shortcuts-dialog.png` | The Keyboard Shortcuts editor | `shortcuts.md` |
-| `preferences-general.png` | Preferences dialog, **General** tab | `preferences.md` |
-| `preferences-appearance.png` | Preferences dialog, **Appearance** tab (UI scale, UI font, font-size override) | `preferences.md` |
-| `preferences-session-defaults.png` | Preferences dialog, **Session Defaults** tab | `preferences.md` |
-| `preferences-terminal.png` | Preferences dialog, **Terminal Settings** tab | `preferences.md` |
-| `preferences-highlighting.png` | Preferences dialog, **Highlighting** tab (a list with several rules and colours) | `preferences.md` |
-| `preferences-colors.png` | Preferences dialog, **Colors** tab (Dark scheme, ANSI grid visible) | `preferences.md` |
+| `settings-general.png` | Preferences dialog, **General** tab | `settings.md` |
+| `settings-appearance.png` | Preferences dialog, **Appearance** tab (UI scale, UI font, font-size override) | `settings.md` |
+| `settings-session-defaults.png` | Preferences dialog, **Session Defaults** tab | `settings.md` |
+| `settings-terminal.png` | Preferences dialog, **Terminal Settings** tab | `settings.md` |
+| `settings-highlighting.png` | Preferences dialog, **Highlighting** tab (a list with several rules and colours) | `settings.md` |
+| `settings-colors.png` | Preferences dialog, **Colors** tab (Dark scheme, ANSI grid visible) | `settings.md` |
 | `session-stopped-screen.png` | A pane showing the "session stopped" reconnect/restart screen | `reconnect-and-output.md` |

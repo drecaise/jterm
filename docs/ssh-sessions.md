@@ -24,12 +24,12 @@ The session dialog has three tabs.
 | **Tab color** | A custom colour for this session's tab; *Clear* reverts to the inherited colour. |
 
 Blank fields **inherit** from the containing folder, then the global
-[Session Defaults](preferences.md), then jterm's built-in defaults.
+[Session Defaults](settings.md), then jterm's built-in defaults.
 
 ## Terminal Settings
 
 Per-session overrides for how the terminal behaves. Any field left blank inherits the
-application defaults from **Preferences → Terminal Settings**:
+application defaults from **Settings → Terminal Settings**:
 
 - **Terminal type** (e.g. `xterm-256color`)
 - **Character encoding** (default UTF-8)
@@ -49,7 +49,7 @@ connect time (prompting or using the vault as needed).
 Keep-alive stops idle SSH connections from being closed by the server or an intervening
 firewall/NAT. It can be configured at three levels, each inheriting from the one above:
 
-1. **Global default** — Preferences → Session Defaults → *Keep connection alive* + interval.
+1. **Global default** — Settings → Session Defaults → *Keep connection alive* + interval.
 2. **Per-folder** — set on a folder to cover everything beneath it.
 3. **Per-session** — the *Keep connection alive* field in the session dialog.
 

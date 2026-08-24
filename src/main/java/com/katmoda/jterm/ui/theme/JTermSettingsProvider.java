@@ -138,7 +138,7 @@ public final class JTermSettingsProvider extends DefaultSettingsProvider {
     }
 
     /**
-     * Scrollback size, in lines. User-configurable via Preferences → Terminal, stored on
+     * Scrollback size, in lines. User-configurable via Settings → Terminal Settings, stored on
      * {@link AppSettings} (default 10000, clamped to
      * [{@value AppSettings#MIN_SCROLLBACK_LINES}, {@value AppSettings#MAX_SCROLLBACK_LINES}]).
      * JediTerm calls this once when it builds each new widget's buffer, so a changed value takes

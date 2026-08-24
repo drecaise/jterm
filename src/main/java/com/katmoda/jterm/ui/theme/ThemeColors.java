@@ -44,11 +44,11 @@ public record ThemeColors(
         Color[] ansi
 ) {
 
-    /** Dark preset (xterm-like on a near-black background). */
+    /** Dark preset (xterm-like on a pure-black background). */
     public static final ThemeColors DARK = new ThemeColors(
             true,
             new Color(0xD0D0D0),
-            new Color(0x1E1E1E),
+            new Color(0x000000),
             new Color(0xFFFFFF),
             new Color(0x264F78),
             new Color[]{

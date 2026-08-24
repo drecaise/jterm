@@ -54,7 +54,7 @@ final class SessionMigrations {
      * v0 → v1: terminal font size gained an "inherit the application default" state ({@code 0}).
      * Before that the session dialog's spinner could only write a concrete number, so every saved
      * session came out pinned to {@value #LEGACY_FORCED_FONT_SIZE} whether the user chose it or not
-     * — and then ignored Preferences → Terminal Settings → Font Size forever after.
+     * — and then ignored Settings → Terminal Settings → Font Size forever after.
      *
      * <p>Only that exact value is cleared: any other size can only have come from someone typing it,
      * so it stays. A size of {@value #LEGACY_FORCED_FONT_SIZE} chosen deliberately *after* this

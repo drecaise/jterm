@@ -1,12 +1,12 @@
-# Preferences
+# Settings
 
-Open **Preferences → Preferences…** for the main settings dialog. It has six tabs. (The theme
-toggle and the keyboard-shortcut editor live in the **Preferences** menu too — see
+Open **Settings → Preferences…** for the main settings dialog. It has six tabs. (The theme
+toggle and the keyboard-shortcut editor live in the **Settings** menu too — see
 [Keyboard shortcuts](shortcuts.md).)
 
 ## General
 
-![Preferences — General](img/preferences-general.png)
+![Settings — General](img/settings-general.png)
 
 | Setting | Effect |
 |---------|--------|
@@ -33,7 +33,7 @@ toggle and the keyboard-shortcut editor live in the **Preferences** menu too —
 
 ## Appearance
 
-![Preferences — Appearance](img/preferences-appearance.png)
+![Settings — Appearance](img/settings-appearance.png)
 
 How large the **application chrome** is drawn — the sessions sidebar, tab strip, menus and
 dialogs. This is the tab to reach for when jterm's own text is too small to read comfortably on
@@ -61,7 +61,7 @@ typeface or a size the preset percentages don't land on.
 
 ## Session Defaults
 
-![Preferences — Session Defaults](img/preferences-session-defaults.png)
+![Settings — Session Defaults](img/settings-session-defaults.png)
 
 Defaults inherited by folders and sessions that don't set their own (folders and individual
 sessions can still override them):
@@ -77,7 +77,7 @@ Changes apply to **newly opened** sessions.
 
 ## Terminal Settings
 
-![Preferences — Terminal Settings](img/preferences-terminal.png)
+![Settings — Terminal Settings](img/settings-terminal.png)
 
 The application-wide terminal defaults used by the local shell and by sessions that don't
 override them:
@@ -89,9 +89,22 @@ override them:
 These apply to **newly opened** terminals. Individual sessions can override them on their own
 [Terminal Settings tab](ssh-sessions.md#terminal-settings).
 
+Two more settings share the tab but are **global only** — sessions cannot override them:
+
+**Scrollback lines** is how much history each terminal keeps — the number of lines that scroll off
+the top and remain reachable by scrolling back. The default is **10,000**, and the value is clamped
+to between **100** and **100,000**. JediTerm sizes a terminal's buffer once, when the pane is
+created, so a change here applies to **newly opened** terminals; existing panes keep the size they
+started with. A larger buffer retains more history at the cost of more churn as fast output pushes
+lines through it.
+
+**Blink cursor** controls whether the text caret blinks. Unlike everything else on this tab it is
+read live, so turning it off stops the caret blinking in terminals that are *already* open, without
+a restart or a new pane.
+
 ## Highlighting
 
-![Preferences — Highlighting](img/preferences-highlighting.png)
+![Settings — Highlighting](img/settings-highlighting.png)
 
 Define named **highlight lists** — rules that colour matching text as it appears in new output
 (for example, flagging `ERROR` red or `WARN` yellow). Pick the **active list (global default)**
@@ -100,7 +113,7 @@ at the top; individual sessions can override which list they use. Highlighting a
 
 ## Colors
 
-![Preferences — Colors](img/preferences-colors.png)
+![Settings — Colors](img/settings-colors.png)
 
 Retune the terminal **palette** — what colours the terminal actually draws with. Each theme has
 its own palette; pick which one you're editing with the **Scheme** selector (**Dark** / **Light**),
@@ -124,7 +137,7 @@ stopped* overlay keeps its old colours until a new pane opens in its place.)
 
 ## Theme
 
-Switch between **light** and **dark** with **Preferences → Toggle Light/Dark** (++ctrl+shift+l++).
+Switch between **light** and **dark** with **Settings → Toggle Light/Dark** (++ctrl+shift+l++).
 On startup jterm follows your operating system's light/dark preference.
 
 !!! note "Live recolour"

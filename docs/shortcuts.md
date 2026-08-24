@@ -39,12 +39,12 @@ focus. The menus show the same accelerators for discoverability.
 
 !!! note "macOS"
     On macOS, ++ctrl++ in the table corresponds to the platform's primary modifier as bound in
-    the keymap. Check **Preferences → Keyboard Shortcuts…** for the exact bindings on your
+    the keymap. Check **Settings → Keyboard Shortcuts…** for the exact bindings on your
     system.
 
 ## Customising shortcuts
 
-Open **Preferences → Keyboard Shortcuts…** to rebind any action.
+Open **Settings → Keyboard Shortcuts…** to rebind any action.
 
 ![Keyboard Shortcuts editor](img/shortcuts-dialog.png)
 

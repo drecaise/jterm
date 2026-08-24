@@ -148,7 +148,7 @@ reads colors *through* `ThemeColors`, so full configurability can be added later
 touching panes. Live terminal recolor on toggle is **not** implemented (JediTerm bakes default
 fg/bg into each widget at creation); chrome recolors via FlatLaf `updateUI`.
 
-`ThemeManager` also owns the **application UI scale/font** (Preferences → Appearance;
+`ThemeManager` also owns the **application UI scale/font** (Settings → Appearance;
 `AppSettings.uiScalePercent` / `uiFontFamily` / `uiFontSize`) — the chrome only, never the
 terminal panes. It drives FlatLaf's `UIScale.setZoomFactor`, which scales fonts *and* the metrics
 FlatLaf derives through `UIScale`. Applied in `applyLaf()` (not just `install()`) so it survives a
@@ -185,7 +185,7 @@ has a stable `id` (UUID) used as the vault key.
 changed** — that stamp is the only thing making a migration one-shot, so a value the user later
 chooses that happens to match what a migration rewrites is safe. v1 exists because per-session
 terminal font size gained an "inherit" state (`0`) that the old spinner-based editor could never
-produce, leaving every saved session pinned to its seed value of 14 and deaf to Preferences →
+produce, leaving every saved session pinned to its seed value of 14 and deaf to Settings →
 Terminal Settings → Font Size; the migration clears exactly 14 and nothing else.
 
 Per-session terminal settings inherit **only** session → global, resolved by
@@ -220,7 +220,7 @@ Auth order is publickey (agent → on-disk keys) then password — MINA tries th
   only runs a method the server *offers*, a key-only server never produces a prompt — the check
   is free. `security.CredentialResolver.interactiveAuth(cfg)` implements the
   `SshConnect.InteractiveAuth` SPI with Swing prompts; `AppSettings.promptPasswordOnAuthFailure`
-  (Preferences → General, default on) gates it, read at the *call sites*
+  (Settings → General, default on) gates it, read at the *call sites*
   (`ConnectionService.interactiveAuth`) so the resolver stays headless-testable.
   Three sharp edges, all commented in place: MINA's `PASSWORD_PROMPTS` cap is *per method*, so
   `JtermUserInteraction` imposes its own 3-per-hop total; the 30 s `AUTH_TIMEOUT` would kill a

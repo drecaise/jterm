@@ -7,7 +7,8 @@ time** — ideal for running the same command across many hosts in parallel.
 
 ## Turning it on
 
-Toggle broadcast with **Preferences → Toggle Broadcast** or ++ctrl+shift+b++.
+Toggle broadcast with ++ctrl+shift+b++ (there is no menu item; rebind it under
+**Settings → Keyboard Shortcuts…**).
 
 While broadcast is on, what you type in the focused pane is mirrored to the other participating
 panes in the same tab.

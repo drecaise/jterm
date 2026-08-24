@@ -124,7 +124,7 @@ public final class SessionSidebar extends JPanel {
     private static final String QUICK_CONNECT_HINT =
             "<html>Connect to a host without saving a session.<br>"
             + "The user name and port are optional — they default to the global user name "
-            + "(Preferences ▸ Session defaults) and port 22.</html>";
+            + "(Settings ▸ Session defaults) and port 22.</html>";
 
     private final SessionStore store;
     private final JTree tree;

@@ -56,7 +56,7 @@ public final class SshSessionConfig implements SessionNode {
     private String keyPath = "";
 
     // Terminal settings. Empty/zero means "use the application default" (configured in
-    // Preferences ▸ Terminal Settings); new sessions inherit all of them by default.
+    // Settings ▸ Terminal Settings); new sessions inherit all of them by default.
     private String terminalType = "";
     private String terminalCharset = "";
     private String fontFamily = "";

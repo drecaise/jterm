@@ -89,7 +89,7 @@ nav:
   - Broadcast input: broadcast.md
   - Macros: macros.md
   - Keyboard shortcuts: shortcuts.md
-  - Preferences: preferences.md
+  - Settings: settings.md
   - Reconnect & save output: reconnect-and-output.md
   - Configuration files: config-files.md
   - Architecture:

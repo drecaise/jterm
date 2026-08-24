@@ -34,7 +34,7 @@ Decision Records.
   transparently remembered in the OS keyring.
 - **Host-key checking** via `~/.ssh/known_hosts` (trust-on-first-use, warns on changes).
 - **Light/dark** themes.
-- **UI scaling** (Preferences → Appearance) — scale the sidebar, tabs, menus and dialogs from 75%
+- **UI scaling** (Settings → Appearance) — scale the sidebar, tabs, menus and dialogs from 75%
   to 300%, with an optional font family/size override, for readable chrome on a HiDPI display.
   Applied at startup; the terminal font stays separately configurable under Terminal Settings.
 
@@ -207,7 +207,7 @@ than failing — including keyboard-interactive challenges (PAM, one-time passwo
 saved password re-prompts with an error rather than dead-ending, you get three attempts per host,
 and a "Remember this password" checkbox saves it to the vault. Servers that don't offer password
 authentication never produce a prompt. Turn the fallback off under
-**Preferences → General → Ask for a password if key auth fails**.
+**Settings → General → Ask for a password if key auth fails**.
 
 On first connection to a host you'll be asked to confirm its key (trust-on-first-use); it is
 recorded in `~/.ssh/known_hosts`. If a host's key later changes, you'll get a warning.

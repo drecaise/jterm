@@ -2,10 +2,10 @@
 
 ## Menus and the sidebar are tiny on a high-resolution display
 
-Raise **UI scale** on the [Appearance tab](preferences.md#appearance) of Preferences — it enlarges
+Raise **UI scale** on the [Appearance tab](settings.md#appearance) of the settings dialog — it enlarges
 the sidebar, tabs, menus and dialogs together, and takes effect after you restart jterm. If only
 the *terminal* text is too small, that's a separate setting: see
-[Terminal Settings](preferences.md#terminal-settings), or press ++ctrl+num-plus++ to enlarge the
+[Terminal Settings](settings.md#terminal-settings), or press ++ctrl+num-plus++ to enlarge the
 focused pane straight away.
 
 ## SSH agent not found / key auth fails
@@ -34,7 +34,7 @@ cancelled. Things to check, in order:
 - Does the server allow password auth at all? If `PasswordAuthentication no` and
   `KbdInteractiveAuthentication no` are set in `sshd_config`, jterm never offers you a prompt and
   key auth is the only way in.
-- Was the fallback turned off? Check **Preferences → General → Ask for a password if key auth
+- Was the fallback turned off? Check **Settings → General → Ask for a password if key auth
   fails**.
 - For a **jump host** chain, the message names the hop that failed — an early hop failing means
   the target was never reached.
