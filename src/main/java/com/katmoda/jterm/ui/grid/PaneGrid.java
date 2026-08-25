@@ -897,6 +897,20 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         return (header, error) -> ErrorDialog.show(this, "jterm", header, error);
     }
 
+    /**
+     * Re-decorates this grid's tab when a pane's rendered name changes — but only for the pane whose
+     * name the tab is actually showing, so a background pane changing directory does not churn the
+     * tab strip. {@code onActiveChanged} is already bound to the tab's decorator.
+     *
+     * <p>A duplicated pane deliberately does not inherit a rename: duplication goes through the
+     * cell's session factory and builds a brand-new pane, whose custom name starts null.</p>
+     */
+    private void notifyTitleChanged(GridContent content) {
+        if (panes[activeRow][activeCol] == content && onActiveChanged != null) {
+            onActiveChanged.run();
+        }
+    }
+
     /** Build a pane wrapping a fresh session; not yet bound to this grid (see {@link #registerPane}). */
     private TerminalPane createPane(TerminalSession session) {
         TtyConnector wrapped = new BroadcastingTtyConnector(session.connector(), this);
@@ -915,6 +929,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
             pane.setOnContentEnded(() -> handleSessionEnd(pane));
             pane.setOnBroadcastToggle(this::updateBorders);
             pane.setDuplicateHandler(toNewTab -> duplicatePane(pane, toNewTab));
+            pane.setOnTitleChanged(() -> notifyTitleChanged(pane));
             // A freshly placed/adopted pane has no unseen output yet.
             pane.setActivity(PaneActivity.NONE);
             broadcastBus.register(pane);

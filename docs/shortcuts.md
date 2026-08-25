@@ -20,6 +20,7 @@ focus. The menus show the same accelerators for discoverability.
 | Close the focused pane | ++ctrl+up++ |
 | Duplicate pane to split | ++ctrl+alt+d++ |
 | Duplicate pane to tab | ++ctrl+alt+shift+d++ |
+| Rename the connection in the focused pane | ++ctrl+shift+r++ |
 | Open SFTP browser | ++ctrl+f++ |
 | Tunneling… | ++ctrl+shift+p++ |
 | Toggle broadcast input | ++ctrl+shift+b++ |

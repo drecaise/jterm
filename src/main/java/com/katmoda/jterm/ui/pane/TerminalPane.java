@@ -32,8 +32,12 @@ import com.katmoda.jterm.highlight.HighlightList;
 import com.katmoda.jterm.highlight.HighlightListResolver;
 import com.katmoda.jterm.highlight.HighlightingInstaller;
 import com.katmoda.jterm.terminal.TerminalSession;
+import com.katmoda.jterm.terminal.cwd.CwdTracker;
+import com.katmoda.jterm.terminal.cwd.OscCwdScanner;
+import com.katmoda.jterm.terminal.local.LocalSession;
 import com.katmoda.jterm.ui.ErrorDialog;
 import com.katmoda.jterm.ui.SessionIcon;
+import com.katmoda.jterm.ui.component.DialogFocus;
 import com.katmoda.jterm.ui.component.DropHighlighter;
 import com.katmoda.jterm.ui.grid.GridContent;
 import com.katmoda.jterm.ui.theme.JTermSettingsProvider;
@@ -52,6 +56,7 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JSeparator;
+import javax.swing.JTextField;
 import javax.swing.KeyStroke;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
@@ -103,13 +108,28 @@ public final class TerminalPane extends JPanel implements GridContent, Broadcast
     private final JPanel bottomArea;
     private final JPanel broadcastBar;
     private final JCheckBox broadcastCheck;
-    private final JLabel titleLabel;
+    private final TruncatingPathLabel titleLabel;
     private final DropHighlighter dropHighlighter = new DropHighlighter(this);
 
     /**
+     * This pane's working directory, from whichever source reported it best — OSC 7 or OSC 9;9 from
+     * the shell, an OSC 0/1/2 window title, or {@code /proc} for a local Linux shell. Owned by the
+     * pane rather than the session because it outlives a reconnect and because only the pane sees
+     * the terminal's output.
+     */
+    private final CwdTracker cwd = new CwdTracker();
+
+    /** The user's name for this pane, or null to use the session's. Runtime only — never persisted. */
+    private String customName;
+
+    /** Inputs behind the last rendered title, so the poll only re-renders when something moved. */
+    private String lastTitleKey;
+
+    /**
      * Panes whose title the single shared poll timer refreshes. Replaces the old per-pane 800 ms
-     * timers (there is no title-change callback: {@code LocalSession.title()} reads the live CWD from
-     * {@code /proc}). A pane registers while live and unregisters when stopped or closed.
+     * timers: the working directory has no single push signal ({@code /proc} must be polled), so
+     * everything funnels through one tick. A pane registers while live and unregisters when stopped
+     * or closed.
      */
     private static final java.util.Set<TerminalPane> TITLE_POLLED =
             java.util.concurrent.ConcurrentHashMap.newKeySet();
@@ -118,6 +138,8 @@ public final class TerminalPane extends JPanel implements GridContent, Broadcast
     private Runnable onFocus;
     private Runnable onSessionEnd;
     private Runnable onBroadcastToggle;
+    /** Fired when this pane's rendered name changes, so its tab can follow it. */
+    private Runnable onTitleChanged;
     /** Re-opens this pane's session elsewhere; the flag picks a new split (false) or a new tab (true). */
     private Consumer<Boolean> duplicateHandler;
     private Runnable highlightTeardown;
@@ -144,7 +166,13 @@ public final class TerminalPane extends JPanel implements GridContent, Broadcast
         this.theme = theme;
         var profile = session.profile();
         this.settingsProvider = new JTermSettingsProvider(theme, profile.fontFamily(), profile.fontSize());
-        this.widget = new JtermJediTermWidget(settingsProvider);
+        // The scanner has to exist before the widget: setTtyConnector builds the terminal starter,
+        // which is where the sniffing data stream gets spliced in.
+        this.widget = new JtermJediTermWidget(settingsProvider, new OscCwdScanner(cwd::report));
+        // OSC 0/1/2 titles come through JediTerm's own parser. The terminal model outlives a
+        // reconnect, so this is registered once and never again.
+        this.widget.addApplicationTitleListener(title ->
+                cwd.report(CwdTracker.Source.TITLE, PaneTitle.cwdFromWindowTitle(title)));
         this.widget.setTtyConnector(connector);
         this.widget.start();
         add(widget, BorderLayout.CENTER);
@@ -161,7 +189,9 @@ public final class TerminalPane extends JPanel implements GridContent, Broadcast
                 onBroadcastToggle.run();
             }
         });
-        this.titleLabel = new JLabel(session.title(), SessionIcon.forSession(session), SwingConstants.LEADING);
+        // Text is left empty here: refreshTitle() below fills it in through PaneTitle, which is
+        // where composition and sanitising live. Setting it directly would bypass both.
+        this.titleLabel = new TruncatingPathLabel("", SessionIcon.forSession(session));
         this.titleLabel.setIconTextGap(6);
         this.broadcastBar = new JPanel(new BorderLayout(6, 0));
         this.broadcastBar.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
@@ -175,7 +205,8 @@ public final class TerminalPane extends JPanel implements GridContent, Broadcast
         this.bottomArea.add(broadcastBar, BorderLayout.SOUTH);
         add(bottomArea, BorderLayout.SOUTH);
         installPaneDragSource();
-        // Keep the title (e.g. a local shell's CWD) up to date while the pane is live.
+        // Keep the title (e.g. the shell's working directory) up to date while the pane is live.
+        refreshTitle();
         registerForTitlePolling(this);
 
         widget.addListener(w -> {
@@ -219,8 +250,83 @@ public final class TerminalPane extends JPanel implements GridContent, Broadcast
         return inputConnector;
     }
 
+    /** This pane's label as it reads untruncated — the session's name, a rename, and/or its path. */
     public String title() {
-        return session.title();
+        return paneLabel().full();
+    }
+
+    /**
+     * The composed pane label. Split into name and path so the title bar can shorten the path on its
+     * own when the pane is narrow.
+     */
+    private PaneTitle.PaneLabel paneLabel() {
+        return PaneTitle.paneLabel(customName, session.title(), displayCwd(),
+                isPlainLocal(), AppSettings.get().isShowWorkingDirectory());
+    }
+
+    /**
+     * The tracked directory as it should read. A local shell's home is our home, so it shows as
+     * {@code ~} whichever source reported it; a remote one's is not, so it is left alone.
+     */
+    private String displayCwd() {
+        String dir = cwd.current();
+        return isPlainLocal() ? LocalSession.shortenHome(dir) : dir;
+    }
+
+    /**
+     * This pane's tab title. Unlike the pane's own label it carries only the last path segment, and
+     * a plain local shell keeps the tab's generic {@code "Terminal N"} name.
+     *
+     * @param baseTitle the tab's generic name, or null if it has none
+     */
+    public String tabTitle(String baseTitle) {
+        return PaneTitle.tabTitle(customName, baseTitle, session.title(), displayCwd(),
+                isPlainLocal(), AppSettings.get().isShowWorkingDirectory());
+    }
+
+    /**
+     * Whether this is an ordinary local shell, whose own name ("local") says nothing — so its label
+     * is the working directory alone. A WSL distro carries an icon id and is named by its distro, so
+     * it is treated like a remote session.
+     */
+    private boolean isPlainLocal() {
+        return session instanceof LocalSession local && local.iconId() == null;
+    }
+
+    /** The user's name for this pane, or null when it is showing its automatic one. */
+    public String customName() {
+        return customName;
+    }
+
+    /**
+     * Renames this pane. A custom name wins outright — the working directory is not appended to it —
+     * and blank clears it. Runtime only: it is never written to the session store, so a saved
+     * session is untouched and the name dies with the pane.
+     */
+    public void setCustomName(String name) {
+        this.customName = (name == null || name.isBlank()) ? null : name;
+        lastTitleKey = null;
+        refreshTitle();
+    }
+
+    /**
+     * Prompts for a new name for this pane. Shared by the title-bar menu, its right-click twin and
+     * the keyboard shortcut. Uses {@link DialogFocus} rather than {@code JOptionPane} directly
+     * because the point of the dialog is its text field, which {@code JOptionPane} would leave
+     * unfocused behind the OK button.
+     */
+    public void promptRename() {
+        JTextField field = new JTextField(customName == null ? "" : customName, 24);
+        JPanel panel = new JPanel(new BorderLayout(0, 6));
+        panel.add(new JLabel("Name for this connection:"), BorderLayout.NORTH);
+        panel.add(field, BorderLayout.CENTER);
+        JLabel hint = new JLabel("Leave blank to use the automatic name.");
+        hint.setEnabled(false);
+        panel.add(hint, BorderLayout.SOUTH);
+        int choice = DialogFocus.showConfirm(this, panel, "Rename", field);
+        if (choice == JOptionPane.OK_OPTION) {
+            setCustomName(field.getText());
+        }
     }
 
     public void setOnFocus(Runnable onFocus) {
@@ -234,6 +340,11 @@ public final class TerminalPane extends JPanel implements GridContent, Broadcast
     /** Fired when this pane's broadcast checkbox is toggled, so the grid can re-decorate borders. */
     public void setOnBroadcastToggle(Runnable onBroadcastToggle) {
         this.onBroadcastToggle = onBroadcastToggle;
+    }
+
+    /** Fired when this pane's rendered name changes (a rename, or a new working directory). */
+    public void setOnTitleChanged(Runnable onTitleChanged) {
+        this.onTitleChanged = onTitleChanged;
     }
 
     /** Wires the "Open in New Split Pane / New Tab" menu items to the grid's duplicate logic. */
@@ -288,8 +399,12 @@ public final class TerminalPane extends JPanel implements GridContent, Broadcast
             bottomArea.remove(stoppedPanel);
             stoppedPanel = null;
         }
-        titleLabel.setText(session.title());
+        // A different shell, possibly on a host that reports nothing: the old directory (and the
+        // source rank that protected it) must not carry over. A rename does, deliberately.
+        cwd.reset();
+        lastTitleKey = null;
         titleLabel.setIcon(SessionIcon.forSession(session));
+        refreshTitle();
         registerForTitlePolling(this);
         widget.restartWith(inputConnector);
         revalidate();
@@ -485,10 +600,14 @@ public final class TerminalPane extends JPanel implements GridContent, Broadcast
 
     /**
      * Builds this pane's action menu fresh each time it is shown (cheap, and avoids stale state).
-     * Currently holds only "Save output to file…"; further per-pane actions slot in here.
+     * Further per-pane actions slot in here.
      */
     private JPopupMenu buildPaneMenu() {
         JPopupMenu menu = new JPopupMenu();
+        JMenuItem rename = new JMenuItem("Rename…");
+        rename.addActionListener(e -> promptRename());
+        menu.add(rename);
+        menu.addSeparator();
         if (duplicateHandler != null) {
             JMenuItem splitItem = new JMenuItem("Duplicate in New Split Pane");
             splitItem.addActionListener(e -> duplicateHandler.accept(false));
@@ -513,7 +632,7 @@ public final class TerminalPane extends JPanel implements GridContent, Broadcast
         String text = TerminalBufferText.collect(widget);
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle("Save terminal output");
-        chooser.setSelectedFile(new File(safeBaseName(session.title()) + "-output.txt"));
+        chooser.setSelectedFile(new File(safeBaseName(title()) + "-output.txt"));
         if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) {
             return;
         }
@@ -544,9 +663,19 @@ public final class TerminalPane extends JPanel implements GridContent, Broadcast
         }
     }
 
+    /**
+     * A file name stem from a pane label. The label may contain a working directory reported by a
+     * remote host, so this keeps only characters that are inert in a path, caps the length, and
+     * rejects a result that is empty or all dots — {@code "."} and {@code ".."} would otherwise be
+     * handed straight to the file chooser.
+     */
     private static String safeBaseName(String title) {
         String base = (title == null || title.isBlank()) ? "terminal" : title;
-        return base.replaceAll("[^A-Za-z0-9._-]+", "_");
+        base = base.replaceAll("[^A-Za-z0-9._-]+", "_");
+        if (base.length() > 64) {
+            base = base.substring(0, 64);
+        }
+        return base.isBlank() || base.chars().allMatch(c -> c == '.') ? "terminal" : base;
     }
 
     private Color ansi(int index, Color fallback) {
@@ -572,11 +701,28 @@ public final class TerminalPane extends JPanel implements GridContent, Broadcast
         broadcastBar.repaint();
     }
 
-    /** Polls the live session title (e.g. a local shell's current directory) into the bar. */
+    /**
+     * Re-renders this pane's label, and its tab's title if it is the active pane. Driven by the
+     * shared poll rather than pushed on change: {@code /proc} has no push signal so the tick has to
+     * exist anyway, and funnelling the escape-sequence sources through it too rate-limits a shell
+     * that reports its directory in a loop.
+     *
+     * <p>The guard compares the <em>inputs</em>, not the rendered label, because a plain local
+     * pane's own label does not change when the preference is toggled while its tab title does — and
+     * the pane does not know its tab's generic name.</p>
+     */
     private void refreshTitle() {
-        String latest = session.title();
-        if (!latest.equals(titleLabel.getText())) {
-            titleLabel.setText(latest);
+        cwd.report(CwdTracker.Source.PROC, session.workingDirectory());
+        String key = customName + "\u0000" + cwd.current()
+                + "\u0000" + AppSettings.get().isShowWorkingDirectory()
+                + "\u0000" + session.title();
+        if (key.equals(lastTitleKey)) {
+            return;
+        }
+        lastTitleKey = key;
+        titleLabel.setPaneLabel(paneLabel());
+        if (onTitleChanged != null) {
+            onTitleChanged.run();
         }
     }
 
@@ -762,6 +908,7 @@ public final class TerminalPane extends JPanel implements GridContent, Broadcast
     public String displayTitle() {
         return title();
     }
+
 
     /** Terminate the terminal and its back-end session. */
     public void close() {

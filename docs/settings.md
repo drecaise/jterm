@@ -14,6 +14,7 @@ toggle and the keyboard-shortcut editor live in the **Settings** menu too — se
 | **Paste on right click** | Right-click pastes — always, even while a mouse-aware program is running (see the note below). With this on, use ++ctrl++ + right-click for the context menu, or ++shift++ + right-click to bypass the paste. |
 | **Middle-click paste (primary selection)** | The Linux X11 convention: selecting text copies it to the *primary selection*, and a middle-click pastes it. Independent of, and separate from, the regular clipboard above. |
 | **Open a terminal on startup** | When off, jterm starts with no open tabs. |
+| **Show working directory** | Adds the shell's current directory to pane labels (full path) and its last part to tab titles. Local shells always show theirs in the pane label; this controls whether it reaches the tab. Over SSH and WSL it depends on the remote shell reporting it — see [Showing the working directory](tabs-and-panes.md#showing-the-working-directory). |
 | **Auto-accept new host keys** | Trust first-seen SSH hosts without prompting. You are still warned if a known host's key *changes*. |
 | **Ask for a password if key auth fails** | When ssh-agent and key authentication are rejected, prompt for a password instead of failing the connect — provided the server offers password authentication. On by default; see [SSH auth & vault](ssh-auth-and-vault.md#if-key-authentication-fails). |
 

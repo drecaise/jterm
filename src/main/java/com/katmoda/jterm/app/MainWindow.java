@@ -844,6 +844,11 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
                     grid.duplicateActivePane(true);
                 }
             }
+            case RENAME_PANE -> {
+                if (grid != null && grid.activeContent() instanceof TerminalPane pane) {
+                    pane.promptRename();
+                }
+            }
             case MOVE_TAB_LEFT -> {
                 if (active != null) {
                     active.moveSelectedTab(-1);
@@ -924,6 +929,8 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         terminal.addSeparator();
         terminal.add(menuItem("Duplicate Pane to Split", TermAction.DUPLICATE_PANE_SPLIT));
         terminal.add(menuItem("Duplicate Pane to Tab", TermAction.DUPLICATE_PANE_TAB));
+        terminal.addSeparator();
+        terminal.add(menuItem("Rename Connection…", TermAction.RENAME_PANE));
 
         JMenu ssh = new JMenu("SSH");
         ssh.add(menuItem("Open SFTP Browser", TermAction.OPEN_SFTP));

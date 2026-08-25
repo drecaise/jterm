@@ -31,8 +31,18 @@ public interface TerminalSession {
     /** The connector JediTerm reads/writes through. */
     TtyConnector connector();
 
-    /** Human-readable label (session name or working directory). */
+    /** Stable human-readable name for this session (an SSH session's name, a WSL distro, "local"). */
     String title();
+
+    /**
+     * This session's live working directory, or {@code null} when it cannot be read. Only a
+     * directly-spawned local shell on Linux can answer from the OS ({@code /proc/<pid>/cwd}); for
+     * every other kind the directory is learned from escape sequences the shell emits and is tracked
+     * by the pane, not here. Kept separate from {@link #title()} so a label can show both.
+     */
+    default String workingDirectory() {
+        return null;
+    }
 
     /** Per-session terminal/font settings; defaults to {@link TerminalProfile#DEFAULT}. */
     default TerminalProfile profile() {

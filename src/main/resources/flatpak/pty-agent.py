@@ -19,6 +19,12 @@
 # window-size channel: TIOCGWINSZ on fd 0 still reports live values across the
 # boundary, so we poll it and mirror changes onto the host PTY.
 #
+# We also report the shell's working directory. jterm cannot read it itself: the
+# process it spawned is the sandbox-side flatpak-spawn, whose own directory never
+# changes, and the sandbox cannot see the host's /proc. We can — the shell is our
+# child — so we poll /proc/<pid>/cwd here and splice an OSC 7 sequence into the
+# relay, which is the same thing a remote shell would send over SSH.
+#
 # Stdlib only, and must stay compatible with the oldest python3 a user might
 # have on the host (3.6) — notably no os.waitstatus_to_exitcode (3.9+).
 
@@ -31,10 +37,128 @@ import signal
 import struct
 import sys
 import termios
+import time
 import tty
 
 POLL_SECONDS = 0.1
+CWD_POLL_SECONDS = 0.2
 DEFAULT_SIZE = (24, 80, 0, 0)
+
+# RFC 3986 unreserved, plus the separator, which stays literal in a file:// path.
+UNRESERVED = frozenset(
+    bytearray(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~/")
+)
+HOST_SAFE = frozenset(
+    bytearray(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-.")
+)
+
+# Byte-stream states, enough to tell whether the shell's output is at a point
+# where we may splice our own bytes in. See Boundary.
+_GROUND, _ESC, _ESC_INT, _CSI, _STR, _STR_ESC = range(6)
+
+
+class Boundary(object):
+    """Tracks whether the relayed byte stream is at a splice point.
+
+    Injecting an escape sequence into the middle of one the shell is already
+    emitting would corrupt both, and injecting between two bytes of a multi-byte
+    character would corrupt that character — the far end decodes UTF-8. So we
+    follow the stream just closely enough to know when neither is in progress.
+
+    Only the 7-bit (ESC-introduced) forms are recognised. In a UTF-8 stream the
+    8-bit C1 introducers cannot be told apart from continuation bytes, and
+    treating one as CSI would wedge this permanently 'in a sequence'.
+    """
+
+    def __init__(self):
+        self.state = _GROUND
+        self.utf8_left = 0
+
+    def at_boundary(self):
+        return self.state == _GROUND and self.utf8_left == 0
+
+    def feed(self, data):
+        state = self.state
+        left = self.utf8_left
+        for b in bytearray(data):
+            if state == _GROUND:
+                if left > 0:
+                    if 0x80 <= b <= 0xBF:
+                        left -= 1
+                        continue
+                    # Truncated character: drop the expectation and judge this
+                    # byte on its own merits.
+                    left = 0
+                if b == 0x1B:
+                    state = _ESC
+                elif 0xC2 <= b <= 0xF4:
+                    left = 1 if b < 0xE0 else (2 if b < 0xF0 else 3)
+            elif state == _ESC:
+                if b == 0x5B:                        # [ — CSI
+                    state = _CSI
+                elif b in (0x5D, 0x50, 0x5E, 0x5F):  # ] P ^ _ — OSC/DCS/PM/APC
+                    state = _STR
+                elif b == 0x1B:
+                    state = _ESC
+                elif 0x20 <= b <= 0x2F:              # intermediate byte
+                    state = _ESC_INT
+                else:
+                    state = _GROUND                  # final byte of a short escape
+            elif state == _ESC_INT:
+                if not 0x20 <= b <= 0x2F:
+                    state = _GROUND
+            elif state == _CSI:
+                if b == 0x1B:
+                    state = _ESC
+                elif b in (0x18, 0x1A) or 0x40 <= b <= 0x7E:  # CAN/SUB, or final
+                    state = _GROUND
+            elif state == _STR:
+                if b == 0x07 or b in (0x18, 0x1A):   # BEL, or CAN/SUB
+                    state = _GROUND
+                elif b == 0x1B:
+                    state = _STR_ESC
+            elif state == _STR_ESC:
+                if b == 0x5C:                        # ESC \\ — string terminator
+                    state = _GROUND
+                elif b != 0x1B:
+                    state = _STR
+        self.state = state
+        self.utf8_left = left
+
+
+def read_cwd(pid):
+    """The shell's working directory, or None once it is gone."""
+    try:
+        return os.readlink("/proc/%d/cwd" % pid)
+    except (OSError, IOError):
+        return None
+
+
+def hostname():
+    try:
+        return os.uname()[1]
+    except (OSError, AttributeError):
+        return "localhost"
+
+
+def osc7(path):
+    """ESC ] 7 ; file://host/path BEL — the sequence jterm reads a directory from.
+
+    The path is percent-encoded per byte, not per character: os.readlink hands
+    back undecodable bytes as surrogates, and a directory name is not required to
+    be valid UTF-8.
+    """
+    out = bytearray(b"\033]7;file://")
+    for b in bytearray(os.fsencode(hostname())):
+        if b in HOST_SAFE:
+            out.append(b)
+    for b in bytearray(os.fsencode(path)):
+        if b in UNRESERVED:
+            out.append(b)
+        else:
+            out.extend(("%%%02X" % b).encode("ascii"))
+    out.extend(b"\007")
+    return bytes(out)
 
 
 def get_size(fd):
@@ -136,6 +260,11 @@ def main():
         except (ValueError, OSError):
             pass
 
+    boundary = Boundary()
+    reported_cwd = None
+    pending_cwd = None
+    next_cwd_poll = 0.0
+
     while True:
         current = get_size(0)
         if current is not None and current != size:
@@ -169,8 +298,26 @@ def main():
             data = read_some(master)
             if data is None:
                 break
+            boundary.feed(data)
             if not write_all(1, data):
                 break
+
+        now = time.monotonic()
+        if now >= next_cwd_poll:
+            next_cwd_poll = now + CWD_POLL_SECONDS
+            # Cheap, but the loop also spins on every burst of output, so this is
+            # throttled rather than run per iteration.
+            current_cwd = read_cwd(pid)
+            if current_cwd is not None and current_cwd != reported_cwd:
+                pending_cwd = current_cwd
+
+        # Held back until the shell's output is between sequences and between
+        # characters; a `cd` during a full-screen redraw waits for the next gap.
+        if pending_cwd is not None and boundary.at_boundary():
+            if not write_all(1, osc7(pending_cwd)):
+                break
+            reported_cwd = pending_cwd
+            pending_cwd = None
 
     try:
         _, status = os.waitpid(pid, 0)

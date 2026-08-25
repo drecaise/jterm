@@ -19,12 +19,19 @@
  */
 package com.katmoda.jterm.ui.pane;
 
+import com.jediterm.terminal.TerminalDataStream;
+import com.jediterm.terminal.TerminalStarter;
+import com.jediterm.terminal.TtyBasedArrayDataStream;
 import com.jediterm.terminal.TtyConnector;
+import com.jediterm.terminal.model.JediTerminal;
 import com.jediterm.terminal.model.StyleState;
+import com.jediterm.terminal.model.TerminalApplicationTitleListener;
 import com.jediterm.terminal.model.TerminalTextBuffer;
 import com.jediterm.terminal.ui.JediTermWidget;
 import com.jediterm.terminal.ui.TerminalPanel;
 import com.jediterm.terminal.ui.settings.SettingsProvider;
+import com.katmoda.jterm.terminal.cwd.OscCwdScanner;
+import com.katmoda.jterm.terminal.cwd.OscSniffingDataStream;
 import com.katmoda.jterm.ui.theme.JTermSettingsProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,8 +41,45 @@ final class JtermJediTermWidget extends JediTermWidget {
 
     private static final Logger LOG = LoggerFactory.getLogger(JtermJediTermWidget.class);
 
-    JtermJediTermWidget(SettingsProvider settingsProvider) {
+    /** Watches this widget's output for directory-reporting escape sequences; may be null. */
+    private final OscCwdScanner cwdScanner;
+
+    JtermJediTermWidget(SettingsProvider settingsProvider, OscCwdScanner cwdScanner) {
         super(settingsProvider);
+        this.cwdScanner = cwdScanner;
+    }
+
+    /**
+     * Inserts the working-directory scanner between the connector and the emulator.
+     *
+     * <p>JediTerm 3.70 recognises OSC 7 and then discards it — {@code JediEmulator.doProcessOsc} has
+     * a bare {@code case 7} commented "Support for OSC 7 is pending" — and that method is private,
+     * so an emulator subclass cannot reach it. Wrapping the data stream sees the characters one step
+     * earlier, where the sequence is still intact.</p>
+     *
+     * <p>This mirrors the base implementation, so it is pinned to the shape of JediTerm 3.70's
+     * {@code createTerminalStarter}; if that constructor changes, this override is the thing to
+     * revisit. Everything it needs is public API. {@code setTtyConnector} calls it again, so a
+     * reconnect re-installs the scanner without any extra wiring.</p>
+     */
+    @Override
+    protected TerminalStarter createTerminalStarter(JediTerminal terminal, TtyConnector connector) {
+        TerminalDataStream stream =
+                new TtyBasedArrayDataStream(connector, getTypeAheadManager()::onTerminalStateChanged);
+        if (cwdScanner != null) {
+            stream = new OscSniffingDataStream(stream, cwdScanner);
+        }
+        return new TerminalStarter(terminal, connector, stream,
+                getTypeAheadManager(), getExecutorServiceManager());
+    }
+
+    /**
+     * Subscribes to OSC 0/1/2 window-title changes, which JediTerm parses for us. The terminal model
+     * is created once in the constructor and survives {@link #restartWith}, so a listener registered
+     * at pane construction stays valid across reconnects and must not be added again.
+     */
+    void addApplicationTitleListener(TerminalApplicationTitleListener listener) {
+        myTerminal.addApplicationTitleListener(listener);
     }
 
     @Override

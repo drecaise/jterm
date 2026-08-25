@@ -19,4 +19,7 @@ its connection can reconnect automatically.
 ## Saving terminal output
 
 You can write a pane's output to a file from the **pane title-bar menu** — useful for capturing
-a session log. The menu on each pane's title bar exposes the save-output action.
+a session log. The menu on each pane's title bar exposes the save-output action, alongside
+**Rename…** (see [Naming panes and tabs](tabs-and-panes.md#naming-panes-and-tabs)). A rename
+survives a reconnect — the pane keeps it while the new session starts — but the working directory
+does not: the new shell may be somewhere else, or on a host that never reports one.

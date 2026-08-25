@@ -90,6 +90,11 @@ public final class AppSettings {
     // original behavior); read once at startup, so toggling it only affects the next launch.
     private boolean openTerminalOnStartup = true;
 
+    // Whether a pane's label and its tab title carry the shell's working directory. Read live, so
+    // toggling it takes effect on the next title poll. Off by default: for SSH and WSL it depends on
+    // the remote shell announcing its directory, which many do not — see ui.pane.PaneTitle.
+    private boolean showWorkingDirectory = false;
+
     // Whether the dark theme is active. Persisted so the choice survives a restart; defaults to
     // dark (the app's original default) on a fresh install or a settings file predating this field.
     private boolean darkTheme = true;
@@ -215,6 +220,18 @@ public final class AppSettings {
 
     public void setPromptPasswordOnAuthFailure(boolean promptPasswordOnAuthFailure) {
         this.promptPasswordOnAuthFailure = promptPasswordOnAuthFailure;
+    }
+
+    /**
+     * Whether pane labels and tab titles show the shell's working directory. Read live at each
+     * title refresh, so a change applies to open panes immediately.
+     */
+    public boolean isShowWorkingDirectory() {
+        return showWorkingDirectory;
+    }
+
+    public void setShowWorkingDirectory(boolean showWorkingDirectory) {
+        this.showWorkingDirectory = showWorkingDirectory;
     }
 
     /** Whether a local terminal tab is opened automatically on launch (read once at startup). */
@@ -456,7 +473,7 @@ public final class AppSettings {
                 defaultUsername, defaultTabColorHex, openTerminalOnStartup,
                 defaultKeyPath, autoAcceptNewHostKeys, scrollbackLines, middleClickPaste,
                 uiScalePercent, uiFontFamily, uiFontSize, promptPasswordOnAuthFailure,
-                sidebarVisible, blinkCursor, defaultKeepAliveSeconds));
+                sidebarVisible, blinkCursor, defaultKeepAliveSeconds, showWorkingDirectory));
     }
 
     private static AppSettings load() {
@@ -474,6 +491,9 @@ public final class AppSettings {
             }
             if (p.openTerminalOnStartup != null) {
                 settings.openTerminalOnStartup = p.openTerminalOnStartup;
+            }
+            if (p.showWorkingDirectory != null) {
+                settings.showWorkingDirectory = p.showWorkingDirectory;
             }
             if (!isBlank(p.defaultTerminalType)) {
                 settings.defaultTerminalType = p.defaultTerminalType;
@@ -561,6 +581,7 @@ public final class AppSettings {
                              Boolean middleClickPaste, Integer uiScalePercent,
                              String uiFontFamily, Integer uiFontSize,
                              Boolean promptPasswordOnAuthFailure, Boolean sidebarVisible,
-                             Boolean blinkCursor, Integer defaultKeepAliveSeconds) {
+                             Boolean blinkCursor, Integer defaultKeepAliveSeconds,
+                             Boolean showWorkingDirectory) {
     }
 }

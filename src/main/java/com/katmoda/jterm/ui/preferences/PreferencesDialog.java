@@ -91,6 +91,7 @@ public final class PreferencesDialog {
         ToggleSwitch autoAcceptNewHostKeys = new ToggleSwitch(settings.isAutoAcceptNewHostKeys());
         ToggleSwitch promptPasswordOnAuthFailure =
                 new ToggleSwitch(settings.isPromptPasswordOnAuthFailure());
+        ToggleSwitch showWorkingDirectory = new ToggleSwitch(settings.isShowWorkingDirectory());
         JPanel general = new JPanel(new GridBagLayout());
         int row = 0;
         addToggleRow(general, row++, "Copy to clipboard on select:", copyOnSelect);
@@ -101,6 +102,11 @@ public final class PreferencesDialog {
                 + " middle-click pastes it.");
         addToggleRow(general, row++, "Open a terminal on startup:", openTerminalOnStartup);
         addHint(general, row++, "With this off, jterm starts with no open tabs.");
+        addToggleRow(general, row++, "Show working directory:", showWorkingDirectory);
+        addHint(general, row++, "Adds the directory to pane labels and its name to tab titles."
+                + " Local shells always show theirs. For SSH and WSL this needs the shell to report"
+                + " it (OSC 7, or the window title most distributions set by default); a shell that"
+                + " does neither shows no directory.");
         addToggleRow(general, row++, "Auto-accept new host keys:", autoAcceptNewHostKeys);
         addHint(general, row++, "Trust first-seen SSH hosts without prompting. You're still warned"
                 + " if a host's key changes.");
@@ -264,6 +270,7 @@ public final class PreferencesDialog {
         settings.setOpenTerminalOnStartup(openTerminalOnStartup.isSelected());
         settings.setAutoAcceptNewHostKeys(autoAcceptNewHostKeys.isSelected());
         settings.setPromptPasswordOnAuthFailure(promptPasswordOnAuthFailure.isSelected());
+        settings.setShowWorkingDirectory(showWorkingDirectory.isSelected());
         // Remember the pre-edit UI scale/font so we only nag about restarting when one changed.
         String previousUiAppearance = uiAppearanceKey(settings);
         settings.setUiScalePercent(percentValue(uiScale.getSelectedItem()));

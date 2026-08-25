@@ -103,10 +103,73 @@ Terminal** button) onto an existing pane. Where you drop decides the split:
 SSH sessions connect in the background and then appear in the new split; local terminals open
 immediately. See [Sessions sidebar](sessions-sidebar.md) for more on launching sessions.
 
+## Naming panes and tabs
+
+Every pane has a **title bar** along its bottom edge showing its icon and name. A tab is named
+after its **active** pane, so in a split the tab title follows whichever pane you are typing in.
+
+### Renaming a connection
+
+Rename the pane you are in with ++ctrl+shift+r++, from **Terminal → Rename Connection…**, or from
+the **⋮** menu on the pane's title bar (right-clicking the bar opens the same menu). Right-clicking
+a **tab** offers the same thing — a tab is named after its active pane, so it renames that
+connection. The new name replaces the pane's label *and* its tab title. Leave the field blank to go
+back to the automatic name.
+
+A rename lives only as long as the pane. It is never written to `sessions.json`, so the saved
+session in the sidebar is untouched and other panes on the same host are unaffected. It survives a
+reconnect and follows the pane if you drag it to another tab or window, but a **duplicated** pane
+starts with its automatic name again.
+
+### Showing the working directory
+
+Turn on **Settings → Preferences → General → Show working directory** to put the shell's current
+directory into the labels. The pane's title bar gets the **full path** and the tab gets just the
+**last part** of it, so tabs stay short:
+
+| | pane label | tab title |
+|---|---|---|
+| local shell | `/home/mark/git/jterm` | `Terminal 3 (jterm)` |
+| SSH / WSL | `orion.katmoda.lan (/home/mark/git/jterm)` | `orion.katmoda.lan (jterm)` |
+| renamed | `build` | `build` |
+
+A **local** shell always shows its directory in the pane label — its own name ("local") says
+nothing useful — and the preference only controls whether the directory reaches its tab. A
+**renamed** pane shows your name on its own, with no directory: renaming is also how you opt one
+pane out.
+
+When the pane is too narrow, leading path components are dropped and replaced with `...` —
+`/a/very/long/path/to/some/cwd` becomes `.../to/some/cwd`, then `.../cwd`. Hovering the label
+always shows the full path.
+
+!!! warning "SSH and WSL depend on the remote shell"
+    jterm cannot read a remote machine's working directory; it can only be *told*. It listens for
+    the `OSC 7` sequence and for the window title that most distributions' default bash sets on
+    every prompt (`user@host:~/dir`) — which is why this usually works over SSH with no setup at
+    all. A shell that emits neither shows no directory, and a full-screen program that takes over
+    the window title can leave the last known value on screen until the next prompt. To report it
+    explicitly, add this to the remote `~/.bashrc`:
+
+    ```bash
+    PROMPT_COMMAND='printf "\033]7;file://%s%s\007" "$HOSTNAME" "$PWD"'
+    ```
+
+    Local shells do not need any of this. On Linux jterm reads the directory from the OS; on
+    Windows it sets `%PROMPT%` for the `cmd.exe` sessions it starts (only when you have not set
+    one yourself) so that cmd reports it; and inside the Flatpak, where the shell runs on the host
+    beyond jterm's reach, the host-side PTY agent reports it instead. That agent needs `python3`
+    on the host; without it jterm falls back to `script(1)`, which shows no directory (and also
+    cannot track the window size).
+
+!!! note "Names from a remote host are treated as untrusted"
+    A directory arrives as an escape sequence from whatever you connected to, so jterm strips
+    control characters and text-direction overrides (which could otherwise make one host's label
+    read like another's) and caps the length before showing it. Hover the label for the full
+    value, and rename the pane if you want a name nothing else can influence.
+
 ## Rearranging panes and tabs
 
-Every pane has a **title bar** along its bottom edge showing its icon and name. That bar is a
-**drag handle**: grab it and drop the live pane somewhere else. The terminal keeps its
+The pane's title bar is also a **drag handle**: grab it and drop the live pane somewhere else. The terminal keeps its
 scrollback, working directory, and connection — nothing is restarted.
 
 **Drag a pane by its title bar onto…**

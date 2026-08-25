@@ -29,7 +29,6 @@ import com.katmoda.jterm.keymap.TermAction;
 import com.katmoda.jterm.session.SshSessionConfig;
 import com.katmoda.jterm.terminal.SessionFactory;
 import com.katmoda.jterm.terminal.TerminalSession;
-import com.katmoda.jterm.terminal.local.LocalSession;
 import com.katmoda.jterm.ui.SessionIcon;
 import com.katmoda.jterm.ui.grid.GridContent;
 import com.katmoda.jterm.ui.grid.PaneGrid;
@@ -127,6 +126,10 @@ public final class TabPane extends JPanel {
     // ---- setup ----
 
     private void configureTabs() {
+        // A tab title can carry a working directory reported by a remote host, and JTabbedPane
+        // renders a title opening with <html> as markup. PaneTitle strips it from the string too;
+        // this is the structural half. No tab title in jterm uses HTML.
+        tabs.putClientProperty("html.disable", Boolean.TRUE);
         tabs.putClientProperty("JTabbedPane.tabType", "card");
         tabs.putClientProperty("JTabbedPane.tabClosable", true);
         BiConsumer<JTabbedPane, Integer> closeCallback = (pane, index) -> closeTabAt(index);
@@ -488,12 +491,11 @@ public final class TabPane extends JPanel {
         TerminalSession session = pane.session();
         tabs.setIconAt(idx, SessionIcon.forSession(session));
         setTabColor(idx, session.tabColorHex());
-        // A plain local shell (no custom icon) shows the generic "Terminal N" tab title; everything
-        // else (SSH, or a WSL distro) shows the session's own title.
-        boolean plainLocal = session instanceof LocalSession local && local.iconId() == null;
+        // The pane composes its own title: a plain local shell (no custom icon) keeps the generic
+        // "Terminal N" name, everything else is named by its session, a rename overrides both, and
+        // the working directory is appended when the preference is on.
         Object base = grid.getClientProperty("baseTitle");
-        String title = (plainLocal && base != null) ? base.toString() : session.title();
-        tabs.setTitleAt(idx, title);
+        tabs.setTitleAt(idx, pane.tabTitle(base == null ? null : base.toString()));
         applyActivityIndicator(idx, grid, content);
     }
 
@@ -766,6 +768,16 @@ public final class TabPane extends JPanel {
         }
         tabs.setSelectedIndex(idx);
         JPopupMenu menu = new JPopupMenu();
+        // A tab is named after its active pane, so renaming "the tab" is renaming that pane's
+        // connection — the same action as its ⋮ menu and the keyboard shortcut. Offered only when
+        // there is one to rename: an SFTP tab has no connection name, and an SSH tab that is still
+        // connecting has no active pane yet.
+        if (grid.activeContent() instanceof TerminalPane pane) {
+            JMenuItem rename = new JMenuItem("Rename Connection…");
+            rename.addActionListener(a -> pane.promptRename());
+            menu.add(rename);
+            menu.addSeparator();
+        }
         JMenuItem duplicate = new JMenuItem("Duplicate Tab");
         duplicate.addActionListener(a -> duplicateSelectedTab());
         menu.add(duplicate);

@@ -84,7 +84,17 @@ So `resources/flatpak/pty-agent.py` runs on the host, allocates a **second PTY t
 over the sandbox PTY. The sandbox PTY is demoted to transport **plus the window-size channel** —
 `TIOCGWINSZ` on fd 0 still reports live values across the boundary, so the agent polls it and
 mirrors changes onto the host PTY. `TerminalSession`/`PtyTtyConnector` are unaware; resize is still
-just `process.setWinSize(...)`. Sharp edges, all commented in place:
+just `process.setWinSize(...)`.
+
+The agent is also the **only** source of the shell's working directory in the sandbox:
+`LocalSession.workingDirectory()` returns null under Flatpak because the pty4j child is the
+sandbox-side `flatpak-spawn` (whose cwd never changes) and the sandbox cannot see the host's
+`/proc`. The agent *can* — the shell is its child — so it polls `/proc/<pid>/cwd` and splices an
+**OSC 7** sequence into the relay, which `terminal.cwd.OscCwdScanner` picks up exactly as it would
+from a remote shell. Splicing is gated on `Boundary`, a byte-level tracker that only injects when the
+stream is between escape sequences *and* between UTF-8 characters; it recognises 7-bit introducers
+only, because an 8-bit C1 byte is indistinguishable from a UTF-8 continuation byte and treating one
+as CSI would wedge it permanently. Sharp edges, all commented in place:
 - The agent must keep fds **blocking**; 0/1/2 share one open file description on a PTY slave, so
   making fd 0 non-blocking to poll it also makes writes to fd 1 `EAGAIN` and drops output.
 - Fd 0 goes to **raw** mode, or the sandbox PTY's line discipline double-processes echo/`ONLCR`.
