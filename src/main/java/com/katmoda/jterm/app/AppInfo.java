@@ -30,8 +30,11 @@ import org.slf4j.LoggerFactory;
  * on the classpath. The version placeholder there is filled in by Maven resource filtering at
  * build time, so it always matches the POM. Falls back to sensible defaults if the resource is
  * missing (e.g. running against raw classes without a build).
+ *
+ * <p>Public because the update check (see {@code com.katmoda.jterm.update}) needs the running
+ * version to compare against GitHub's latest release.</p>
  */
-final class AppInfo {
+public final class AppInfo {
 
     private static final Logger LOG = LoggerFactory.getLogger(AppInfo.class);
 
@@ -40,15 +43,15 @@ final class AppInfo {
     private AppInfo() {
     }
 
-    static String name() {
+    public static String name() {
         return PROPS.getProperty("application.name", "jterm");
     }
 
-    static String version() {
+    public static String version() {
         return PROPS.getProperty("application.version", "(dev)");
     }
 
-    static String author() {
+    public static String author() {
         return PROPS.getProperty("application.author", "");
     }
 

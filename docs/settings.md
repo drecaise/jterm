@@ -17,6 +17,7 @@ toggle and the keyboard-shortcut editor live in the **Settings** menu too — se
 | **Show working directory** | Adds the shell's current directory to pane labels (full path) and its last part to tab titles. Local shells always show theirs in the pane label; this controls whether it reaches the tab. Over SSH and WSL it depends on the remote shell reporting it — see [Showing the working directory](tabs-and-panes.md#showing-the-working-directory). |
 | **Auto-accept new host keys** | Trust first-seen SSH hosts without prompting. You are still warned if a known host's key *changes*. |
 | **Ask for a password if key auth fails** | When ssh-agent and key authentication are rejected, prompt for a password instead of failing the connect — provided the server offers password authentication. On by default; see [SSH auth & vault](ssh-auth-and-vault.md#if-key-authentication-fails). |
+| **Check for updates** | Ask GitHub about once a day whether a newer jterm release exists, and offer a link to it. On by default. Nothing about you or your sessions is sent — see [Update checks](#update-checks) below. |
 
 !!! note "Right-click paste and mouse-aware programs"
     Some terminal programs (editors, `htop`, and CLIs such as coding assistants) turn on *xterm
@@ -31,6 +32,34 @@ toggle and the keyboard-shortcut editor live in the **Settings** menu too — se
     selecting text copies it to the clipboard and a middle-click pastes from the clipboard. The
     middle-button gesture still works — it just shares the one clipboard that ++ctrl+c++ /
     ++ctrl+v++ use, rather than a dedicated selection buffer.
+
+### Update checks
+
+With **Check for updates** on, jterm asks GitHub for the latest published release and, if it is
+newer than the version you're running, shows a dialog with the release notes and a **View
+Release** button that opens the release page in your default browser. jterm never downloads or
+installs anything itself — updating is always your call, through whatever channel you installed
+it from.
+
+The dialog also offers **Skip This Version** (stay quiet about this release, but tell me about
+the next one) and a **Don't check for updates automatically** checkbox, which is the same setting
+as the one on this tab.
+
+What the check does and doesn't do:
+
+- It runs at most **once a day**, and the timing is deliberately randomized — a short random
+  delay after startup, and a randomized 20–28 hour gap after that — so that every jterm install
+  in the world doesn't hit GitHub at the same moment.
+- It sends **no identifying information**: no account, no token, no telemetry. The only thing
+  transmitted is a `User-Agent` header naming jterm and its version, which GitHub requires.
+- Release notes are shown as **plain text**, never as rendered HTML, so nothing in a release
+  description can load remote content or reveal your IP address.
+- If there's no network, the check fails silently. It will never interrupt your launch with an
+  error.
+
+**Help → Check for Updates…** runs the check on demand. It always reports a result — including
+"you're running the latest version" and any network error — and works even with the automatic
+check turned off.
 
 ## Appearance
 

@@ -17,9 +17,17 @@ jterm stores all its state as JSON in a per-OS configuration directory.
 | `icons.json` | Imported custom icons (the image files are copied into `<config>/icons/`). |
 | `keymap.json` | [Keyboard shortcut](shortcuts.md) bindings (written with defaults on first run). |
 | `credentials.json` | SSH passwords and key passphrases, **AES-GCM encrypted** under your master password. No plaintext secrets. |
-| `settings.json` | Application preferences and window state (size/position, theme, defaults). |
+| `settings.json` | Application preferences and window state (size/position, theme, defaults, [update-check](settings.md#update-checks) state). |
 | `colors.json` | Per-theme [terminal palette](settings.md#colors) customizations. Stores only the colours you changed; absent until you customize one. |
 | `icons/` | Folder holding imported icon image files. |
+
+### Update-check keys in `settings.json`
+
+| Key | Meaning |
+|-----|---------|
+| `updateCheckEnabled` | Whether the daily [update check](settings.md#update-checks) runs. Same as the Preferences toggle. |
+| `lastUpdateCheckEpochSeconds` | When a check was last *attempted*, in Unix epoch seconds (`0` = never). This is what keeps the check to once a day across restarts. |
+| `skippedUpdateVersion` | The release tag you chose to skip, e.g. `v1.9.0`; `""` when none. Clear it to be reminded about that release again. |
 
 ## Editing by hand
 

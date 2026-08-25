@@ -19,6 +19,7 @@
  */
 package com.katmoda.jterm.ui.preferences;
 
+import com.formdev.flatlaf.util.UIScale;
 import com.katmoda.jterm.config.AppSettings;
 import com.katmoda.jterm.security.VaultException;
 import com.katmoda.jterm.security.VaultKeys;
@@ -92,6 +93,7 @@ public final class PreferencesDialog {
         ToggleSwitch promptPasswordOnAuthFailure =
                 new ToggleSwitch(settings.isPromptPasswordOnAuthFailure());
         ToggleSwitch showWorkingDirectory = new ToggleSwitch(settings.isShowWorkingDirectory());
+        ToggleSwitch checkForUpdates = new ToggleSwitch(settings.isUpdateCheckEnabled());
         JPanel general = new JPanel(new GridBagLayout());
         int row = 0;
         addToggleRow(general, row++, "Copy to clipboard on select:", copyOnSelect);
@@ -114,6 +116,10 @@ public final class PreferencesDialog {
                 promptPasswordOnAuthFailure);
         addHint(general, row++, "When ssh-agent and key authentication are rejected, prompt for a"
                 + " password instead of failing — if the server offers password auth.");
+        addToggleRow(general, row++, "Check for updates:", checkForUpdates);
+        addHint(general, row++, "Ask github.com about once a day whether a newer jterm release is"
+                + " available, and offer a link to it. Nothing about you or your sessions is sent."
+                + " Help → Check for Updates… always checks, even with this off.");
 
         // Appearance: the scale and font of the application chrome (sidebar, tabs, menus, dialogs).
         // All three are read by ThemeManager at startup only, hence the restart notice on OK.
@@ -271,6 +277,7 @@ public final class PreferencesDialog {
         settings.setAutoAcceptNewHostKeys(autoAcceptNewHostKeys.isSelected());
         settings.setPromptPasswordOnAuthFailure(promptPasswordOnAuthFailure.isSelected());
         settings.setShowWorkingDirectory(showWorkingDirectory.isSelected());
+        settings.setUpdateCheckEnabled(checkForUpdates.isSelected());
         // Remember the pre-edit UI scale/font so we only nag about restarting when one changed.
         String previousUiAppearance = uiAppearanceKey(settings);
         settings.setUiScalePercent(percentValue(uiScale.getSelectedItem()));
@@ -429,11 +436,39 @@ public final class PreferencesDialog {
     }
 
     /** A de-emphasised explanatory label. */
+    /**
+     * Preferred width reported by a long hint, in unscaled px.
+     *
+     * <p>Not the wrap point. A plain {@link JLabel} never wraps, so a paragraph-length hint
+     * reported its full single-line width as <em>preferred</em> — which set the width of the
+     * whole {@code JTabbedPane}, and so of the dialog on <b>every</b> tab, not just its own. Two
+     * such hints had stretched it about 40% past what the controls need.</p>
+     *
+     * <p>Re-rendering the hint as HTML makes it wrappable; the fixed-width div then caps what it
+     * asks for, so hints stop driving the dialog's width and the wider tabs (the combo-box rows
+     * on Terminal Settings and Session Defaults) decide it instead. At paint time each hint wraps
+     * to whatever the layout actually allocates, which is why a hint can still render wider than
+     * this value. Keep it below the width those tabs need, or it starts driving the size again.
+     * </p>
+     */
+    private static final int HINT_PREFERRED_WIDTH = 820;
+
     private static JLabel hint(String text) {
         JLabel hint = new JLabel(text);
         hint.setEnabled(false);
         hint.setFont(hint.getFont().deriveFont(hint.getFont().getSize2D() - 1f));
+        // Measure with the final font, and convert only when it is actually too wide — a
+        // fixed-width div would otherwise make short one-line hints ask for the full width too.
+        int max = UIScale.scale(HINT_PREFERRED_WIDTH);
+        if (hint.getPreferredSize().width > max) {
+            hint.setText("<html><div style='width:" + max + "px'>" + escapeHtml(text) + "</div></html>");
+        }
         hint.setBorder(BorderFactory.createEmptyBorder(2, 2, 2, 2));
         return hint;
+    }
+
+    /** Hint text is plain prose, but it becomes HTML above, so markup characters must not leak. */
+    private static String escapeHtml(String text) {
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 }

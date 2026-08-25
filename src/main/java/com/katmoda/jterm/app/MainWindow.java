@@ -30,10 +30,10 @@ import com.katmoda.jterm.macro.MacroRunner;
 import com.katmoda.jterm.security.CredentialResolver;
 import com.katmoda.jterm.security.CredentialVault;
 import com.katmoda.jterm.security.VaultManager;
+import com.katmoda.jterm.session.FolderNode;
 import com.katmoda.jterm.session.SessionNode;
 import com.katmoda.jterm.session.SessionStore;
 import com.katmoda.jterm.session.SshSessionConfig;
-import com.katmoda.jterm.session.FolderNode;
 import com.katmoda.jterm.session.TunnelConfig;
 import com.katmoda.jterm.session.TunnelStore;
 import com.katmoda.jterm.terminal.ConnectionService;
@@ -49,19 +49,24 @@ import com.katmoda.jterm.ui.grid.GridContent;
 import com.katmoda.jterm.ui.grid.PaneGrid;
 import com.katmoda.jterm.ui.macro.MacroManagerDialog;
 import com.katmoda.jterm.ui.pane.TerminalPane;
-import com.katmoda.jterm.ui.sftp.SftpLauncher;
-import com.katmoda.jterm.ui.tunnel.TunnelManagerDialog;
 import com.katmoda.jterm.ui.preferences.PreferencesDialog;
 import com.katmoda.jterm.ui.preferences.ShortcutsDialog;
 import com.katmoda.jterm.ui.security.MasterPasswordDialog;
+import com.katmoda.jterm.ui.sftp.SftpLauncher;
 import com.katmoda.jterm.ui.sidebar.FolderOpenMode;
 import com.katmoda.jterm.ui.sidebar.OpenMode;
 import com.katmoda.jterm.ui.sidebar.SessionSidebar;
 import com.katmoda.jterm.ui.sidebar.SidebarSplit;
 import com.katmoda.jterm.ui.tabs.TabPane;
 import com.katmoda.jterm.ui.theme.ThemeManager;
+import com.katmoda.jterm.ui.tunnel.TunnelManagerDialog;
+import com.katmoda.jterm.ui.update.UpdateAvailableDialog;
 import com.katmoda.jterm.ui.windowing.TerminalServices;
 import com.katmoda.jterm.ui.windowing.TerminalWindow;
+import com.katmoda.jterm.update.AppVersion;
+import com.katmoda.jterm.update.ReleaseInfo;
+import com.katmoda.jterm.update.UpdateChecker;
+import com.katmoda.jterm.update.UpdateScheduler;
 
 import javax.swing.Icon;
 import javax.swing.JCheckBoxMenuItem;
@@ -94,9 +99,11 @@ import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
@@ -131,6 +138,8 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
     /** The window's most recent restored-down (non-maximized) bounds, tracked so a maximized exit
      *  still persists the monitor + size to reopen at when un-maximized. */
     private Rectangle lastNormalBounds;
+    /** Background GitHub release check; armed after the window is shown, null when opted out. */
+    private UpdateScheduler updateScheduler;
 
     public MainWindow() {
         // Register before building the tab pane: the WindowManager is the shared registry every
@@ -207,6 +216,9 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
                 saveWindowState();
                 shutdownSessions();
                 TunnelManager.get().stopAll();
+                if (updateScheduler != null) {
+                    updateScheduler.stop();
+                }
             }
         });
         restoreWindowBounds();
@@ -256,6 +268,14 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
 
         // Bring up any tunnels the user marked auto-start (resolves credentials as needed).
         startAutoStartTunnels();
+
+        // Arm the update check last: it is the only thing here that touches the network and it
+        // must not delay the first frame. Armed even when the user has opted out — it makes no
+        // request in that state, but stays ready so re-enabling the setting works without a
+        // restart.
+        updateScheduler = new UpdateScheduler(AppInfo.version(),
+                release -> UpdateAvailableDialog.show(frame, AppInfo.version(), release));
+        updateScheduler.start();
     }
 
     /**
@@ -961,6 +981,9 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         JMenuItem manual = new JMenuItem("User Manual…");
         manual.addActionListener(e -> openInBrowser(MANUAL_URL));
         help.add(manual);
+        JMenuItem checkUpdates = new JMenuItem("Check for Updates…");
+        checkUpdates.addActionListener(e -> checkForUpdatesNow());
+        help.add(checkUpdates);
         help.addSeparator();
         JMenuItem about = new JMenuItem("About " + AppInfo.name() + "…");
         about.addActionListener(e -> showAboutDialog());
@@ -977,6 +1000,46 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         bar.add(view);
         bar.add(help);
         return bar;
+    }
+
+    /**
+     * Help &rarr; Check for Updates: an explicit, one-off check.
+     *
+     * <p>Unlike the scheduled check this ignores the once-a-day throttle and any skipped version,
+     * runs even when automatic checks are switched off, and <b>always reports a result</b> —
+     * including "you're up to date" and network failures. The user asked, so silence would read
+     * as the menu item being broken.</p>
+     */
+    private void checkForUpdatesNow() {
+        String current = AppInfo.version();
+        new SwingWorker<Optional<ReleaseInfo>, Void>() {
+            @Override
+            protected Optional<ReleaseInfo> doInBackground() throws IOException {
+                return UpdateChecker.fetchLatest(current);
+            }
+
+            @Override
+            protected void done() {
+                Optional<ReleaseInfo> release;
+                try {
+                    release = get();
+                } catch (Exception e) {
+                    Throwable cause = e.getCause() != null ? e.getCause() : e;
+                    ErrorDialog.show(frame, "Check for Updates",
+                            "Could not reach GitHub to check for a newer release:", cause);
+                    return;
+                }
+                if (release.isPresent()
+                        && AppVersion.isUpgrade(current, release.get().tagName())) {
+                    UpdateAvailableDialog.show(frame, current, release.get());
+                } else {
+                    JOptionPane.showMessageDialog(frame,
+                            "You are running the latest version of " + AppInfo.name()
+                                    + " (" + current + ").",
+                            "Check for Updates", JOptionPane.INFORMATION_MESSAGE);
+                }
+            }
+        }.execute();
     }
 
     /**

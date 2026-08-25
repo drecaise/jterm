@@ -95,6 +95,21 @@ public final class AppSettings {
     // the remote shell announcing its directory, which many do not — see ui.pane.PaneTitle.
     private boolean showWorkingDirectory = false;
 
+    // Whether the app asks GitHub once a day whether a newer release exists. Read live by
+    // update.UpdateScheduler at each firing, so both directions of the toggle take effect without
+    // a restart. Nothing about the user is transmitted — see update.UpdateChecker.
+    private boolean updateCheckEnabled = true;
+
+    // When the last update check was *attempted* (epoch seconds; 0 = never). Recorded whether the
+    // attempt succeeded or failed, which is what makes an offline or rate-limited client back off
+    // for a day rather than retry in a loop. Throttle state rather than a user preference, kept
+    // here for the same reason the window bounds are.
+    private long lastUpdateCheckEpochSeconds = 0;
+
+    // The release tag the user chose to skip ("" = none). Suppresses the dialog for exactly that
+    // version; a later release still notifies. Ignored by the manual Help menu check.
+    private String skippedUpdateVersion = "";
+
     // Whether the dark theme is active. Persisted so the choice survives a restart; defaults to
     // dark (the app's original default) on a fresh install or a settings file predating this field.
     private boolean darkTheme = true;
@@ -232,6 +247,36 @@ public final class AppSettings {
 
     public void setShowWorkingDirectory(boolean showWorkingDirectory) {
         this.showWorkingDirectory = showWorkingDirectory;
+    }
+
+    /**
+     * Whether the scheduled GitHub update check runs. Read live at each firing, so switching it
+     * either way in Preferences takes effect without a restart.
+     */
+    public boolean isUpdateCheckEnabled() {
+        return updateCheckEnabled;
+    }
+
+    public void setUpdateCheckEnabled(boolean updateCheckEnabled) {
+        this.updateCheckEnabled = updateCheckEnabled;
+    }
+
+    /** When an update check was last attempted, in epoch seconds; 0 means never. */
+    public long getLastUpdateCheckEpochSeconds() {
+        return lastUpdateCheckEpochSeconds;
+    }
+
+    public void setLastUpdateCheckEpochSeconds(long lastUpdateCheckEpochSeconds) {
+        this.lastUpdateCheckEpochSeconds = Math.max(0, lastUpdateCheckEpochSeconds);
+    }
+
+    /** The release tag the user asked not to be told about again; {@code ""} when none. */
+    public String getSkippedUpdateVersion() {
+        return skippedUpdateVersion;
+    }
+
+    public void setSkippedUpdateVersion(String skippedUpdateVersion) {
+        this.skippedUpdateVersion = isBlank(skippedUpdateVersion) ? "" : skippedUpdateVersion.trim();
     }
 
     /** Whether a local terminal tab is opened automatically on launch (read once at startup). */
@@ -473,7 +518,8 @@ public final class AppSettings {
                 defaultUsername, defaultTabColorHex, openTerminalOnStartup,
                 defaultKeyPath, autoAcceptNewHostKeys, scrollbackLines, middleClickPaste,
                 uiScalePercent, uiFontFamily, uiFontSize, promptPasswordOnAuthFailure,
-                sidebarVisible, blinkCursor, defaultKeepAliveSeconds, showWorkingDirectory));
+                sidebarVisible, blinkCursor, defaultKeepAliveSeconds, showWorkingDirectory,
+                updateCheckEnabled, lastUpdateCheckEpochSeconds, skippedUpdateVersion));
     }
 
     private static AppSettings load() {
@@ -494,6 +540,15 @@ public final class AppSettings {
             }
             if (p.showWorkingDirectory != null) {
                 settings.showWorkingDirectory = p.showWorkingDirectory;
+            }
+            if (p.updateCheckEnabled != null) {
+                settings.updateCheckEnabled = p.updateCheckEnabled;
+            }
+            if (p.lastUpdateCheckEpochSeconds != null) {
+                settings.setLastUpdateCheckEpochSeconds(p.lastUpdateCheckEpochSeconds);
+            }
+            if (p.skippedUpdateVersion != null) {
+                settings.setSkippedUpdateVersion(p.skippedUpdateVersion);
             }
             if (!isBlank(p.defaultTerminalType)) {
                 settings.defaultTerminalType = p.defaultTerminalType;
@@ -582,6 +637,7 @@ public final class AppSettings {
                              String uiFontFamily, Integer uiFontSize,
                              Boolean promptPasswordOnAuthFailure, Boolean sidebarVisible,
                              Boolean blinkCursor, Integer defaultKeepAliveSeconds,
-                             Boolean showWorkingDirectory) {
+                             Boolean showWorkingDirectory, Boolean updateCheckEnabled,
+                             Long lastUpdateCheckEpochSeconds, String skippedUpdateVersion) {
     }
 }

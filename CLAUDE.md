@@ -259,6 +259,37 @@ Auth order is publickey (agent → on-disk keys) then password — MINA tries th
   only). java-keyring's dbus-java Linux backend **hangs** on some setups and is excluded in
   `pom.xml` — do not reintroduce it.
 
+### The update check treats the GitHub response as hostile input
+`update.UpdateScheduler` asks `update.UpdateChecker` once a day whether a newer release exists and
+hands any find to `ui.update.UpdateAvailableDialog`. It is a *notification*, never a downloader.
+
+The two design constraints are both non-obvious:
+
+- **Anti-herd scheduling.** Every install must not hit `api.github.com` at once, so nothing uses a
+  fixed time: a due check waits a random 30–180 s (which also keeps it off the startup path), and
+  each subsequent period is a fresh draw in **20–28 h** rather than a flat 24 h, so long-running
+  instances drift apart instead of converging. `nextDelaySeconds` is pure and takes a
+  `RandomGenerator` so the band is unit-tested. `AppSettings.lastUpdateCheckEpochSeconds` is
+  stamped on **every attempt, success or failure** — that is what makes an offline or
+  rate-limited client back off for a day instead of retrying, and what keeps ten launches in a
+  morning down to one request. It is written from the checker thread but `save()`d via
+  `invokeLater`, since `AppSettings.save()` rewrites the whole file.
+- **The response drives a browser launch and on-screen text.** `UpdateChecker.safeReleaseUrl`
+  re-validates the server-supplied `html_url` (exact host `github.com`, `https`, path under
+  `/drecaise/jterm/releases/`) before it can reach `BrowserLauncher` — the URL from the wire is
+  never used directly. Release notes go into a **`JTextArea`, never the `hyperlinkPane`
+  `JEditorPane`** the About dialog uses: Swing's HTML renderer fetches remote `<img src>`, which
+  would leak the viewer's IP the moment the dialog appeared. The body is read through a 1 MiB cap
+  (`ofByteArray` is unbounded), redirects are off, and nothing identifying is sent — only the
+  `User-Agent` GitHub requires.
+
+The scheduler is armed even when the user has opted out: it makes no request in that state, but
+idles hourly re-reading the flag, so **both directions of the Preferences toggle take effect without
+a restart**. Scheduled checks are **silent on every failure** (`LOG.debug`); only the explicit
+Help → Check for Updates… reports errors. `AppVersion.isUpgrade` answers false unless *both* versions parse, so a
+dev build (`AppInfo.version()` returns `"(dev)"` off an unfiltered build) never nags. `AppInfo` was
+widened to public for exactly that call.
+
 ### Desktop integration (GNOME/Wayland icon)
 The window icon (`app.AppIcon`) is set via `setIconImages`, but GNOME ignores it for the
 dash/Alt-Tab and matches a `.desktop` file by `WM_CLASS`. So `app.Main` sets the X11 WM_CLASS
