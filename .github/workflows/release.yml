@@ -481,6 +481,11 @@ jobs:
     needs: [version, build-jar, build-msi, build-flatpak, build-dmg, build-snap, build-rpm, build-deb]
     runs-on: ubuntu-latest
     steps:
+      # Full history + tags: the release notes are extracted from the commit
+      # subjects since the previous version tag.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v8
         with:
           path: artifacts
@@ -495,8 +500,16 @@ jobs:
           cp artifacts/jterm-rpm-*/*.rpm release/
           cp artifacts/jterm-deb/*.deb release/
           ls -la release
+      # Commits land straight on master here, so GitHub's own note generator
+      # (no pull requests to list) yields nothing but a compare link -- extract
+      # the notes from the commit log instead. generate_release_notes stays on:
+      # GitHub appends its generated section, i.e. the Full Changelog link.
+      - name: Extract release notes
+        run: |
+          .github/release-notes.sh "${GITHUB_REF_NAME}" | tee release-notes.md
       - uses: softprops/action-gh-release@v3
         with:
           files: release/*
+          body_path: release-notes.md
           generate_release_notes: true
           fail_on_unmatched_files: true

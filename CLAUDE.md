@@ -24,8 +24,13 @@ java -jar target/jterm.jar           # run the jar
 Native installers (Windows `.msi`, macOS `.dmg`) and the Linux `.flatpak` are built by the
 `Release` GitHub Actions workflow (`.github/workflows/release.yml`) — on a `v*.*.*` tag push it
 attaches all three plus the fat jar to a GitHub Release; manual dispatch builds them as
-downloadable workflow artifacts. jpackage is driven directly from the workflow (the old
-`-Pinstaller` Maven profile was removed); the Flatpak manifest lives in `packaging/flatpak/`.
+downloadable workflow artifacts. The Release body is extracted from the commit subjects since the
+previous version tag by `.github/release-notes.sh` (run it locally to preview:
+`.github/release-notes.sh v1.9.0`) — GitHub's own `generate_release_notes` lists *pull requests*,
+and commits here land straight on master, so on its own it produces nothing but a compare link
+(it stays enabled so that link is still appended). jpackage is driven directly from the workflow
+(the old `-Pinstaller` Maven profile was removed); the Flatpak manifest lives in
+`packaging/flatpak/`.
 
 There **is** a JUnit 5 suite under `src/test/java` (`mvn -q test`), but it only covers headless
 logic — credential/vault resolution, session-store inheritance, SFTP transfer maths, agent socket
