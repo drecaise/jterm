@@ -20,6 +20,8 @@
 package com.katmoda.jterm.macro;
 
 import com.jediterm.terminal.TtyConnector;
+
+import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,20 +38,44 @@ public final class MacroRunner {
     private MacroRunner() {
     }
 
-    /** Starts replaying {@code macro} into {@code connector} on a background thread. */
+    /**
+     * Starts replaying {@code macro} into {@code connector} on a background thread.
+     *
+     * <p>The macro must already be plaintext. A sealed macro has no readable steps
+     * ({@link Macro#isSealed()}), so this refuses it rather than replaying nothing: callers resolve
+     * it through {@code MacroCrypto} — which needs the vault unlocked, hence a UI decision — and
+     * then use {@link #run(String, java.util.List, TtyConnector)}.</p>
+     */
     public static void run(Macro macro, TtyConnector connector) {
-        if (macro == null || connector == null || macro.getSteps().isEmpty()) {
+        if (macro == null) {
             return;
         }
+        if (macro.isSealed()) {
+            LOG.warn("refusing to replay \"{}\": its steps are still encrypted", macro.getName());
+            return;
+        }
+        run(macro.getName(), macro.getSteps(), connector);
+    }
+
+    /**
+     * Starts replaying already-resolved {@code steps} on a background thread. Used by the paths that
+     * decrypt a macro on the EDT first (the Macros menu, the hotkey dispatcher, run-on-connect) so
+     * the replay never has to reach back into the vault.
+     */
+    public static void run(String name, List<MacroStep> steps, TtyConnector connector) {
+        if (steps == null || steps.isEmpty() || connector == null) {
+            return;
+        }
+        List<MacroStep> snapshot = List.copyOf(steps);
         MacroSink sink = connector::write;
-        Thread thread = new Thread(() -> replay(macro, sink), "macro-" + macro.getName());
+        Thread thread = new Thread(() -> replay(snapshot, sink), "macro-" + name);
         thread.setDaemon(true);
         thread.start();
     }
 
-    private static void replay(Macro macro, MacroSink sink) {
+    private static void replay(List<MacroStep> steps, MacroSink sink) {
         try {
-            for (MacroStep step : macro.getSteps()) {
+            for (MacroStep step : steps) {
                 step.execute(sink);
             }
         } catch (InterruptedException e) {

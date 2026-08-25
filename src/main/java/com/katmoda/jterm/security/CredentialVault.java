@@ -26,6 +26,7 @@ import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.security.GeneralSecurityException;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -180,6 +181,46 @@ public final class CredentialVault {
 
     public boolean hasPassword(String id) {
         return data != null && data.passwords != null && data.passwords.containsKey(id);
+    }
+
+    // ---- arbitrary blobs under the vault key ----
+
+    /**
+     * AES-GCM encrypts {@code plaintext} under the vault key, binding {@code aad} into the tag.
+     *
+     * <p>Exists so features other than saved passwords can protect data at rest without inventing a
+     * second secret: the caller never sees the master password or the vault key, it just needs the
+     * vault unlocked ({@link VaultManager#ensureUnlocked}). Used by {@code macro.MacroCrypto} to seal
+     * macro steps. Pass the owning record's id as {@code aad} — see
+     * {@link PassphraseBox#encrypt(SecretKey, byte[], byte[], byte[])} for why that matters.</p>
+     */
+    public Blob seal(byte[] plaintext, byte[] aad) throws VaultException {
+        requireUnlocked();
+        try {
+            byte[] nonce = PassphraseBox.randomBytes(PassphraseBox.GCM_NONCE_BYTES);
+            Blob blob = new Blob();
+            blob.nonce = B64E.encodeToString(nonce);
+            blob.ciphertext = B64E.encodeToString(
+                    PassphraseBox.encrypt(vaultKey, nonce, plaintext, aad));
+            return blob;
+        } catch (Exception e) {
+            throw new VaultException("Failed to encrypt data", e);
+        }
+    }
+
+    /**
+     * Decrypts a {@link #seal}ed blob. A wrong {@code aad} — a blob moved to another record's slot —
+     * fails the same way a tampered ciphertext does.
+     *
+     * @throws javax.crypto.AEADBadTagException if the blob does not authenticate
+     */
+    public byte[] open(Blob blob, byte[] aad) throws VaultException, GeneralSecurityException {
+        requireUnlocked();
+        if (blob == null || blob.nonce == null || blob.ciphertext == null) {
+            throw new VaultException("Encrypted data is missing its nonce or ciphertext");
+        }
+        return PassphraseBox.decrypt(vaultKey, B64D.decode(blob.nonce),
+                B64D.decode(blob.ciphertext), aad);
     }
 
     // ---- crypto helpers ----

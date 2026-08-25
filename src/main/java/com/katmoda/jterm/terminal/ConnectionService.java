@@ -21,13 +21,18 @@ package com.katmoda.jterm.terminal;
 
 import com.katmoda.jterm.config.AppSettings;
 import com.katmoda.jterm.macro.Macro;
+import com.katmoda.jterm.macro.MacroCrypto;
 import com.katmoda.jterm.macro.MacroLibrary;
 import com.katmoda.jterm.macro.MacroRunner;
+import com.katmoda.jterm.macro.MacroStep;
 import com.katmoda.jterm.security.CredentialResolver;
+import com.katmoda.jterm.security.VaultException;
 import com.katmoda.jterm.session.SessionStore;
 import com.katmoda.jterm.session.SshSessionConfig;
 import com.katmoda.jterm.terminal.ssh.SshConnect;
 import com.katmoda.jterm.terminal.ssh.SshSession;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.swing.SwingWorker;
 import java.util.List;
@@ -40,6 +45,8 @@ import java.util.function.Consumer;
  * session back on the EDT. Connection failures are surfaced through the injected error reporter.
  */
 public final class ConnectionService {
+
+    private static final Logger LOG = LoggerFactory.getLogger(ConnectionService.class);
 
     private final SessionStore sessionStore;
     private final CredentialResolver credentials;
@@ -67,6 +74,11 @@ public final class ConnectionService {
         int effectiveKeepAlive = sessionStore.effectiveKeepAliveSeconds(cfg);
         SshConnect.PassphraseProvider passphrases = credentials.keyPassphraseProvider(cfg, effectiveKeyPath);
         SshConnect.InteractiveAuth interactive = interactiveAuth(cfg);
+        // Resolve the run-on-connect macro here too, for the same reason as the credentials above:
+        // its steps may be encrypted at rest, and decrypting them can put a master-password prompt
+        // on screen. Doing it before the connect starts means that prompt appears when the user
+        // asked to connect, rather than surprising them once the session is already up.
+        ConnectMacro connectMacro = resolveConnectMacro(cfg);
         new SwingWorker<SshSession, Void>() {
             @Override
             protected SshSession doInBackground() throws Exception {
@@ -84,7 +96,9 @@ public final class ConnectionService {
                 try {
                     SshSession session = get();
                     onConnected.accept(session);
-                    runConnectMacro(cfg, session);
+                    if (connectMacro != null) {
+                        MacroRunner.run(connectMacro.name(), connectMacro.steps(), session.connector());
+                    }
                 } catch (Exception e) {
                     Throwable cause = e.getCause() != null ? e.getCause() : e;
                     connectErrorReporter.accept("SSH connection failed:", cause);
@@ -105,11 +119,36 @@ public final class ConnectionService {
                 ? credentials.interactiveAuth(cfg) : SshConnect.InteractiveAuth.NONE;
     }
 
-    /** If the session has a configured run-on-connect macro, replay it into the new channel. */
-    private void runConnectMacro(SshSessionConfig cfg, SshSession session) {
+    /** A run-on-connect macro already resolved to plaintext steps. */
+    private record ConnectMacro(String name, List<MacroStep> steps) {
+    }
+
+    /**
+     * The session's run-on-connect macro with its steps resolved (EDT), or {@code null} if it has
+     * none, the id is stale, or the macro could not be decrypted.
+     *
+     * <p>A stale id has always been silently ignored, and a cancelled unlock is treated the same
+     * way: the user declining to type their master password should not fail an SSH connection that
+     * is otherwise fine. A decryption <em>failure</em> is different — that means the stored blob did
+     * not authenticate — so it is logged.</p>
+     */
+    private ConnectMacro resolveConnectMacro(SshSessionConfig cfg) {
         Macro macro = MacroLibrary.get().byId(cfg.getMacroId());
-        if (macro != null) {
-            MacroRunner.run(macro, session.connector());
+        if (macro == null) {
+            return null;
+        }
+        if (!macro.isSealed()) {
+            return new ConnectMacro(macro.getName(), List.copyOf(macro.getSteps()));
+        }
+        if (!credentials.vaultAccess().ensureUnlocked()) {
+            return null; // cancelled — connect anyway, just without the macro
+        }
+        try {
+            Macro plain = MacroCrypto.resolved(macro, credentials.vaultAccess().vault());
+            return new ConnectMacro(plain.getName(), List.copyOf(plain.getSteps()));
+        } catch (VaultException e) {
+            LOG.warn("could not decrypt the run-on-connect macro \"{}\"", macro.getName(), e);
+            return null;
         }
     }
 }

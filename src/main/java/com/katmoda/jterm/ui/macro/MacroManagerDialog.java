@@ -20,9 +20,14 @@
 package com.katmoda.jterm.ui.macro;
 
 import com.formdev.flatlaf.util.UIScale;
+import com.katmoda.jterm.config.AppSettings;
 import com.katmoda.jterm.keymap.Keymap;
 import com.katmoda.jterm.macro.Macro;
+import com.katmoda.jterm.macro.MacroCrypto;
 import com.katmoda.jterm.macro.MacroLibrary;
+import com.katmoda.jterm.security.VaultException;
+import com.katmoda.jterm.security.VaultManager;
+import com.katmoda.jterm.ui.ErrorDialog;
 
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
@@ -42,9 +47,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Manages the macro collection: a list of all macros with <i>New / Edit / Delete</i>.
- * Mutates and saves {@link MacroLibrary} directly; the caller rebuilds the Macros menu after
- * this modal dialog closes.
+ * Manages the macro collection: a list of all macros with <i>New / Edit / Delete</i> plus
+ * <i>Export / Import</i>. Mutates and saves {@link MacroLibrary} directly; the caller rebuilds the
+ * Macros menu after this modal dialog closes.
+ *
+ * <p>The list is multi-select so an export can cover a chosen subset; Edit and Delete guard on the
+ * selection size rather than assuming one. When macro encryption is on, every write goes through
+ * {@link #persist()}, which unlocks the vault first — {@code MacroLibrary.save()} refuses to write
+ * plaintext when the setting says otherwise, so an un-unlocked save would silently lose the edit.</p>
  */
 public final class MacroManagerDialog extends JDialog {
 
@@ -55,7 +65,7 @@ public final class MacroManagerDialog extends JDialog {
     private MacroManagerDialog(Window owner, Keymap keymap) {
         super(owner, "Macros", ModalityType.APPLICATION_MODAL);
         this.keymap = keymap;
-        list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        list.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         reload();
         setContentPane(buildContent());
         pack();
@@ -87,9 +97,16 @@ public final class MacroManagerDialog extends JDialog {
         edit.addActionListener(e -> editMacro());
         JButton delete = new JButton("Delete");
         delete.addActionListener(e -> deleteMacro());
+        JButton export = new JButton("Export…");
+        export.setToolTipText("Exports the selected macros, or all of them when nothing is selected");
+        export.addActionListener(e -> exportMacros());
+        JButton importButton = new JButton("Import…");
+        importButton.addActionListener(e -> importMacros());
         buttons.add(add);
         buttons.add(edit);
         buttons.add(delete);
+        buttons.add(export);
+        buttons.add(importButton);
 
         JButton close = new JButton("Close");
         close.addActionListener(e -> dispose());
@@ -106,41 +123,114 @@ public final class MacroManagerDialog extends JDialog {
 
     private void newMacro() {
         Macro created = MacroEditDialog.edit(this, new Macro(), keymap, others(null));
-        if (created != null) {
-            MacroLibrary.get().add(created);
-            MacroLibrary.get().save();
-            reload();
-            list.setSelectedValue(created, true);
+        if (created == null) {
+            return;
         }
+        MacroLibrary.get().add(created);
+        if (!persist()) {
+            MacroLibrary.get().remove(created);
+        }
+        reload();
+        list.setSelectedValue(created, true);
     }
 
     private void editMacro() {
-        Macro selected = list.getSelectedValue();
+        Macro selected = singleSelection();
         if (selected == null) {
             return;
         }
-        Macro edited = MacroEditDialog.edit(this, selected, keymap, others(selected));
-        if (edited != null) {
-            MacroLibrary.get().replace(edited);
-            MacroLibrary.get().save();
-            reload();
-            list.setSelectedValue(edited, true);
+        // The editor needs readable steps, so open a decrypted copy. The library keeps the sealed
+        // original until the edit is committed, so cancelling changes nothing on disk or in memory.
+        Macro plain = resolved(selected);
+        if (plain == null) {
+            return;
         }
+        Macro edited = MacroEditDialog.edit(this, plain, keymap, others(selected));
+        if (edited == null) {
+            return;
+        }
+        MacroLibrary.get().replace(edited);
+        if (!persist()) {
+            MacroLibrary.get().replace(selected); // put the sealed original back
+        }
+        reload();
+        list.setSelectedValue(edited, true);
     }
 
     private void deleteMacro() {
-        Macro selected = list.getSelectedValue();
-        if (selected == null) {
+        List<Macro> selected = list.getSelectedValuesList();
+        if (selected.isEmpty()) {
             return;
         }
-        int confirm = JOptionPane.showConfirmDialog(this,
-                "Delete macro \"" + selected.getName() + "\"?", "Macros",
+        String what = (selected.size() == 1)
+                ? "macro \"" + selected.get(0).getName() + "\""
+                : selected.size() + " macros";
+        int confirm = JOptionPane.showConfirmDialog(this, "Delete " + what + "?", "Macros",
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
-        if (confirm == JOptionPane.OK_OPTION) {
-            MacroLibrary.get().remove(selected);
-            MacroLibrary.get().save();
+        if (confirm != JOptionPane.OK_OPTION) {
+            return;
+        }
+        List<Macro> previous = new ArrayList<>(MacroLibrary.get().macros());
+        for (Macro macro : selected) {
+            MacroLibrary.get().remove(macro);
+        }
+        if (!persist()) {
+            MacroLibrary.get().replaceAll(previous);
+        }
+        reload();
+    }
+
+    /** Exports the selected macros, or the whole library when the selection is empty. */
+    private void exportMacros() {
+        List<Macro> selected = list.getSelectedValuesList();
+        MacroTransfer.export(this,
+                selected.isEmpty() ? new ArrayList<>(MacroLibrary.get().macros()) : selected);
+    }
+
+    private void importMacros() {
+        if (MacroTransfer.importMacros(this, keymap)) {
             reload();
         }
+    }
+
+    /** The selected macro when exactly one is selected, else {@code null}. */
+    private Macro singleSelection() {
+        List<Macro> selected = list.getSelectedValuesList();
+        return (selected.size() == 1) ? selected.get(0) : null;
+    }
+
+    /** A decrypted copy of {@code macro}, or {@code null} if that was cancelled or failed. */
+    private Macro resolved(Macro macro) {
+        if (!macro.isSealed()) {
+            return macro;
+        }
+        if (!VaultManager.get().ensureUnlocked(this)) {
+            return null;
+        }
+        try {
+            return MacroCrypto.resolved(macro, VaultManager.get().vault());
+        } catch (VaultException e) {
+            ErrorDialog.show(this, "Macros", "Could not decrypt this macro:", e);
+            return null;
+        }
+    }
+
+    /**
+     * Saves the library, unlocking the vault first when macros are encrypted. Returns {@code false}
+     * (having told the user) if the write did not happen, so callers can roll their change back
+     * rather than leave memory and disk disagreeing.
+     */
+    private boolean persist() {
+        if (AppSettings.get().isEncryptMacros() && !VaultManager.get().ensureUnlocked(this)) {
+            return false;
+        }
+        if (MacroLibrary.get().save()) {
+            return true;
+        }
+        JOptionPane.showMessageDialog(this,
+                "Your macros could not be saved, so the change was undone.",
+                "Macros", JOptionPane.ERROR_MESSAGE);
+        return false;
     }
 
     /** All macros except {@code exclude} (by id), for hotkey-conflict checks. */

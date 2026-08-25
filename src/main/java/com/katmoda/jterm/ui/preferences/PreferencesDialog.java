@@ -21,9 +21,13 @@ package com.katmoda.jterm.ui.preferences;
 
 import com.formdev.flatlaf.util.UIScale;
 import com.katmoda.jterm.config.AppSettings;
+import com.katmoda.jterm.macro.Macro;
+import com.katmoda.jterm.macro.MacroCrypto;
+import com.katmoda.jterm.macro.MacroLibrary;
 import com.katmoda.jterm.security.VaultException;
 import com.katmoda.jterm.security.VaultKeys;
 import com.katmoda.jterm.security.VaultManager;
+import com.katmoda.jterm.ui.ErrorDialog;
 import com.katmoda.jterm.ui.component.HighlightListCombo;
 import com.katmoda.jterm.ui.component.HighlightListsForm;
 import com.katmoda.jterm.ui.component.KeyFileField;
@@ -32,6 +36,7 @@ import com.katmoda.jterm.ui.component.TerminalSettingsForm;
 import com.katmoda.jterm.ui.component.ToggleSwitch;
 import com.katmoda.jterm.ui.theme.ThemeManager;
 
+import java.util.List;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
@@ -94,6 +99,7 @@ public final class PreferencesDialog {
                 new ToggleSwitch(settings.isPromptPasswordOnAuthFailure());
         ToggleSwitch showWorkingDirectory = new ToggleSwitch(settings.isShowWorkingDirectory());
         ToggleSwitch checkForUpdates = new ToggleSwitch(settings.isUpdateCheckEnabled());
+        ToggleSwitch encryptMacros = new ToggleSwitch(settings.isEncryptMacros());
         JPanel general = new JPanel(new GridBagLayout());
         int row = 0;
         addToggleRow(general, row++, "Copy to clipboard on select:", copyOnSelect);
@@ -120,6 +126,13 @@ public final class PreferencesDialog {
         addHint(general, row++, "Ask github.com about once a day whether a newer jterm release is"
                 + " available, and offer a link to it. Nothing about you or your sessions is sent."
                 + " Help → Check for Updates… always checks, even with this off.");
+        addToggleRow(general, row++, "Encrypt macros on disk:", encryptMacros);
+        addHint(general, row++, "Stores macro contents in macros.json encrypted with your master"
+                + " password, so they are not readable from a backup or a synced folder. Macro names"
+                + " and hotkeys stay readable. Anything running as you can still unlock the vault,"
+                + " and a macro's text is still typed into the terminal in the clear.");
+        addHint(general, row++, "If you lose the master password, encrypted macros cannot be"
+                + " recovered — export them first if you want a copy you can still read.");
 
         // Appearance: the scale and font of the application chrome (sidebar, tabs, menus, dialogs).
         // All three are read by ThemeManager at startup only, hence the restart notice on OK.
@@ -278,6 +291,9 @@ public final class PreferencesDialog {
         settings.setPromptPasswordOnAuthFailure(promptPasswordOnAuthFailure.isSelected());
         settings.setShowWorkingDirectory(showWorkingDirectory.isSelected());
         settings.setUpdateCheckEnabled(checkForUpdates.isSelected());
+        // Applied before the settings are saved: re-writing macros.json in the other form can fail
+        // or be cancelled, and the flag must not end up claiming a state the file is not in.
+        applyMacroEncryption(parent, settings, encryptMacros.isSelected());
         // Remember the pre-edit UI scale/font so we only nag about restarting when one changed.
         String previousUiAppearance = uiAppearanceKey(settings);
         settings.setUiScalePercent(percentValue(uiScale.getSelectedItem()));
@@ -377,6 +393,48 @@ public final class PreferencesDialog {
     }
 
     /** A "Label:   [toggle]" row: label on the left, toggle at its natural size on the right. */
+    /**
+     * Turns macro encryption on or off, rewriting {@code macros.json} in the new form.
+     *
+     * <p>Both directions need the vault: sealing needs the key, and unsealing needs to read what is
+     * already sealed. If the user cancels the unlock or the rewrite fails, the setting is left where
+     * it was rather than pointing at a file in the other form — a flag that disagrees with the file
+     * would either expose macros the user asked to protect or make protected ones unreadable.</p>
+     */
+    private static void applyMacroEncryption(Component parent, AppSettings settings, boolean enable) {
+        if (enable == settings.isEncryptMacros()) {
+            return;
+        }
+        List<Macro> macros = MacroLibrary.get().macros();
+        if (MacroLibrary.get().isLoadFailed()) {
+            JOptionPane.showMessageDialog(parent,
+                    "macros.json could not be read, so this setting cannot be changed yet.",
+                    "Encrypt Macros", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        if (!macros.isEmpty() && !VaultManager.get().ensureUnlocked(parent)) {
+            return; // cancelled — leave the setting as it was
+        }
+
+        settings.setEncryptMacros(enable);
+        try {
+            if (!enable) {
+                // Decrypt first: with the flag already off, save() writes whatever form it finds.
+                MacroCrypto.unsealAll(macros, VaultManager.get().vault());
+            }
+        } catch (VaultException e) {
+            settings.setEncryptMacros(!enable);
+            ErrorDialog.show(parent, "Encrypt Macros", "Could not decrypt your macros:", e);
+            return;
+        }
+        if (!MacroLibrary.get().save()) {
+            settings.setEncryptMacros(!enable);
+            JOptionPane.showMessageDialog(parent,
+                    "Your macros could not be rewritten, so this setting was left unchanged.",
+                    "Encrypt Macros", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
     private static void addToggleRow(JPanel form, int row, String label, ToggleSwitch toggle) {
         GridBagConstraints g = new GridBagConstraints();
         g.gridx = 0;

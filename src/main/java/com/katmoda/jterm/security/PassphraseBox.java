@@ -114,16 +114,45 @@ public final class PassphraseBox {
     /** AES-256-GCM encrypt; returns ciphertext-with-tag. */
     public static byte[] encrypt(SecretKey key, byte[] nonce, byte[] plaintext)
             throws GeneralSecurityException {
-        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_BITS, nonce));
-        return cipher.doFinal(plaintext);
+        return encrypt(key, nonce, plaintext, null);
     }
 
     /** AES-256-GCM decrypt; throws {@link javax.crypto.AEADBadTagException} on auth failure. */
     public static byte[] decrypt(SecretKey key, byte[] nonce, byte[] ciphertext)
             throws GeneralSecurityException {
+        return decrypt(key, nonce, ciphertext, null);
+    }
+
+    /**
+     * AES-256-GCM encrypt, binding {@code aad} into the authentication tag.
+     *
+     * <p>GCM authenticates the <em>contents</em> of a ciphertext, not where it was stored. When many
+     * blobs are encrypted under one key — as {@link CredentialVault} does — anyone who can write the
+     * file can move blob A into blob B's slot and it still decrypts cleanly. Passing the owning
+     * record's identity as additional authenticated data ties the ciphertext to its slot, so a
+     * swapped blob fails to open instead of silently taking effect. {@code null} means no AAD.</p>
+     */
+    public static byte[] encrypt(SecretKey key, byte[] nonce, byte[] plaintext, byte[] aad)
+            throws GeneralSecurityException {
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_BITS, nonce));
+        if (aad != null) {
+            cipher.updateAAD(aad);
+        }
+        return cipher.doFinal(plaintext);
+    }
+
+    /**
+     * AES-256-GCM decrypt, requiring the same {@code aad} used to encrypt. A mismatch surfaces as
+     * {@link javax.crypto.AEADBadTagException}, exactly like a tampered ciphertext.
+     */
+    public static byte[] decrypt(SecretKey key, byte[] nonce, byte[] ciphertext, byte[] aad)
+            throws GeneralSecurityException {
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_BITS, nonce));
+        if (aad != null) {
+            cipher.updateAAD(aad);
+        }
         return cipher.doFinal(ciphertext);
     }
 

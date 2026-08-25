@@ -19,7 +19,10 @@
  */
 package com.katmoda.jterm.macro;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.katmoda.jterm.security.CredentialVault;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -30,6 +33,18 @@ import java.util.UUID;
  * {@code hotkey} (stored as a {@link javax.swing.KeyStroke#toString()} value, e.g.
  * {@code "shift ctrl F1"}; {@code null} when unbound). Persisted as part of
  * {@code macros.json} (see {@link MacroLibrary}).
+ *
+ * <p><b>Sealed vs. plaintext.</b> When {@code AppSettings.isEncryptMacros()} is on, the steps are
+ * stored as one AES-GCM {@link #getSealedSteps() sealedSteps} blob instead of a readable list.
+ * {@code id}, {@code name} and {@code hotkey} stay plaintext on purpose, so the Macros menu and the
+ * global hotkey dispatcher work with the vault locked — see {@link MacroCrypto}.</p>
+ *
+ * <p><b>Invariant:</b> exactly one of {@code steps} / {@code sealedSteps} is populated, in memory as
+ * well as on disk. {@link MacroCrypto#unseal} moves a macro from the second form to the first and
+ * {@link MacroCrypto#seal} moves it back; neither keeps a copy in the other form. That means
+ * {@link #getSteps()} on a still-sealed macro returns an <em>empty</em> list rather than the real
+ * steps, so anything that replays or edits a macro must resolve it through {@link MacroCrypto}
+ * first. {@link #isSealed()} says which form this instance is in.</p>
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public final class Macro {
@@ -37,7 +52,14 @@ public final class Macro {
     private String id = UUID.randomUUID().toString();
     private String name = "Macro";
     private String hotkey;
+
+    // Omitted from the JSON while sealed, so an encrypted macros.json carries no readable steps at
+    // all (not even an empty "steps": []) and a half-migrated file stays unambiguous.
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
     private List<MacroStep> steps = new ArrayList<>();
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private CredentialVault.Blob sealedSteps;
 
     public Macro() {
     }
@@ -67,6 +89,10 @@ public final class Macro {
         this.hotkey = (hotkey != null && !hotkey.isBlank()) ? hotkey : null;
     }
 
+    /**
+     * The plaintext steps — <b>empty while {@link #isSealed()}</b>. Resolve a macro through
+     * {@link MacroCrypto#unseal} before replaying or editing it.
+     */
     public List<MacroStep> getSteps() {
         return steps;
     }
@@ -75,13 +101,43 @@ public final class Macro {
         this.steps = (steps != null) ? steps : new ArrayList<>();
     }
 
-    /** A deep-ish copy for editing (steps are immutable records, so the list copy suffices). */
+    /** The AES-GCM blob holding the steps while encrypted at rest, or {@code null} when plaintext. */
+    public CredentialVault.Blob getSealedSteps() {
+        return sealedSteps;
+    }
+
+    public void setSealedSteps(CredentialVault.Blob sealedSteps) {
+        this.sealedSteps = sealedSteps;
+    }
+
+    /** Whether the steps are encrypted and must be unsealed before use. */
+    @JsonIgnore
+    public boolean isSealed() {
+        return sealedSteps != null;
+    }
+
+    /**
+     * The additional authenticated data binding a sealed blob to <em>this</em> macro. Without it,
+     * every blob in {@code macros.json} decrypts under the same vault key, so an attacker with write
+     * access could move one macro's steps under another's name and hotkey and have it run.
+     */
+    @JsonIgnore
+    public byte[] sealAad() {
+        return MacroCrypto.aad(id);
+    }
+
+    /**
+     * A deep-ish copy for editing (steps are immutable records, so the list copy suffices). The
+     * sealed blob is carried over as-is: it is immutable ciphertext, and keeping it means copying a
+     * macro that was never unsealed does not need the vault.
+     */
     public Macro copy() {
         Macro c = new Macro();
         c.id = id;
         c.name = name;
         c.hotkey = hotkey;
         c.steps = new ArrayList<>(steps);
+        c.sealedSteps = sealedSteps;
         return c;
     }
 

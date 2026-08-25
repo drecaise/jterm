@@ -22,6 +22,7 @@ package com.katmoda.jterm.ui.macro;
 import com.formdev.flatlaf.util.UIScale;
 import com.katmoda.jterm.keymap.Keymap;
 import com.katmoda.jterm.macro.Macro;
+import com.katmoda.jterm.macro.MacroHotkeys;
 import com.katmoda.jterm.macro.MacroStep;
 
 import javax.swing.BorderFactory;
@@ -242,16 +243,7 @@ public final class MacroEditDialog extends JDialog {
 
     /** A human description of what already owns {@code stroke}, or {@code null} if free. */
     private String conflictFor(KeyStroke stroke) {
-        if (keymap.actionFor(stroke) != null) {
-            return "a keyboard shortcut (" + keymap.actionFor(stroke).label() + ")";
-        }
-        String asString = stroke.toString();
-        for (Macro other : otherMacros) {
-            if (asString.equals(other.getHotkey())) {
-                return "macro \"" + other.getName() + "\"";
-            }
-        }
-        return null;
+        return MacroHotkeys.conflictFor(stroke, keymap, otherMacros);
     }
 
     private void stopRecording() {

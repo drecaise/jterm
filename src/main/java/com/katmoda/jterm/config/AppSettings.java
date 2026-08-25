@@ -95,6 +95,12 @@ public final class AppSettings {
     // the remote shell announcing its directory, which many do not — see ui.pane.PaneTitle.
     private boolean showWorkingDirectory = false;
 
+    // Whether macro steps are encrypted at rest in macros.json, under the credential vault's key
+    // (see macro.MacroCrypto). Off by default: turning it on requires a master password, which is a
+    // cost every user with a macro would otherwise pay for a risk only some of them carry. Names and
+    // hotkeys stay plaintext either way, so the Macros menu works with the vault locked.
+    private boolean encryptMacros = false;
+
     // Whether the app asks GitHub once a day whether a newer release exists. Read live by
     // update.UpdateScheduler at each firing, so both directions of the toggle take effect without
     // a restart. Nothing about the user is transmitted — see update.UpdateChecker.
@@ -247,6 +253,18 @@ public final class AppSettings {
 
     public void setShowWorkingDirectory(boolean showWorkingDirectory) {
         this.showWorkingDirectory = showWorkingDirectory;
+    }
+
+    /**
+     * Whether macro steps are encrypted at rest. Read at every {@code MacroLibrary} save and by the
+     * run/edit paths, so the toggle takes effect without a restart.
+     */
+    public boolean isEncryptMacros() {
+        return encryptMacros;
+    }
+
+    public void setEncryptMacros(boolean encryptMacros) {
+        this.encryptMacros = encryptMacros;
     }
 
     /**
@@ -519,7 +537,8 @@ public final class AppSettings {
                 defaultKeyPath, autoAcceptNewHostKeys, scrollbackLines, middleClickPaste,
                 uiScalePercent, uiFontFamily, uiFontSize, promptPasswordOnAuthFailure,
                 sidebarVisible, blinkCursor, defaultKeepAliveSeconds, showWorkingDirectory,
-                updateCheckEnabled, lastUpdateCheckEpochSeconds, skippedUpdateVersion));
+                updateCheckEnabled, lastUpdateCheckEpochSeconds, skippedUpdateVersion,
+                encryptMacros));
     }
 
     private static AppSettings load() {
@@ -549,6 +568,9 @@ public final class AppSettings {
             }
             if (p.skippedUpdateVersion != null) {
                 settings.setSkippedUpdateVersion(p.skippedUpdateVersion);
+            }
+            if (p.encryptMacros != null) {
+                settings.encryptMacros = p.encryptMacros;
             }
             if (!isBlank(p.defaultTerminalType)) {
                 settings.defaultTerminalType = p.defaultTerminalType;
@@ -638,6 +660,7 @@ public final class AppSettings {
                              Boolean promptPasswordOnAuthFailure, Boolean sidebarVisible,
                              Boolean blinkCursor, Integer defaultKeepAliveSeconds,
                              Boolean showWorkingDirectory, Boolean updateCheckEnabled,
-                             Long lastUpdateCheckEpochSeconds, String skippedUpdateVersion) {
+                             Long lastUpdateCheckEpochSeconds, String skippedUpdateVersion,
+                             Boolean encryptMacros) {
     }
 }

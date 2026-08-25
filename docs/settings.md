@@ -18,6 +18,7 @@ toggle and the keyboard-shortcut editor live in the **Settings** menu too — se
 | **Auto-accept new host keys** | Trust first-seen SSH hosts without prompting. You are still warned if a known host's key *changes*. |
 | **Ask for a password if key auth fails** | When ssh-agent and key authentication are rejected, prompt for a password instead of failing the connect — provided the server offers password authentication. On by default; see [SSH auth & vault](ssh-auth-and-vault.md#if-key-authentication-fails). |
 | **Check for updates** | Ask GitHub about once a day whether a newer jterm release exists, and offer a link to it. On by default. Nothing about you or your sessions is sent — see [Update checks](#update-checks) below. |
+| **Encrypt macros on disk** | Encrypt [macro](macros.md#encrypting-macros-on-disk) contents in `macros.json` with your master password. Off by default. Names and hotkeys stay readable, so the Macros menu and hotkeys work without unlocking. Protects backups and synced copies — **not** against programs running as you, and not against the secret reaching the terminal. |
 
 !!! note "Right-click paste and mouse-aware programs"
     Some terminal programs (editors, `htop`, and CLIs such as coding assistants) turn on *xterm

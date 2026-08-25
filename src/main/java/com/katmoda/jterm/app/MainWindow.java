@@ -25,10 +25,12 @@ import com.katmoda.jterm.icon.IconLibrary;
 import com.katmoda.jterm.keymap.Keymap;
 import com.katmoda.jterm.keymap.TermAction;
 import com.katmoda.jterm.macro.Macro;
+import com.katmoda.jterm.macro.MacroCrypto;
 import com.katmoda.jterm.macro.MacroLibrary;
 import com.katmoda.jterm.macro.MacroRunner;
 import com.katmoda.jterm.security.CredentialResolver;
 import com.katmoda.jterm.security.CredentialVault;
+import com.katmoda.jterm.security.VaultException;
 import com.katmoda.jterm.security.VaultManager;
 import com.katmoda.jterm.session.FolderNode;
 import com.katmoda.jterm.session.SessionNode;
@@ -48,6 +50,7 @@ import com.katmoda.jterm.ui.ErrorDialog;
 import com.katmoda.jterm.ui.grid.GridContent;
 import com.katmoda.jterm.ui.grid.PaneGrid;
 import com.katmoda.jterm.ui.macro.MacroManagerDialog;
+import com.katmoda.jterm.ui.macro.MacroTransfer;
 import com.katmoda.jterm.ui.pane.TerminalPane;
 import com.katmoda.jterm.ui.preferences.PreferencesDialog;
 import com.katmoda.jterm.ui.preferences.ShortcutsDialog;
@@ -931,6 +934,19 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         JMenuItem importSessions = new JMenuItem("Import Sessions…");
         importSessions.addActionListener(e -> sidebar.importRootSessions());
         file.add(importSessions);
+        JMenuItem exportMacros = new JMenuItem("Export Macros…");
+        exportMacros.addActionListener(e -> MacroTransfer.export(frame,
+                new ArrayList<>(MacroLibrary.get().macros())));
+        file.add(exportMacros);
+        JMenuItem importMacros = new JMenuItem("Import Macros…");
+        importMacros.addActionListener(e -> {
+            if (MacroTransfer.importMacros(frame, keymap)) {
+                // The Macros menu lists every macro by name, so it has to be rebuilt after an import.
+                frame.setJMenuBar(buildMenuBar());
+                frame.revalidate();
+            }
+        });
+        file.add(importMacros);
         file.addSeparator();
         JMenuItem quit = new JMenuItem("Quit");
         quit.addActionListener(e -> {
@@ -1150,7 +1166,12 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         return macros;
     }
 
-    /** Runs a macro on the focused window's active pane (broadcasting connector, so broadcast applies). */
+    /**
+     * Runs a macro on the focused window's active pane (broadcasting connector, so broadcast
+     * applies). The single choke point for both the Macros menu and the global hotkey dispatcher,
+     * which is why the decryption of an encrypted macro belongs here: it happens on the EDT, once
+     * per invocation, and a cancelled unlock simply does nothing.
+     */
     private void runMacroOnActivePane(Macro macro) {
         TabPane host = WindowManager.get().focusedTabPane();
         PaneGrid grid = host != null ? host.currentGrid() : null;
@@ -1158,8 +1179,32 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
             return;
         }
         TerminalPane pane = grid.activePane();
-        if (pane != null) {
-            MacroRunner.run(macro, pane.inputConnector());
+        if (pane == null) {
+            return;
+        }
+        Macro plain = resolveMacro(macro);
+        if (plain != null) {
+            MacroRunner.run(plain.getName(), plain.getSteps(), pane.inputConnector());
+        }
+    }
+
+    /**
+     * A decrypted copy of {@code macro}, unlocking the vault if needed. Returns {@code null} when the
+     * user cancels the unlock — pressing a macro hotkey and then dismissing the password prompt
+     * should be a no-op, not an error dialog.
+     */
+    private Macro resolveMacro(Macro macro) {
+        if (!macro.isSealed()) {
+            return macro;
+        }
+        if (!VaultManager.get().ensureUnlocked(frame)) {
+            return null;
+        }
+        try {
+            return MacroCrypto.resolved(macro, VaultManager.get().vault());
+        } catch (VaultException e) {
+            ErrorDialog.show(frame, "Macros", "Could not decrypt macro \"" + macro.getName() + "\":", e);
+            return null;
         }
     }
 

@@ -47,6 +47,7 @@ import com.katmoda.jterm.security.VaultManager;
 import com.katmoda.jterm.ui.ErrorDialog;
 import com.katmoda.jterm.ui.security.MasterPasswordDialog;
 import com.katmoda.jterm.ui.component.DialogFocus;
+import com.katmoda.jterm.ui.component.FileNames;
 import com.katmoda.jterm.ui.component.FooterFileChooser;
 import com.katmoda.jterm.ui.component.HighlightListCombo;
 import com.katmoda.jterm.ui.component.JumpHostsForm;
@@ -697,7 +698,7 @@ public final class SessionSidebar extends JPanel {
         includeCreds.setToolTipText("Embeds plaintext passwords; requires the master password");
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle("Export Sessions");
-        chooser.setSelectedFile(new File(safeFileName(folder.getName()) + ".json"));
+        chooser.setSelectedFile(new File(FileNames.safe(folder.getName(), "sessions") + ".json"));
         // Not setAccessory: that would stand the checkbox beside the file list instead of under it
         // (see FooterFileChooser), leaving the browser a fraction of the dialog width.
         chooser.setPreferredSize(UIScale.scale(new Dimension(700, 460)));
@@ -888,12 +889,6 @@ public final class SessionSidebar extends JPanel {
             return; // sessions still import; their passwords just won't be stored
         }
         SessionExportService.storeCredentials(VaultManager.get().vault(), credentials);
-    }
-
-    /** Sanitises a folder name for use as a default file name. */
-    private static String safeFileName(String name) {
-        String cleaned = name.replaceAll("[^a-zA-Z0-9-_]+", "_").replaceAll("^_+|_+$", "");
-        return cleaned.isEmpty() ? "sessions" : cleaned;
     }
 
     // ---- actions ----

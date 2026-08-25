@@ -76,6 +76,17 @@ public final class CredentialResolver {
     }
 
     /**
+     * The vault gateway this resolver was built with, for callers that need the same unlock (and so
+     * the same parent window and the same keyring pass) for something other than a credential —
+     * {@code ConnectionService} decrypting a run-on-connect macro, for one. Exposed rather than
+     * having those callers reach for {@code VaultManager.get()} directly, which would bypass the
+     * injected seam and take the headless tests with it.
+     */
+    public VaultAccess vaultAccess() {
+        return vault;
+    }
+
+    /**
      * Resolves the password to try for the target session (EDT): {@code null} if password auth is
      * off. Otherwise the cascade is the session's own saved password (when {@code savePassword}),
      * then the inherited folder/global default password, then a one-time prompt. The inherited

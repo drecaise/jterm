@@ -218,6 +218,58 @@ user/key/keep-alive resolves straight to the global defaults with no extra code.
 to suppress the *"remember"* affordance for both passwords and key passphrases: the config's id is
 a random UUID that dies with the tab, so a vault entry under it could never be reused or deleted.
 
+### Macros: encrypted at rest under the vault key, exportable under a passphrase
+`macro.MacroLibrary` (`macros.json`) is schema-versioned by `macro.MacroMigrations`: v0 was a bare
+JSON **array**, v1 is `{schemaVersion, macros}`. The sniff is the root token (an array *is* v0), and
+the stamp is written on load even when nothing changed — same one-shot rule as `SessionStore`.
+Because the schema sniff reads the file itself rather than going through `JsonStore.loadResult`,
+`MacroLibrary` repeats that class's `.unreadable-N` handling and sets `loadFailed`, which **refuses
+every save** — without it a corrupt file would silently become an empty library whose next save
+destroys the preserved original.
+
+When `AppSettings.encryptMacros` is on, only the **steps** are sealed (`macro.MacroCrypto`), into a
+`CredentialVault.Blob` on the macro. `id`/`name`/`hotkey` stay plaintext **on purpose**: `MacroLibrary`
+is a `static final` singleton loaded at class-init, so sealing the whole file would put a
+master-password prompt on the startup path, and the Macros menu and hotkey dispatcher would go dead
+while locked. The **invariant is that exactly one of `steps`/`sealedSteps` is populated at a time**,
+in memory as well as on disk — there is no decrypted cache alongside the sealed form, so
+`Macro.getSteps()` on a sealed macro returns an *empty* list. Resolve through `MacroCrypto.resolved`
+(which copies, so reading never flips the library's copy to plaintext) before replaying or editing.
+
+Sharp edges, all commented in place:
+- `MacroCrypto.seal` serializes with `writerFor(STEP_LIST)`, **not** `writeValueAsBytes(list)`. A bare
+  `List` erases its element type and `MacroStep` is polymorphic, so Jackson omits the `type`
+  discriminator — the blob seals fine and can never be opened again. This was a real bug, caught by
+  the seal/unseal round-trip test.
+- The macro id is bound in as **AAD** (`Macro.sealAad()` → `PassphraseBox.encrypt(..., aad)`). Every
+  blob is under the same vault key, so without it anyone who can write `macros.json` could move one
+  macro's steps under another's name and hotkey. `CredentialVault.seal/open(byte[], byte[] aad)` is
+  the general "encrypt a blob under the vault key" API added for this; the no-AAD `PassphraseBox`
+  signatures still delegate with `null` so the vault's own callers are untouched.
+- Nothing in `macro` ever sees the master password — it needs only an unlocked vault, which is what
+  keeps macros on the *same single secret* as saved SSH passwords.
+- Unlock is a UI decision, so `MacroCrypto` is Swing-free and throws instead of prompting. The EDT
+  choke points are `MainWindow.resolveMacro` (menu **and** hotkey both funnel through
+  `runMacroOnActivePane`), `MacroManagerDialog.resolved/persist`, and `ConnectionService`, which
+  resolves the run-on-connect macro in `connectAsync` **before** the `SwingWorker` — `done()` is on
+  the EDT so a prompt there would work, but it would appear *after* the session is already up.
+- Turning the setting off decrypts *before* `save()`, since `save()` writes whatever form it finds.
+  `PreferencesDialog.applyMacroEncryption` reverts the flag if the rewrite fails or is cancelled — a
+  flag disagreeing with the file either exposes macros the user protected or bricks protected ones.
+
+**Export/import** (`macro.MacroExportService`, UI in `ui.macro.MacroTransfer`) mirrors
+`session.SessionExportService` exactly, including the Swing-free split and wrong-passphrase-returns-
+`null`. Two deliberate differences from the sessions export: the encrypt checkbox **defaults on**
+(a macro is arbitrary user-typed text, the case where secrets appear unannounced), and **ids are
+preserved** rather than reassigned, because `SshSessionConfig.macroId` references them — so a
+sessions export and a macros export moved together keep working. That makes collisions possible,
+hence `MacroExportService.merge(...)`, a pure function taking a per-id `Conflict` policy.
+`MacroHotkeys` (extracted from `MacroEditDialog`) compares **parsed `KeyStroke`s, not stored
+strings**: a hotkey persists as `KeyStroke.toString()` ("shift ctrl pressed F1"), and an import
+spelled any other way would pass a string-equality conflict check and then be bound to a stroke
+`MacroLibrary.byHotkey` (raw string compare) can never match. Imported hotkeys are canonicalized for
+the same reason.
+
 ### SSH auth & the credential vault (security-critical, has sharp edges)
 Auth order is publickey (agent → on-disk keys) then password — MINA tries them automatically;
 `SshSession.connect` just registers identities and optionally `addPasswordIdentity`.
