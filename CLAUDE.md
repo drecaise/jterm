@@ -251,6 +251,13 @@ Sharp edges, all commented in place:
   macro's steps under another's name and hotkey. `CredentialVault.seal/open(byte[], byte[] aad)` is
   the general "encrypt a blob under the vault key" API added for this; the no-AAD `PassphraseBox`
   signatures still delegate with `null` so the vault's own callers are untouched.
+- That AAD binding is why **duplication must unseal first**: `Macro.copy()` carries `sealedSteps`
+  over as-is, so giving the copy a fresh id would leave a blob whose AAD no longer matches — opened
+  never again, and only discovered on some later replay. `macro.MacroDuplicator` (fresh id, cleared
+  hotkey — `byHotkey` returns the first match, so a carried-over one would silently shadow — and a
+  `name (n)` suffix matching the sidebar's session duplication) therefore *refuses* a sealed macro;
+  `MacroManagerDialog.duplicateMacro` resolves through the vault first and lets `save()` re-seal the
+  copy under its own id.
 - Nothing in `macro` ever sees the master password — it needs only an unlocked vault, which is what
   keeps macros on the *same single secret* as saved SSH passwords.
 - Unlock is a UI decision, so `MacroCrypto` is Swing-free and throws instead of prompting. The EDT

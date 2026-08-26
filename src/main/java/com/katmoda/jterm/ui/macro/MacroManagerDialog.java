@@ -24,6 +24,7 @@ import com.katmoda.jterm.config.AppSettings;
 import com.katmoda.jterm.keymap.Keymap;
 import com.katmoda.jterm.macro.Macro;
 import com.katmoda.jterm.macro.MacroCrypto;
+import com.katmoda.jterm.macro.MacroDuplicator;
 import com.katmoda.jterm.macro.MacroLibrary;
 import com.katmoda.jterm.security.VaultException;
 import com.katmoda.jterm.security.VaultManager;
@@ -39,6 +40,7 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.ListSelectionModel;
 import java.awt.BorderLayout;
+import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.GridLayout;
@@ -47,12 +49,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Manages the macro collection: a list of all macros with <i>New / Edit / Delete</i> plus
- * <i>Export / Import</i>. Mutates and saves {@link MacroLibrary} directly; the caller rebuilds the
+ * Manages the macro collection: a list of all macros with <i>New / Edit / Duplicate / Delete</i>
+ * plus <i>Export / Import</i>. Mutates and saves {@link MacroLibrary} directly; the caller rebuilds the
  * Macros menu after this modal dialog closes.
  *
- * <p>The list is multi-select so an export can cover a chosen subset; Edit and Delete guard on the
- * selection size rather than assuming one. When macro encryption is on, every write goes through
+ * <p>The list is multi-select so an export can cover a chosen subset; Edit, Duplicate and Delete
+ * guard on the selection size rather than assuming one. When macro encryption is on, every write goes through
  * {@link #persist()}, which unlocks the vault first — {@code MacroLibrary.save()} refuses to write
  * plaintext when the setting says otherwise, so an un-unlocked save would silently lose the edit.</p>
  */
@@ -88,6 +90,9 @@ public final class MacroManagerDialog extends JDialog {
     private JPanel buildContent() {
         JScrollPane scroll = new JScrollPane(list);
         scroll.setBorder(BorderFactory.createEmptyBorder(12, 12, 0, 6));
+        // A JList's preferred width is its widest cell, so without a cap one long macro name would
+        // decide the window's width through pack(). Plain Swing pixels — scale them by hand.
+        scroll.setPreferredSize(UIScale.scale(new Dimension(380, 280)));
 
         JPanel buttons = new JPanel(new GridLayout(0, 1, 0, 6));
         buttons.setBorder(BorderFactory.createEmptyBorder(12, 0, 0, 12));
@@ -95,6 +100,9 @@ public final class MacroManagerDialog extends JDialog {
         add.addActionListener(e -> newMacro());
         JButton edit = new JButton("Edit…");
         edit.addActionListener(e -> editMacro());
+        JButton duplicate = new JButton("Duplicate…");
+        duplicate.setToolTipText("Opens a copy of the selected macro, without its hotkey");
+        duplicate.addActionListener(e -> duplicateMacro());
         JButton delete = new JButton("Delete");
         delete.addActionListener(e -> deleteMacro());
         JButton export = new JButton("Export…");
@@ -104,13 +112,23 @@ public final class MacroManagerDialog extends JDialog {
         importButton.addActionListener(e -> importMacros());
         buttons.add(add);
         buttons.add(edit);
+        buttons.add(duplicate);
         buttons.add(delete);
         buttons.add(export);
         buttons.add(importButton);
 
         JButton close = new JButton("Close");
         close.addActionListener(e -> dispose());
-        JPanel closeBar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        // Line Close up with the button column above it rather than leaving it 6px short and
+        // narrower: GridLayout sizes every cell to the widest button, so mirror that width here,
+        // and drop the FlowLayout hgap that would otherwise inset the right edge. The width comes
+        // from already-scaled preferred sizes, so it must not be run through UIScale again.
+        int columnWidth = 0;
+        for (Component b : buttons.getComponents()) {
+            columnWidth = Math.max(columnWidth, b.getPreferredSize().width);
+        }
+        close.setPreferredSize(new Dimension(columnWidth, close.getPreferredSize().height));
+        JPanel closeBar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
         closeBar.setBorder(BorderFactory.createEmptyBorder(8, 12, 10, 12));
         closeBar.add(close);
 
@@ -155,6 +173,37 @@ public final class MacroManagerDialog extends JDialog {
         }
         reload();
         list.setSelectedValue(edited, true);
+    }
+
+    /**
+     * Opens the editor on a copy of the selected macro, and adds it only if that is accepted — so a
+     * cancelled duplicate leaves the library exactly as it was, the same as <i>New</i>.
+     *
+     * <p>The macro is {@link #resolved} first even though nothing here reads the steps: a sealed
+     * blob is bound to its macro's id (see {@link MacroDuplicator#duplicate}), so the copy has to
+     * start from plaintext and be re-sealed under its own id by {@link #persist()}.</p>
+     */
+    private void duplicateMacro() {
+        Macro selected = singleSelection();
+        if (selected == null) {
+            return;
+        }
+        Macro plain = resolved(selected);
+        if (plain == null) {
+            return;
+        }
+        Macro copy = MacroDuplicator.duplicate(plain, MacroLibrary.get().macros());
+        // The copy is not in the library yet, so every saved macro is an "other" for conflict checks.
+        Macro created = MacroEditDialog.edit(this, copy, keymap, others(null));
+        if (created == null) {
+            return;
+        }
+        MacroLibrary.get().add(created);
+        if (!persist()) {
+            MacroLibrary.get().remove(created);
+        }
+        reload();
+        list.setSelectedValue(created, true);
     }
 
     private void deleteMacro() {

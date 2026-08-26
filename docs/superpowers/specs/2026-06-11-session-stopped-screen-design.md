@@ -12,7 +12,7 @@ Session stopped
     - Press S to save terminal output to file
 ```
 
-…and implement those three actions. Modeled on MobaXterm's session-stopped screen.
+…and implement those three actions.
 
 ## Decisions (from brainstorming)
 

@@ -3,7 +3,7 @@
 ## Goal
 
 Add user-defined **macros**: named sequences of typed text and commands that can be
-replayed into a terminal. Inspired by MobaXterm's macro feature. A macro can be run from
+replayed into a terminal. A macro can be run from
 a new **Macros** top-menu, triggered by a per-macro hotkey, or run automatically right
 after a saved SSH session connects.
 
@@ -28,8 +28,9 @@ Polymorphic via a `type` discriminator using `@JsonTypeInfo` / `@JsonSubTypes`, 
 pattern `session.SessionNode` uses. Each step exposes:
 
 - `void execute(MacroSink sink) throws InterruptedException` — performs the step.
-- `String displayLine()` — the one-line rendering shown in the editor list, matching
-  MobaXterm (`source ~/.bashrc`, `RETURN`, `SLEEP=200`).
+- `String displayLine()` — the one-line rendering shown in the editor list: the literal
+  text for a text step, the key name for a key press, `SLEEP=<ms>` for a pause
+  (`source ~/.bashrc`, `RETURN`, `SLEEP=200`).
 
 Implementations:
 

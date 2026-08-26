@@ -42,7 +42,7 @@ public sealed interface MacroStep permits MacroStep.TextStep, MacroStep.KeyStep,
     /** Perform this step against the terminal. */
     void execute(MacroSink sink) throws IOException, InterruptedException;
 
-    /** The single-line rendering shown in the macro editor (MobaXterm-style). */
+    /** The single-line rendering shown in the macro editor. */
     String displayLine();
 
     /** Literal text; {@code keystrokeDelayMs > 0} types character-by-character with that pause. */

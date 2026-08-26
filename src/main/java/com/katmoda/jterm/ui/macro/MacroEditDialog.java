@@ -50,7 +50,7 @@ import java.awt.event.KeyEvent;
 import java.util.List;
 
 /**
- * Editor for a single {@link Macro} (MobaXterm's macro-edition dialog): a name field, the
+ * Editor for a single {@link Macro}: a name field, the
  * ordered list of step lines with <i>Edit / Insert above / Insert below / Delete</i>, and a
  * captured global hotkey. A captured hotkey is rejected if it already belongs to a keyboard
  * shortcut or another macro.
@@ -75,7 +75,7 @@ public final class MacroEditDialog extends JDialog {
     private boolean accepted;
 
     private MacroEditDialog(Window owner, Macro macro, Keymap keymap, List<Macro> otherMacros) {
-        super(owner, "Macro edition", ModalityType.APPLICATION_MODAL);
+        super(owner, "Edit Macro", ModalityType.APPLICATION_MODAL);
         this.macro = macro;
         this.keymap = keymap;
         this.otherMacros = otherMacros;
@@ -113,6 +113,14 @@ public final class MacroEditDialog extends JDialog {
 
         JScrollPane listScroll = new JScrollPane(stepsList);
         listScroll.setBorder(BorderFactory.createEmptyBorder(0, 12, 0, 6));
+        // One long step line must not decide the window's width. A JList's preferred size is its
+        // widest cell, and pack() would carry that straight out to the frame; fixing the scroll
+        // pane's preferred size caps it, and the default AS_NEEDED horizontal scrollbar takes over
+        // for the overflow (a VERTICAL-layout JList stops tracking the viewport width once it
+        // outgrows it). Deliberately not setFixedCellWidth/setPrototypeCellValue: those would clamp
+        // the list itself and there would be nothing left to scroll. Plain Swing pixels, so the
+        // UIScale.scale() is by hand.
+        listScroll.setPreferredSize(UIScale.scale(new Dimension(420, 260)));
 
         JPanel lineButtons = new JPanel(new GridLayout(0, 1, 0, 6));
         lineButtons.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 12));

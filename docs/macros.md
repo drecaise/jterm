@@ -12,8 +12,13 @@ A macro can also have a **hotkey** bound to it for one-press execution. With
 ## Managing macros
 
 Open **Macros → Manage Macros…** to see your macro library. From there you can create
-(**New…**), **Edit…**, or **Delete** macros, and **Export…** / **Import…** them. The list is
-multi-select, so you can pick several at once.
+(**New…**), **Edit…**, **Duplicate…**, or **Delete** macros, and **Export…** / **Import…** them.
+The list is multi-select, so you can pick several at once.
+
+**Duplicate…** opens the editor on a copy of the selected macro, named `<name> (1)`. The copy
+carries every step but **not** the hotkey — two macros on one combination would mean only one of
+them ever fires, so you assign a new one yourself. Nothing is added to the library until you press
+OK, so cancelling the editor throws the copy away.
 
 ![Manage Macros dialog](img/macro-manager.png)
 

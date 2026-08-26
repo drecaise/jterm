@@ -42,7 +42,7 @@ import java.awt.Insets;
 import java.awt.Window;
 
 /**
- * Add/edit a single macro line (MobaXterm's line editor): a radio chooses the step type —
+ * Add/edit a single macro line: a radio chooses the step type —
  * <b>Text</b> (with a per-keystroke delay), <b>Key press</b>, or <b>Sleep</b> — and the
  * matching input is enabled. "Wait for pattern" is intentionally omitted (out of scope).
  */

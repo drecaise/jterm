@@ -137,7 +137,8 @@ public final class AppSettings {
     private int windowHeight = 720;
 
     // Default terminal settings applied to the local terminal and to any saved session that
-    // leaves a field unset ("inherit"). The font defaults to the bundled MobaFont.
+    // leaves a field unset ("inherit"). The font defaults to the bundled one
+    // (FontResources.DEFAULT_TERMINAL_FONT_FAMILY).
     private String defaultTerminalType = "xterm-256color";
     private String defaultCharset = "UTF-8";
     private String defaultFontFamily = FontResources.DEFAULT_TERMINAL_FONT_FAMILY;
