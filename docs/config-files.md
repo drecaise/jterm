@@ -39,7 +39,7 @@ place on startup. `macros.json` was a bare JSON array before schema 1 and is rew
 | Key | Meaning |
 |-----|---------|
 | `updateCheckEnabled` | Whether the daily [update check](settings.md#update-checks) runs. Same as the Preferences toggle. |
-| `lastUpdateCheckEpochSeconds` | When a check was last *attempted*, in Unix epoch seconds (`0` = never). This is what keeps the check to once a day across restarts. |
+| `lastUpdateCheckEpochSeconds` | When a check was last *attempted*, in Unix epoch seconds (`0` = never). This is what stops repeated restarts from each making a request: starting jterm checks only if this is more than 4 hours old. |
 | `skippedUpdateVersion` | The release tag you chose to skip, e.g. `v1.9.0`; `""` when none. Clear it to be reminded about that release again. |
 
 ## Editing by hand

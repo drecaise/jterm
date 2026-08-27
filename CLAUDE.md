@@ -332,12 +332,21 @@ The two design constraints are both non-obvious:
 - **Anti-herd scheduling.** Every install must not hit `api.github.com` at once, so nothing uses a
   fixed time: a due check waits a random 30–180 s (which also keeps it off the startup path), and
   each subsequent period is a fresh draw in **20–28 h** rather than a flat 24 h, so long-running
-  instances drift apart instead of converging. `nextDelaySeconds` is pure and takes a
-  `RandomGenerator` so the band is unit-tested. `AppSettings.lastUpdateCheckEpochSeconds` is
+  instances drift apart instead of converging. `AppSettings.lastUpdateCheckEpochSeconds` is
   stamped on **every attempt, success or failure** — that is what makes an offline or
   rate-limited client back off for a day instead of retrying, and what keeps ten launches in a
   morning down to one request. It is written from the checker thread but `save()`d via
   `invokeLater`, since `AppSettings.save()` rewrites the whole file.
+
+  A **launch is throttled more loosely than the recurring period** (`LAUNCH_THROTTLE_SECONDS`, 4 h),
+  which is why there are two pure delay functions rather than one: `initialDelaySeconds` (reads the
+  stamp; checks whenever it is older than 4 h, else waits out a period measured from that stamp) and
+  `recurringDelaySeconds` (a bare 20–28 h draw — the attempt it reschedules from *is* the one that
+  just finished, so no stamp is consulted). Both take a `RandomGenerator` so the bands are
+  unit-tested. Keying a launch on the full band was a real defect: an attempt landing 54 minutes
+  before v1.9.1 shipped left a 1.9.0 install silent for another half-day across restarts. The two
+  thresholds must not cross — a launch stricter than staying open inverts the intent, and
+  `initialDelaySeconds` would then be able to return a non-positive delay (asserted in the tests).
 - **The response drives a browser launch and on-screen text.** `UpdateChecker.safeReleaseUrl`
   re-validates the server-supplied `html_url` (exact host `github.com`, `https`, path under
   `/drecaise/jterm/releases/`) before it can reach `BrowserLauncher` — the URL from the wire is

@@ -48,9 +48,14 @@ as the one on this tab.
 
 What the check does and doesn't do:
 
-- It runs at most **once a day**, and the timing is deliberately randomized — a short random
-  delay after startup, and a randomized 20–28 hour gap after that — so that every jterm install
-  in the world doesn't hit GitHub at the same moment.
+- The timing is deliberately randomized so that every jterm install in the world doesn't hit
+  GitHub at the same moment: a check that is due waits a random 30–180 seconds rather than firing
+  the instant jterm opens, and while jterm stays open the gap between checks is a randomized
+  **20–28 hours** rather than a flat day.
+- **Starting jterm checks again when the last attempt was more than 4 hours ago.** Relaunching
+  sooner than that makes no request, so opening jterm ten times in a morning still means one
+  check — but you aren't left waiting out a whole day for news of a release that appeared just
+  after yesterday's check.
 - It sends **no identifying information**: no account, no token, no telemetry. The only thing
   transmitted is a `User-Agent` header naming jterm and its version, which GitHub requires.
 - Release notes are shown as **plain text**, never as rendered HTML, so nothing in a release

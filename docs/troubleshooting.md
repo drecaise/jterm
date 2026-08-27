@@ -59,6 +59,29 @@ re-trust it. If you're not sure, **don't connect** until you've verified the new
 
 See [Configuration files](config-files.md) for where these files live.
 
+## A new release is out but jterm hasn't mentioned it
+
+**Help → Check for Updates…** answers straight away: it ignores every throttle below, always
+reports a result — including "you're running the latest version" and any network error — and works
+even with the automatic check switched off.
+
+A lag on the automatic check is normal. It is deliberately unhurried so that every jterm install
+doesn't hit GitHub at once — see [Update checks](settings.md#update-checks):
+
+- Starting jterm checks only if the last attempt was more than **4 hours** ago; left running, it
+  looks again every 20–28 hours. A release published shortly after a check isn't announced until
+  the next one comes due.
+- A due check still waits **30–180 seconds** after startup rather than firing immediately.
+- A failed check — no network, GitHub unreachable or rate-limiting — is **silent by design**, and
+  still counts as an attempt, so jterm backs off instead of retrying in a loop.
+
+If it stays quiet for longer than that, check the two things that suppress it entirely:
+
+- **Settings → General → Check for updates** is off.
+- You chose **Skip This Version** for that release. It silences exactly that version and nothing
+  else; clear `skippedUpdateVersion` in [`settings.json`](config-files.md#update-check-keys-in-settingsjson)
+  to be reminded about it again.
+
 ## Linux: wrong icon / missing from the dash (running the bare jar)
 
 GNOME Shell matches a window to a `.desktop` file by its `WM_CLASS` rather than using the

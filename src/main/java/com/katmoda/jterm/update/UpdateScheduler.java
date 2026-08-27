@@ -48,10 +48,17 @@ import java.util.random.RandomGenerator;
  * </ul>
  *
  * <p>A persisted last-attempt timestamp ({@code AppSettings.lastUpdateCheckEpochSeconds}) makes
- * the throttle survive restarts, so launching the app ten times in a morning still produces at
- * most one request. The timestamp is recorded whether the attempt succeeded or failed, which is
- * what makes a rate-limited or offline client back off for a day instead of retrying in a loop.
- * </p>
+ * the throttle survive restarts. The timestamp is recorded whether the attempt succeeded or
+ * failed, which is what makes a rate-limited or offline client back off for a day instead of
+ * retrying in a loop.</p>
+ *
+ * <p><b>A launch is throttled more loosely than the recurring period</b> ({@link
+ * #LAUNCH_THROTTLE_SECONDS}), because the two answer different questions. Keyed on the full
+ * 20–28 h band, an attempt that happens to land minutes before a release buys silence until the
+ * next day no matter how often the app is restarted — which is exactly how a v1.9.1 release 54
+ * minutes after a check went unnoticed. Starting the app is a natural moment to look, so a launch
+ * checks whenever the last attempt is older than a few hours. Ten launches in a morning still
+ * produce at most one request, and the in-session cadence stays the full jittered period.</p>
  *
  * <p>Scheduled checks are <b>silent on failure</b> — a laptop with no network must never greet
  * the user with an error dialog. Only the explicit Help menu check reports problems.</p>
@@ -67,6 +74,12 @@ public final class UpdateScheduler {
     /** Bounds of the recurring period: 24 h ± 4 h, in seconds. */
     static final long MIN_PERIOD_SECONDS = 20 * 3600L;
     static final long MAX_PERIOD_SECONDS = 28 * 3600L;
+
+    /**
+     * How stale the last attempt must be for a launch to check. Deliberately well below
+     * {@link #MIN_PERIOD_SECONDS}: see the class comment on why launches are throttled loosely.
+     */
+    static final long LAUNCH_THROTTLE_SECONDS = 4 * 3600L;
 
     /** How long to idle between look-ins while the user has the check switched off. */
     static final long DISABLED_RECHECK_SECONDS = 3600;
@@ -114,7 +127,8 @@ public final class UpdateScheduler {
             t.setDaemon(true);
             return t;
         });
-        scheduleNext();
+        scheduleIn(initialDelaySeconds(AppSettings.get().getLastUpdateCheckEpochSeconds(),
+                Instant.now().getEpochSecond(), random));
     }
 
     /** Cancels any armed check and shuts the thread down. Safe to call more than once. */
@@ -131,15 +145,14 @@ public final class UpdateScheduler {
     }
 
     /**
-     * Computes the delay before the next attempt.
+     * Computes the delay before this run's <em>first</em> attempt, from the persisted last-attempt
+     * timestamp.
      *
      * <p>Pure and package-visible so the anti-herd behaviour can be unit-tested with a pinned
-     * {@link RandomGenerator}. Serves both the initial schedule (where {@code lastCheck} comes
-     * from settings) and every reschedule (where it is the attempt just recorded, making
-     * {@code elapsed} zero and the result a full jittered period).</p>
+     * {@link RandomGenerator}.</p>
      */
-    static long nextDelaySeconds(long lastCheck, long now, RandomGenerator rnd) {
-        long spread = rnd.nextLong(MIN_SPREAD_SECONDS, MAX_SPREAD_SECONDS + 1);
+    static long initialDelaySeconds(long lastCheck, long now, RandomGenerator rnd) {
+        long spread = spreadSeconds(rnd);
         if (lastCheck <= 0) {
             return spread;
         }
@@ -149,13 +162,29 @@ public final class UpdateScheduler {
             // Treat it as never checked rather than letting it wedge the check forever.
             return spread;
         }
-        long remaining = rnd.nextLong(MIN_PERIOD_SECONDS, MAX_PERIOD_SECONDS + 1) - elapsed;
-        return remaining <= 0 ? spread : remaining;
+        if (elapsed >= LAUNCH_THROTTLE_SECONDS) {
+            return spread;
+        }
+        // Checked recently, so this launch adds nothing: resume the ordinary cadence, anchored to
+        // that attempt rather than to now. Cannot go non-positive — the branch above has already
+        // taken every elapsed at or beyond LAUNCH_THROTTLE_SECONDS, which is far below the band.
+        return periodSeconds(rnd) - elapsed;
     }
 
-    private void scheduleNext() {
-        scheduleIn(nextDelaySeconds(AppSettings.get().getLastUpdateCheckEpochSeconds(),
-                Instant.now().getEpochSecond(), random));
+    /**
+     * Computes the delay after an attempt has just been made: a full jittered period, no timestamp
+     * consulted, because the attempt this reschedules from is the one that just finished.
+     */
+    static long recurringDelaySeconds(RandomGenerator rnd) {
+        return periodSeconds(rnd);
+    }
+
+    private static long spreadSeconds(RandomGenerator rnd) {
+        return rnd.nextLong(MIN_SPREAD_SECONDS, MAX_SPREAD_SECONDS + 1);
+    }
+
+    private static long periodSeconds(RandomGenerator rnd) {
+        return rnd.nextLong(MIN_PERIOD_SECONDS, MAX_PERIOD_SECONDS + 1);
     }
 
     private synchronized void scheduleIn(long delaySeconds) {
@@ -187,7 +216,7 @@ public final class UpdateScheduler {
             LOG.debug("update check failed unexpectedly", e);
         } finally {
             recordAttempt();
-            scheduleNext();
+            scheduleIn(recurringDelaySeconds(random));
         }
     }
 
