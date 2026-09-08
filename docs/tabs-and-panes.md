@@ -65,6 +65,36 @@ existing ones keep their ratio to each other. If closing panes makes the grid **
 row or column, the sizes on that axis reset to equal shares (the remaining panes may have
 moved cells, so the old proportions no longer apply).
 
+## Selecting text
+
+Drag with the **left** mouse button to select text in a pane. Double-click selects a word,
+triple-click a whole line. Only the left button selects — a right- or middle-button drag is passed
+through to whatever is running, so it can't leave you with an accidental selection.
+
+**A selection stays on the text you selected while the screen scrolls.** If you highlight something
+and then a command prints, the highlight rides its own characters up the screen and on into the
+scrollback rather than disappearing or — worse — staying put while different text slides underneath
+it. The same holds while paging through a file: scrolling either direction in `less`, `man`, or vim
+keeps the highlight on its own line.
+
+Scrolling the view with the wheel or the scrollbar never disturbs a selection at all.
+
+A selection is dropped when it stops meaning anything:
+
+- you click somewhere to start a new one;
+- the text under it is **rewritten** — a full-screen redraw by an application like `htop` or
+  `tmux`, an editor repainting, or `clear`. Keeping the highlight there would leave it sitting on
+  text you never chose, which the next copy would pick up;
+- it scrolls off the top of the [scrollback](settings.md#terminal-settings) and can no longer be reached, or
+  is pushed off the bottom of the screen;
+- the application switches to or from a full-screen view (entering or leaving an editor).
+
+!!! tip "Copying without the mouse"
+    With **Copy to clipboard on select** turned on (**Settings → General**), a selection is copied
+    as soon as you make it. Because a selection that merely moves has not *changed*, scrolling
+    never re-copies it — whatever you copied elsewhere in the meantime stays on your clipboard. See
+    [Settings](settings.md#general).
+
 ## Font size
 
 You can zoom an individual pane's terminal font without affecting any other pane:

@@ -76,6 +76,84 @@ A `ui.pane.TerminalPane` hosts a JediTerm `JediTermWidget` and calls `setTtyConn
 The connector handed to the widget is **not** the session's raw connector — `ui.grid.PaneGrid`
 wraps it in `broadcast.BroadcastingTtyConnector` so keystrokes can fan out (see Broadcast).
 
+### A text selection is tracked across scrolls, not dropped
+
+Two things had to change: JediTerm clears the selection whenever the screen scrolls, and it does
+not report a `CSI L`/`CSI M` line move to the display at all.
+
+JediTerm 3.70 clears the selection in four places, and only one of them is left alone here:
+`TerminalPanel.mousePressed` (a fresh left-click — correct), `handleCopy(unselect)` (correct),
+`TerminalPanel.scrollArea` (**unconditional**, so every line of output that pushed the screen up
+lost the highlight), and the wheel listener registered inside `addTerminalMouseListener`, which
+drops the selection *before* forwarding a wheel event to a mouse-aware program. Panning the
+viewport needs no help at all — selection rows are absolute and `paintComponent` intersects them
+against `myClientScrollOrigin`, so wheeling through the scrollback already tracks.
+
+`JtermTerminalPanel.scrollArea` fixes the buffer-scroll case with the arithmetic JediTerm itself
+uses on resize (`TerminalTextBufferResize` → `selection.shiftY(-screenLinesToMove)`): a scroll
+region moving by `dy` renumbers its rows by `dy`, so shifting the selection keeps it on its own
+characters. `ui.pane.SelectionScroll` holds that geometry as a pure function (hence unit-tested)
+and is deliberately conservative — it shifts only when **both** ends move by the same amount, and
+clears otherwise. A selection straddling a partial `CSI r` region, or pushed out of the buffer, is
+dropped rather than guessed at; a wrong shift would leave a highlight sitting on text the user
+never chose, which a later copy would pick up.
+
+Sharp edges, all commented in place:
+- **`super.scrollArea` must still run.** It owns the private `scrollDy` counter that
+  `updateScrolling` drains to keep the scrollbar in step, and nothing else can reach it. So the
+  selection is captured, `super` clears it, and the shifted copy is put back.
+- **The panel is called before the buffer scrolls.** `JediTerminal.scrollArea` runs
+  `myDisplay.scrollArea(...)` *then* `myTerminalTextBuffer.scrollArea(...)`, so the history count
+  read in the override is the pre-scroll one and the rows about to be appended are added by hand.
+  When the scrollback is at its cap those rows evict the oldest history instead of growing it —
+  caught a moment later by `linesDiscardedFromHistory`, which sees the real count.
+- **The restore must not notify.** `TerminalPane.installCopyOnSelect` copies on *every* selection
+  event, so routing a shift through `updateSelection` would re-push the same text to the clipboard
+  once per scrolled line, overwriting whatever the user had copied elsewhere. `restoreSelection`
+  therefore writes the private `mySelection` field directly; `clearSelectionOnEdt` keeps using the
+  setter, because a genuine clear *should* notify. It publishes a freshly built `TerminalSelection`
+  rather than mutating one with `shiftY`, so the EDT can never paint a half-shifted selection.
+- **The auto-clear compares text, not rows.** `linesChanged(fromIndex)` says only where a change
+  *starts*, which is not enough to decide anything: scrolling forward in `less` writes the newly
+  exposed line at the bottom of the screen (below the selection, harmless), while scrolling back
+  emits a reverse index and writes it at the **top** (above the selection). A "did anything change
+  at or above my last row?" rule reads the second as a hit — which is why scrolling up in a pager
+  dropped the highlight while scrolling down kept it. So `changeAffectsSelection` is now only a
+  cheap filter, and the verdict comes from `verifySelectionSoon` comparing the live selected text
+  against `selectedSnapshot`, the text captured when the selection was made. Bursts of output
+  coalesce into one check.
+- **Reading the selection and its snapshot needs the buffer lock.** `JediTerminal` holds that lock
+  across a whole scroll (display first, buffer second), so a verification that doesn't take it can
+  land mid-`scrollArea` and see the shifted selection beside a snapshot `super`'s clear has just
+  nulled — throwing away a good highlight, intermittently and under load only. `restoreSelection`
+  also writes the snapshot *before* the selection field for the same reason.
+- **`CSI L`/`CSI M` never reach the display.** `JediTerminal.insertLines`/`deleteLines` call
+  `myTerminalTextBuffer` straight out, with no `myDisplay.scrollArea(...)` beside it, so nothing in
+  the panel hears about a line move made that way. This is not exotic — it is how vim scrolls
+  backwards: `CTRL-E` sets a scroll region and sends a newline at its bottom (a real scroll),
+  `CTRL-Y` sets the same region and sends `CSI L` at the top, which is exactly why scrolling down in
+  vim kept a selection and scrolling up lost it. `ui.pane.JtermJediTerminal` (installed through
+  `JediTermWidget.createTerminal`) overrides both to call
+  `JtermTerminalPanel.shiftSelectionForLineChange` first. It must **not** run `super.scrollArea`'s
+  `scrollDy` bookkeeping — JediTerm never counted this movement, so adding to it would skew the
+  scrollbar — and these rows are **discarded, not appended to history**, even at row 1. That last
+  point is why `SelectionScroll` takes an explicit `toHistory` flag instead of inferring it from
+  `regionTop == 0 && dy < 0`, which is only true of the `scrollArea` path.
+- Three cached reflective handles (`mySelection`, `updateSelection`, `myScrollRegionBottom`) pin
+  this to JediTerm 3.70. All degrade to `LOG.debug` + the old clear-on-scroll behaviour rather than
+  failing. The region bottom has no public accessor (only `getScrollRegionTop()`), and guessing the
+  screen height instead would shift selections sitting on rows that never moved.
+
+What this cannot do: an app that **repaints** rows instead of scrolling them (htop, tmux, vim on a
+full redraw) rewrites the content under the selection, so it is cleared — which is the right answer.
+Apps that move lines (`less`, `man`, vim line-scrolling either way) are tracked, in the alternate
+buffer too, since entering it allocates a fresh full-size history storage.
+
+Verifying this needs no GUI: `JediEmulator` over an `ArrayTerminalDataStream` will replay captured
+bytes into a real `JtermTerminalPanel` headlessly. Capture the bytes an app actually emits by
+running it under a `pty.fork()` harness and dumping its output — that is how the `less` reverse
+index and vim's `CSI L` were found, after guessing wrong about both.
+
 ### The Flatpak local shell runs behind a host-side PTY agent (two stacked PTYs)
 A sandboxed shell would see the runtime's filesystem, so `terminal.local.FlatpakHost` runs it on
 the host via `flatpak-spawn --host`. That alone is **not enough**: pty4j allocates the PTY *inside*

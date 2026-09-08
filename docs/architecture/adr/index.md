@@ -13,6 +13,8 @@ Short, dated records for jterm's non-obvious architectural choices. Each ADR fol
 | [0006](0006-c4-with-structurizr-and-mermaid.md) | C4 documentation via Structurizr DSL + Mermaid | Accepted |
 | [0007](0007-debounced-highlight-scans.md) | Debounce highlight scans off the emulator thread | Accepted |
 | [0008](0008-interactive-auth-via-mina-userinteraction.md) | Interactive password fallback via MINA's `UserInteraction` | Accepted |
+| [0009](0009-selection-tracking-across-scrolls.md) | Track the terminal selection across scrolls by extending JediTerm | Accepted |
+| [0009](0009-selection-tracking-across-scrolls.md) | Track the terminal selection across scrolls by extending JediTerm | Accepted |
 
 ## Writing a new ADR
 

@@ -90,6 +90,17 @@ final class JtermJediTermWidget extends JediTermWidget {
         return new JtermTerminalPanel(settingsProvider, textBuffer, styleState, this::zoomFont);
     }
 
+    /**
+     * Uses a {@link JtermJediTerminal} so that {@code CSI L} / {@code CSI M} line moves — which
+     * JediTerm applies to the text buffer without telling the display — still reach the panel,
+     * keeping a text selection on its own characters. See that class for why vim depends on it.
+     */
+    @Override
+    protected JediTerminal createTerminal(com.jediterm.terminal.TerminalDisplay display,
+                                          TerminalTextBuffer textBuffer, StyleState styleState) {
+        return new JtermJediTerminal(display, textBuffer, styleState);
+    }
+
     @Override
     protected StyleState createDefaultStyle() {
         // mySettingsProvider is assigned by the JediTermWidget constructor before this runs.

@@ -17,6 +17,9 @@ Decision Records.
 - **Tabs** and a **uniform pane grid** — split any tab into up to 3 columns × 3 rows
   (max 9 panes), all equally sized.
 - **Local shells** (your default shell via a real PTY) and **SSH sessions**.
+- **Selections that survive scrolling** — a highlight stays on the text you selected as output
+  scrolls it away, and while paging either direction in `less`, `man`, or vim. It is dropped
+  only when the text under it is genuinely rewritten.
 - **Saved-sessions sidebar** — recursive folders and SSH sessions, each with a custom icon
   (built-in library + import your own PNG/JPG/GIF/SVG).
 - **Drag-and-drop** a session (or the Local Terminal entry) onto a pane to split-and-open:

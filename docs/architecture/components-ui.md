@@ -48,6 +48,16 @@ package that hosts the top-level window and the shortcut dispatcher.
   [broadcast runtime view](runtime-views.md#broadcast-fan-out) for the sequence.
 - The pane also holds the drop target for drag-and-drop launches and reads
   `ThemeColors` from `ThemeManager` on creation.
+- `JtermTerminalPanel` and `JtermJediTerminal` subclass JediTerm to keep a **text selection on
+  its own characters while the screen scrolls**. JediTerm drops the selection on any scroll, so
+  the panel shifts it instead by the rows the content moved — the same arithmetic JediTerm itself
+  uses on resize — with the geometry factored into the pure, unit-tested `SelectionScroll`. It
+  shifts only where the mapping is exact and clears otherwise, because a wrong shift would leave
+  a highlight on text the user never chose. The terminal subclass exists because `CSI L` / `CSI M`
+  line moves never reach the display at all, which is how vim scrolls backwards. The restore
+  deliberately bypasses JediTerm's selection listeners: `TerminalPane.installCopyOnSelect` copies
+  on every one, so notifying would re-push the selection to the clipboard once per scrolled line.
+  See [ADR 0009](adr/0009-selection-tracking-across-scrolls.md).
 
 **Sidebar and DnD (`ui.sidebar`, `dnd`).**
 
