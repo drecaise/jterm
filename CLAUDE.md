@@ -216,6 +216,14 @@ event (returns true). Menu items carry the same accelerators only for discoverab
 dispatcher fires first, preventing double-execution. Bindings load from `keymap.json`
 (defaults in `keymap.TermAction`).
 
+A consumed `KEY_PRESSED` is **unrecoverable** for the program in the pane: JediTerm encodes
+control keys from `KEY_PRESSED` only, and its `keyTyped` ignores ISO control characters, so a
+bound Ctrl+letter never reaches the terminal as `^X`. That is why `handle(TermAction)` returns
+whether the action *applied* and the dispatcher returns that: Ctrl+F (Open SFTP) on a local shell
+used to be a silent no-op that still ate the key, which in vim/`less` reads as "page-down is
+stuck, page-up works". Any default on a bare Ctrl+letter that terminal programs use (Ctrl+T,
+Ctrl+W are the same class) is a conflict of this kind; a no-op must let the key through.
+
 ### Modal prompts focus their input, via `DialogFocus` rather than `JOptionPane`
 `JOptionPane` focuses the **OK button**, so a password prompt can't be typed into until the user
 clicks or tabs. Any OK/Cancel dialog whose point is a text field therefore goes through

@@ -544,16 +544,21 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
     /**
      * Ctrl+F / SSH menu: open an SFTP browser on the active pane's live SSH connection (reusing its
      * authenticated session — no re-auth). No-op unless the active pane is an SSH terminal.
+     *
+     * @return {@code false} when nothing was opened because the active pane isn't an SSH
+     *         terminal, so the shortcut dispatcher can hand the keystroke on to the terminal
+     *         instead of swallowing it
      */
-    private void openSftpForActivePane() {
+    private boolean openSftpForActivePane() {
         TabPane host = WindowManager.get().focusedTabPane();
         PaneGrid grid = host != null ? host.currentGrid() : null;
         if (grid == null || !(grid.activePane() instanceof TerminalPane pane)
                 || !(pane.session() instanceof SshSession ssh)) {
-            return;
+            return false;
         }
         SftpLauncher.openOnLiveSession(ssh, this::placeSftp,
                 cause -> ErrorDialog.show(frame, "SFTP", "Could not open SFTP:", cause));
+        return true;
     }
 
     /**
@@ -773,8 +778,12 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
                 }
                 return false;
             }
-            handle(action);
-            return true; // consume so JediTerm / menu accelerators don't also fire
+            // Consume so JediTerm / menu accelerators don't also fire — but only when the action
+            // actually applied. A consumed KEY_PRESSED is gone for good: JediTerm encodes control
+            // keys from KEY_PRESSED only and ignores ISO control characters on KEY_TYPED, so a
+            // stroke swallowed here never reaches the program in the pane. Ctrl+F (Open SFTP) on a
+            // local shell used to vanish that way, leaving vim and less without their page-down.
+            return handle(action);
         });
     }
 
@@ -799,8 +808,14 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
     /**
      * Routes a bound action. Tab/pane/grid actions target whichever window currently has focus (the
      * main window or a detached one); the sidebar-only actions act on the main window's sidebar.
+     *
+     * @return whether the action applied to the current focus. {@code false} means the keystroke
+     *         should be left for the focused component — today only {@link TermAction#OPEN_SFTP}
+     *         on a non-SSH pane, where the key is meaningful to the program in the terminal. The
+     *         other actions' silent no-ops (no focused grid, sidebar closed) are reported as
+     *         handled: there is no terminal under focus for the key to be useful to.
      */
-    private void handle(TermAction action) {
+    private boolean handle(TermAction action) {
         TabPane active = WindowManager.get().focusedTabPane();
         PaneGrid grid = active != null ? active.currentGrid() : null;
         switch (action) {
@@ -831,7 +846,9 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
             }
             case OPEN_LOCAL -> openLocalInFocused();
             case QUICK_CONNECT -> focusQuickConnect();
-            case OPEN_SFTP -> openSftpForActivePane();
+            case OPEN_SFTP -> {
+                return openSftpForActivePane();
+            }
             case OPEN_TUNNELS -> openTunnelManager();
             case TOGGLE_THEME -> ThemeManager.get().toggle();
             case TOGGLE_SIDEBAR -> toggleSidebar();
@@ -913,6 +930,7 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
                 }
             }
         }
+        return true;
     }
 
     // ---- menu ----

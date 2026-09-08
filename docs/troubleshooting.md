@@ -82,6 +82,18 @@ If it stays quiet for longer than that, check the two things that suppress it en
   else; clear `skippedUpdateVersion` in [`settings.json`](config-files.md#update-check-keys-in-settingsjson)
   to be reminded about it again.
 
+## A key doesn't reach the program running in a pane
+
+jterm matches its [shortcuts](shortcuts.md) before the terminal sees the key, so a binding on a
+++ctrl++ + letter combination takes that key away from whatever is running in the pane. The
+symptom is one key that looks dead while its counterpart still works — with **Open SFTP browser**
+on ++ctrl+f++, `vim` and `less` stop paging **down** while ++ctrl+b++ still pages up.
+
+A shortcut whose action can't apply to the focused pane falls through to the terminal, so
+++ctrl+f++ behaves normally in a local shell. On an SSH pane the shortcut wins, because there the
+SFTP browser can open. Rebind the action in **Settings → Keyboard Shortcuts…** if you would rather
+keep the key for the program.
+
 ## Linux: wrong icon / missing from the dash (running the bare jar)
 
 GNOME Shell matches a window to a `.desktop` file by its `WM_CLASS` rather than using the

@@ -38,6 +38,12 @@ focus. The menus show the same accelerators for discoverability.
     as built-in aliases, and ++ctrl++ + scroll-wheel zooms the pane under the pointer. See
     [Font size](tabs-and-panes.md#font-size).
 
+!!! note "Shortcuts that don't apply fall through"
+    A shortcut whose action can't act on the focused pane is passed to the terminal instead of
+    being swallowed. **Open SFTP browser** is the one that matters today: it needs a live SSH
+    pane, so in a local shell ++ctrl+f++ reaches the program as usual — it is page-down in `vim`
+    and `less`.
+
 !!! note "macOS"
     On macOS, ++ctrl++ in the table corresponds to the platform's primary modifier as bound in
     the keymap. Check **Settings → Keyboard Shortcuts…** for the exact bindings on your

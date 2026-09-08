@@ -10,6 +10,8 @@ There are two ways to open it, and they differ in how they authenticate:
 
 - **On a live SSH pane** — focus a connected SSH pane and choose **SSH → Open SFTP Browser**
   (++ctrl+f++). This reuses the **existing connection**, so there's no second authentication.
+  In a pane that is not an SSH session the shortcut does nothing and ++ctrl+f++ is passed to the
+  terminal as usual (it is page-down in `vim` and `less`).
 - **Standalone** — launch SFTP for a saved session from the sidebar's context menu. This opens a
   **fresh connection** to that host (authenticating as usual).
 

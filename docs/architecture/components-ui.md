@@ -16,7 +16,13 @@ package that hosts the top-level window and the shortcut dispatcher.
   `KeyboardFocusManager`. JediTerm consumes key events, so menu accelerators alone
   would never fire while a terminal has focus; the dispatcher matches every
   `KeyStroke` against the current `Keymap` and **consumes** the event before the
-  widget sees it. It also claims *bare* ++r++ / ++s++ / ++enter++ for a stopped pane's
+  widget sees it — but only when the action actually applied, which is what
+  `handle(TermAction)` returns. A consumed `KEY_PRESSED` is unrecoverable: JediTerm
+  encodes control keys from the key-press event alone and drops ISO control characters
+  on `KEY_TYPED`, so a swallowed ++ctrl++ + letter never reaches the program as `^X`.
+  Opening the SFTP browser is a silent no-op on a pane that isn't SSH, and without the
+  fall-through it still ate ++ctrl+f++ there — page-down in `vim` and `less`.
+  It also claims *bare* ++r++ / ++s++ / ++enter++ for a stopped pane's
   restart/reconnect strip — that branch skips any `JTextComponent` focus owner, because the
   dispatcher sees every window and would otherwise eat those letters out of the Quick Connect
   field or a dialog's inputs whenever some pane happened to be dead.
