@@ -42,6 +42,9 @@ public final class JTermSettingsProvider extends DefaultSettingsProvider {
     public static final int MIN_FONT_SIZE = 6;
     public static final int MAX_FONT_SIZE = 72;
 
+    /** The colorless default pen — deliberately not {@link TextStyle#EMPTY}; see {@link #getDefaultStyle()}. */
+    static final TextStyle DEFAULT_PEN = new TextStyle();
+
     private ThemeColors theme;
     private ColorPalette palette;
     private Font font;
@@ -194,17 +197,29 @@ public final class JTermSettingsProvider extends DefaultSettingsProvider {
 
     /**
      * The style applied to cells written with no explicit color (the terminal's "default pen").
-     * We return {@link TextStyle#EMPTY} (no colors) on purpose: a cell with no foreground/background
-     * is resolved at paint time against {@link #getDefaultForeground()} / {@link #getDefaultBackground()},
-     * so default-pen text follows live theme changes instead of baking in colors at write time.
-     * (JediTerm's stock default is a fixed black-on-white style, which is why we override it.)
+     * It carries no colors on purpose: a cell with no foreground/background is resolved at paint
+     * time against {@link #getDefaultForeground()} / {@link #getDefaultBackground()}, so default-pen
+     * text follows live theme changes instead of baking in colors at write time. (JediTerm's stock
+     * default is a fixed black-on-white style, which is why we override it.)
+     *
+     * <p>It must be its <em>own</em> instance, never {@link TextStyle#EMPTY}, even though the two are
+     * {@code equals}. JediTerm uses {@code EMPTY} as the style of the NUL padding it inserts when a
+     * write lands past the end of a line ({@code TerminalLine.writeCharacters}), and when a line is
+     * rebuilt it groups adjacent cells into entries by style <em>identity</em>
+     * ({@code TerminalLine.collectFromBuffer}). Sharing the instance let default-pen text fuse with
+     * that padding into a single entry: one starting with NUL is treated as end-of-line by
+     * {@code TerminalLine.getText()}, dropping the text after it from a copy, and one with NULs in
+     * the middle put raw {@code \0} characters on the clipboard, which paste targets truncate at. The
+     * trigger is an erase-characters ({@code CSI n X}) past the end of a line followed by text
+     * written over it — common in full-screen and curses programs, so a large copy was rarely
+     * spared.</p>
      *
      * <p>Note: with no colors stored, {@code StyleState.getDefault*} would NPE for inverse-video
      * cells; {@code ThemeAwareStyleState} supplies non-null theme colors there.</p>
      */
     @Override
     public TextStyle getDefaultStyle() {
-        return TextStyle.EMPTY;
+        return DEFAULT_PEN;
     }
 
     @Override
