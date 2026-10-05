@@ -267,6 +267,16 @@ workspace "jterm" "Cross-platform Java Swing terminal emulator: tabs, splittable
         }
 
         styles {
+            # What "theme default" used to supply. That directive made the CLI download the
+            # theme from static.structurizr.com on every export, so the export (and the CI
+            # drift check) broke the day that host stopped resolving. Keep exports offline.
+            element "Element" {
+                shape roundedbox
+            }
+            element "Software System" {
+                background "#1168bd"
+                color "#ffffff"
+            }
             element "Person" {
                 background "#3949ab"
                 color "#ffffff"
@@ -297,7 +307,5 @@ workspace "jterm" "Cross-platform Java Swing terminal emulator: tabs, splittable
                 color "#ffffff"
             }
         }
-
-        theme default
     }
 }
