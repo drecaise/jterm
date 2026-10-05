@@ -32,7 +32,7 @@ public enum TermAction {
     CLOSE_PANE("close-pane", "Close Pane", "control UP"),
     OPEN_LOCAL("open-local", "Open Local Shell", "control shift T"),
     QUICK_CONNECT("quick-connect", "Quick Connect", "control shift Q"),
-    OPEN_SFTP("open-sftp", "Open SFTP Browser", "control F"),
+    OPEN_SFTP("open-sftp", "Open SFTP Browser", "control shift F"),
     OPEN_TUNNELS("open-tunnels", "Tunneling…", "control shift P"),
     TOGGLE_BROADCAST("toggle-broadcast", "Toggle Broadcast", "control shift B"),
     TOGGLE_THEME("toggle-theme", "Toggle Light/Dark", "control shift L"),

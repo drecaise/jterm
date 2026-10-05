@@ -51,6 +51,9 @@ public final class Keymap {
         // Missing or malformed file → defaults (a malformed file is preserved aside by JsonStore).
         Map<String, String> raw =
                 JsonStore.load(file, new TypeReference<LinkedHashMap<String, String>>() { });
+        // Migrate only a file that was actually read: a fresh map is written below with the
+        // current defaults and stamp anyway, and a malformed one must not be overwritten.
+        boolean migrated = raw != null && KeymapMigrations.migrate(raw);
         if (raw == null) {
             raw = new LinkedHashMap<>();
         }
@@ -66,6 +69,8 @@ public final class Keymap {
 
         if (!Files.isRegularFile(file)) {
             keymap.writeDefaults(file);
+        } else if (migrated) {
+            keymap.save();
         }
         return keymap;
     }
@@ -105,7 +110,7 @@ public final class Keymap {
 
     /** Persist the current bindings to {@code keymap.json}. */
     public void save() {
-        Map<String, String> out = new LinkedHashMap<>();
+        Map<String, String> out = stamped();
         for (TermAction action : TermAction.values()) {
             KeyStroke ks = bindings.get(action);
             out.put(action.id(), ks != null ? ks.toString() : action.defaultStroke());
@@ -114,10 +119,17 @@ public final class Keymap {
     }
 
     private void writeDefaults(Path file) {
-        Map<String, String> out = new LinkedHashMap<>();
+        Map<String, String> out = stamped();
         for (TermAction action : TermAction.values()) {
             out.put(action.id(), action.defaultStroke());
         }
         JsonStore.save(file, out);
+    }
+
+    /** A map to write, already carrying the schema version — see {@link KeymapMigrations}. */
+    private static Map<String, String> stamped() {
+        Map<String, String> out = new LinkedHashMap<>();
+        out.put(KeymapMigrations.VERSION_KEY, Integer.toString(KeymapMigrations.CURRENT_VERSION));
+        return out;
     }
 }

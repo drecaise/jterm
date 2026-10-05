@@ -86,13 +86,20 @@ If it stays quiet for longer than that, check the two things that suppress it en
 
 jterm matches its [shortcuts](shortcuts.md) before the terminal sees the key, so a binding on a
 ++ctrl++ + letter combination takes that key away from whatever is running in the pane. The
-symptom is one key that looks dead while its counterpart still works — with **Open SFTP browser**
-on ++ctrl+f++, `vim` and `less` stop paging **down** while ++ctrl+b++ still pages up.
+symptom is one key that looks dead while its neighbours still work — **Close Tab** on ++ctrl+w++
+closes the tab instead of deleting a word at the shell prompt, for instance.
 
-A shortcut whose action can't apply to the focused pane falls through to the terminal, so
-++ctrl+f++ behaves normally in a local shell. On an SSH pane the shortcut wins, because there the
-SFTP browser can open. Rebind the action in **Settings → Keyboard Shortcuts…** if you would rather
-keep the key for the program.
+A shortcut whose action can't apply to the focused pane falls through to the terminal: **Open SFTP
+browser** needs a live SSH pane, so its key is only taken there. Rebind the action in
+**Settings → Keyboard Shortcuts…** if you would rather keep a key for the program.
+
+## Ctrl+F opens SFTP instead of the search bar (or the other way round)
+
+Up to 1.9.3 **Open SFTP browser** was on ++ctrl+f++, which hid the terminal's own **Find** on SSH
+panes. From 1.9.4 it is on ++ctrl+shift+f++ and ++ctrl+f++ searches. An install still on the old
+default is moved automatically, once. If ++ctrl+f++ still opens SFTP, another action already held
+++ctrl+shift+f++, so the binding was left where it was — change either one in
+**Settings → Keyboard Shortcuts…**.
 
 ## Linux: wrong icon / missing from the dash (running the bare jar)
 

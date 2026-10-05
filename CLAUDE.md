@@ -234,10 +234,20 @@ dispatcher fires first, preventing double-execution. Bindings load from `keymap.
 A consumed `KEY_PRESSED` is **unrecoverable** for the program in the pane: JediTerm encodes
 control keys from `KEY_PRESSED` only, and its `keyTyped` ignores ISO control characters, so a
 bound Ctrl+letter never reaches the terminal as `^X`. That is why `handle(TermAction)` returns
-whether the action *applied* and the dispatcher returns that: Ctrl+F (Open SFTP) on a local shell
-used to be a silent no-op that still ate the key, which in vim/`less` reads as "page-down is
+whether the action *applied* and the dispatcher returns that: Open SFTP, when it was on Ctrl+F, was
+a silent no-op on a local shell that still ate the key, which in vim/`less` reads as "page-down is
 stuck, page-up works". Any default on a bare Ctrl+letter that terminal programs use (Ctrl+T,
 Ctrl+W are the same class) is a conflict of this kind; a no-op must let the key through.
+
+**Changing a default in `TermAction` reaches nobody on its own**: `keymap.json` is written with
+every default on first run, so existing installs keep the old stroke pinned. `keymap.KeymapMigrations`
+is the one-shot upgrade path, versioned by a `schemaVersion` entry *inside* the flat id → stroke map
+(older builds ignore the unknown key) and stamped even when nothing moved — same rule as
+`SessionStore`. v1 moved Open SFTP from Ctrl+F to Ctrl+Shift+F, because the dispatcher claiming
+Ctrl+F on an SSH pane left JediTerm's own find (also Ctrl+F) unreachable there. It compares
+**parsed `KeyStroke`s**, since the first-run file says `"control F"` and a save from the shortcut
+editor says `"ctrl pressed F"`, and it leaves the binding alone if another action already holds the
+new stroke.
 
 ### Modal prompts focus their input, via `DialogFocus` rather than `JOptionPane`
 `JOptionPane` focuses the **OK button**, so a password prompt can't be typed into until the user

@@ -186,7 +186,7 @@ Defaults (editable in `keymap.json`):
 | Split into a new row | `Ctrl+↓` |
 | Close the focused pane | `Ctrl+↑` |
 | Open a local shell in the active pane | `Ctrl+Shift+T` |
-| Open SFTP browser | `Ctrl+F` |
+| Open SFTP browser | `Ctrl+Shift+F` |
 | Tunneling… | `Ctrl+Shift+P` |
 | Toggle broadcast input | `Ctrl+Shift+B` |
 | Toggle light/dark theme | `Ctrl+Shift+L` |

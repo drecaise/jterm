@@ -21,7 +21,8 @@ package that hosts the top-level window and the shortcut dispatcher.
   encodes control keys from the key-press event alone and drops ISO control characters
   on `KEY_TYPED`, so a swallowed ++ctrl++ + letter never reaches the program as `^X`.
   Opening the SFTP browser is a silent no-op on a pane that isn't SSH, and without the
-  fall-through it still ate ++ctrl+f++ there — page-down in `vim` and `less`.
+  fall-through it still ate its key there (then ++ctrl+f++; see
+  [ADR 0011](adr/0011-sftp-shortcut-and-keymap-migration.md) for why it moved).
   It also claims *bare* ++r++ / ++s++ / ++enter++ for a stopped pane's
   restart/reconnect strip — that branch skips any `JTextComponent` focus owner, because the
   dispatcher sees every window and would otherwise eat those letters out of the Quick Connect

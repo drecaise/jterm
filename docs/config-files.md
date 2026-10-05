@@ -15,7 +15,7 @@ jterm stores all its state as JSON in a per-OS configuration directory.
 | `sessions.json` | The folder tree and SSH session definitions. |
 | `tunnels.json` | Saved [port-forwarding tunnels](tunnels.md) (local / remote / dynamic). |
 | `icons.json` | Imported custom icons (the image files are copied into `<config>/icons/`). |
-| `keymap.json` | [Keyboard shortcut](shortcuts.md) bindings (written with defaults on first run). |
+| `keymap.json` | [Keyboard shortcut](shortcuts.md) bindings (written with defaults on first run; its `schemaVersion` entry tracks one-time upgrades). |
 | `macros.json` | Saved [macros](macros.md). Step contents are **AES-GCM encrypted** when *Encrypt macros on disk* is on; names and hotkeys stay readable either way. |
 | `highlights.json` | [Output highlighting](settings.md#highlighting) lists and their rules. Seeded with the built-in *Standard* list on first run. |
 | `credentials.json` | SSH passwords and key passphrases, **AES-GCM encrypted** under your master password. No plaintext secrets. |

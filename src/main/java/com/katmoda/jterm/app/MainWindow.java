@@ -551,7 +551,7 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
     // ---- SFTP browser ----
 
     /**
-     * Ctrl+F / SSH menu: open an SFTP browser on the active pane's live SSH connection (reusing its
+     * Ctrl+Shift+F / SSH menu: open an SFTP browser on the active pane's live SSH connection (reusing its
      * authenticated session — no re-auth). No-op unless the active pane is an SSH terminal.
      *
      * @return {@code false} when nothing was opened because the active pane isn't an SSH
@@ -790,8 +790,9 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
             // Consume so JediTerm / menu accelerators don't also fire — but only when the action
             // actually applied. A consumed KEY_PRESSED is gone for good: JediTerm encodes control
             // keys from KEY_PRESSED only and ignores ISO control characters on KEY_TYPED, so a
-            // stroke swallowed here never reaches the program in the pane. Ctrl+F (Open SFTP) on a
-            // local shell used to vanish that way, leaving vim and less without their page-down.
+            // stroke swallowed here never reaches the program in the pane. Open SFTP, back when it
+            // was on Ctrl+F, used to vanish that way on a local shell, leaving vim and less without
+            // their page-down.
             return handle(action);
         });
     }

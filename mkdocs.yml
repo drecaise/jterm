@@ -113,4 +113,5 @@ nav:
       - 0008 Interactive auth via UserInteraction: architecture/adr/0008-interactive-auth-via-mina-userinteraction.md
       - 0009 Selection tracking across scrolls: architecture/adr/0009-selection-tracking-across-scrolls.md
       - 0010 Shortcut fall-through on no-op: architecture/adr/0010-shortcut-fall-through-on-no-op.md
+      - 0011 SFTP shortcut and keymap migration: architecture/adr/0011-sftp-shortcut-and-keymap-migration.md
   - Troubleshooting: troubleshooting.md
