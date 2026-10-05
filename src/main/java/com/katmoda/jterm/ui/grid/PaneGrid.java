@@ -63,6 +63,7 @@ import java.awt.event.MouseEvent;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -117,6 +118,8 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     private Runnable onActivity;
     private Runnable onEmpty;
     private BiConsumer<TerminalSession, SessionFactory> onOpenSessionInNewTab;
+    /** Async opens still in flight for this grid; see {@link #openAsync}. */
+    private final PendingOpens pendingOpens = new PendingOpens(this::hasAnyPane, this::fireEmpty);
 
     public PaneGrid() {
         setLayout(gridLayout);
@@ -642,6 +645,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
 
     /** Terminate every cell's session (called when the owning tab closes). */
     public void disposeAll() {
+        pendingOpens.dispose();
         for (int r = 0; r < MAX; r++) {
             for (int c = 0; c < MAX; c++) {
                 if (panes[r][c] != null) {
@@ -1147,13 +1151,54 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         factories[pos[0]][pos[1]] = null;
         if (!hasAnyPane() && onEmpty != null) {
             // Last cell gone (single-session tab): let the owner close the whole tab.
-            onEmpty.run();
+            fireEmpty();
             return;
         }
         compactGrid();
         relayout();
         moveActiveToExistingPane();
         focusActive();
+    }
+
+    private void fireEmpty() {
+        if (onEmpty != null) {
+            onEmpty.run();
+        }
+    }
+
+    /**
+     * Start an asynchronous open (an SSH connect) whose session is destined for this grid.
+     * {@code starter} receives the success and failure callbacks to hand to the connect;
+     * {@code place} puts the session in a cell once it arrives.
+     *
+     * <p>Going through here rather than connecting directly is what keeps two promises. A tab that
+     * was opened for a session and is still empty when the connect fails closes itself (after the
+     * error dialog, since the failure callback runs once that returns) — unless something else has
+     * landed in it or is still connecting. And a session that arrives after the tab was closed is
+     * closed instead of placed, where it would stay connected with no pane to close it from.</p>
+     */
+    public void openAsync(BiConsumer<Consumer<TerminalSession>, Runnable> starter,
+                          Consumer<TerminalSession> place) {
+        PendingOpens.Ticket ticket = pendingOpens.begin();
+        Runnable failed = ticket.onError();
+        try {
+            starter.accept(ticket.onReady(place), failed);
+        } catch (RuntimeException e) {
+            // The connect never started (it resolves credentials synchronously first), so neither
+            // callback will run: settle here or the grid would wait on it forever.
+            failed.run();
+            throw e;
+        }
+    }
+
+    /**
+     * Keep this grid open while a batch of {@link #openAsync} calls is being started; run the
+     * returned release once they all are. Starting a connect can block on a credential prompt, and
+     * an earlier connect of the same batch can fail meanwhile — without the hold that failure would
+     * see an empty grid with nothing else in flight and close the tab under the rest of the batch.
+     */
+    public Runnable holdOpen() {
+        return pendingOpens.begin().onError();
     }
 
     private boolean hasAnyPane() {

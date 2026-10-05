@@ -62,6 +62,13 @@ see [SSH auth & vault](ssh-auth-and-vault.md) for the auth order, the credential
 host-key verification. Once connected you can open an [SFTP browser](sftp.md) or
 [tunnels](tunnels.md) on the same host.
 
+If the connection **fails** — the host doesn't answer, the host key is rejected, or authentication
+gives up — an error dialog says why. A tab that was opened just for that session closes when you
+close the dialog, and you are back on the tab you started from. The tab is kept only if it holds
+something else by then: a shell you opened in it while waiting, or another session still
+connecting. The same goes for **Open Folder** into split tabs — a tab closes only when every
+connection in it failed.
+
 !!! tip "One-off hosts"
     You don't need a saved session to reach a host once. Type `[user@]host[:port]` into the
     sidebar's [Quick Connect](sessions-sidebar.md#quick-connect) field and press ++enter++ —

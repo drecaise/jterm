@@ -209,6 +209,21 @@ a cell and **collapses a fully-empty trailing row/column** so the grid stays rec
 The whole grid is re-laid-out via `GridBagLayout` with equal weights on every change. One
 `PaneGrid` per tab (`JTabbedPane` in `MainWindow`).
 
+**A tab with no panes and no opens in flight closes; a session arriving for a disposed grid is
+closed, never placed.** An SSH tab exists before its connect finishes, so every "connect, then
+place into this grid" goes through `PaneGrid.openAsync(starter, place)` instead of calling
+`connectAsync` directly — **use it for any new async open.** It hands the connect a success and a
+failure callback backed by `ui.grid.PendingOpens` (Swing-free, unit-tested). The failure callback
+runs after the modal `ErrorDialog` returns, which is what makes a tab opened for a session that
+failed close together with its error dialog. It checks emptiness *and* the in-flight count because
+a modal dialog still pumps events: the user can fill the empty cell or drop a second session on it
+meanwhile. The success callback is the other half — before it, closing a connecting tab by hand
+left the late session placed in a removed grid, authenticated and connected with no pane to close
+it from. A batch (Open Folder → split tabs, Duplicate Tab) wraps its loop in `holdOpen()`: starting
+a connect can block on a credential prompt while an earlier one of the same batch fails, and that
+failure would otherwise see an empty grid with nothing else pending and close the tab under the
+rest.
+
 ### Global shortcuts bypass focus via a KeyEventDispatcher
 JediTerm consumes key events, so `MainWindow.installShortcutDispatcher()` registers a single
 `KeyboardFocusManager` dispatcher that matches `keymap.Keymap` bindings and **consumes** the

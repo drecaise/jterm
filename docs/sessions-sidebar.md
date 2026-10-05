@@ -70,8 +70,8 @@ around, create a saved [SSH session](ssh-sessions.md) for it instead.
 
 The **⊕ Local Terminal** button at the bottom opens a local shell in a **new tab** — it never
 replaces whatever is running in the pane you're looking at. The one exception is when the focused
-pane is **empty** (a cell you closed in a split, or a tab whose connection failed): then it fills
-that empty pane instead of leaving it stranded. ++ctrl+shift+t++ does the same thing.
+pane is **empty** (a cell you closed in a split, or a tab still waiting for its connection): then
+it fills that empty pane instead of leaving it stranded. ++ctrl+shift+t++ does the same thing.
 
 **Right-click** the button for the other placements:
 

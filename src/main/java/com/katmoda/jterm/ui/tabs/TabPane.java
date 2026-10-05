@@ -217,13 +217,34 @@ public final class TabPane extends JPanel {
 
     /** Opens an SSH session in a fresh tab: shows the session's name/icon, then connects async. */
     public void addSshTab(SshSessionConfig cfg) {
+        Component previous = tabs.getSelectedComponent();
         PaneGrid grid = newGrid();
         int at = insertGrid(grid);
         tabs.setTitleAt(at, cfg.getName());
         tabs.setIconAt(at, services.iconFor(cfg.getIconId()));
         setTabColor(at, services.effectiveTabColorHex(cfg));
         grid.initEmpty();
-        services.connectAsync(cfg, session -> grid.placeSessionInActive(session, sshFactory(cfg)));
+        grid.openAsync(
+                (ready, failed) -> services.connectAsync(cfg, ready::accept, () -> {
+                    boolean wasSelected = tabs.getSelectedComponent() == grid;
+                    failed.run(); // closes the tab if it is still empty and waiting on nothing else
+                    if (wasSelected && !containsGrid(grid)) {
+                        returnTo(previous);
+                    }
+                }),
+                session -> grid.placeSessionInActive(session, sshFactory(cfg)));
+    }
+
+    /**
+     * After a tab that failed to connect closed itself: go back to the tab the user opened it from.
+     * The failed tab sat at the end of the strip, so removing it leaves the <em>last</em> tab
+     * selected, which is only by accident the one they were looking at.
+     */
+    private void returnTo(Component previous) {
+        if (previous instanceof PaneGrid && tabs.indexOfComponent(previous) >= 0) {
+            tabs.setSelectedComponent(previous);
+        }
+        focusCurrentPane();
     }
 
     /** Opens an already-built session in a fresh tab (used when duplicating a pane to a new tab). */
@@ -252,8 +273,9 @@ public final class TabPane extends JPanel {
     /** Bind a grid's callbacks (drop/decoration/empty/move) to this tab pane. Idempotent, so it
      *  safely re-homes a grid moved in from another window. */
     private void wireGrid(PaneGrid grid) {
-        grid.setDropHandler((cfg, placer) ->
-                services.connectAsync(cfg, session -> placer.accept(session, sshFactory(cfg))));
+        grid.setDropHandler((cfg, placer) -> grid.openAsync(
+                (ready, failed) -> services.connectAsync(cfg, ready::accept, failed),
+                session -> placer.accept(session, sshFactory(cfg))));
         grid.setOnActiveChanged(() -> decorateTab(grid));
         grid.setOnActivity(() -> decorateTab(grid));
         grid.setOnEmpty(() -> closeTabForGrid(grid));
@@ -458,9 +480,16 @@ public final class TabPane extends JPanel {
         PaneGrid dup = newGrid();
         insertGrid(dup);
         dup.prepareEmptyGrid(source.rows(), source.cols(), source.activeRow(), source.activeCol());
-        for (PaneGrid.CellSpec spec : specs) {
-            spec.factory().create(session ->
-                    dup.placeSessionInCell(spec.row(), spec.col(), session, spec.factory()));
+        // Held across the loop: a cell that fails to reopen must not close the tab under the rest.
+        Runnable release = dup.holdOpen();
+        try {
+            for (PaneGrid.CellSpec spec : specs) {
+                dup.openAsync(
+                        (ready, failed) -> spec.factory().create(ready, failed),
+                        session -> dup.placeSessionInCell(spec.row(), spec.col(), session, spec.factory()));
+            }
+        } finally {
+            release.run();
         }
         decorateTab(dup);
     }

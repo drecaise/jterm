@@ -486,7 +486,7 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         if (grid == null) {
             return;
         }
-        connectAsync(cfg, session -> {
+        grid.openAsync((ready, failed) -> connectAsync(cfg, ready::accept, failed), session -> {
             SessionFactory factory = SessionFactory.ssh(cfg, connectionService);
             switch (mode) {
                 case ACTIVE -> grid.placeSessionInActive(session, factory);
@@ -531,11 +531,20 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
             String title = tabCount > 1 ? folder.getName() + " (" + (t + 1) + ")" : folder.getName();
             grids.add(tabPane.addSplitTab(title));
         }
-        for (int i = 0; i < sessions.size(); i++) {
-            SshSessionConfig cfg = sessions.get(i);
-            PaneGrid grid = grids.get(i / perTab);
-            connectAsync(cfg, session ->
-                    grid.placeSessionInBestSplit(session, SessionFactory.ssh(cfg, connectionService)));
+        // Each tab is held open until all of its connects are started, then closes itself only if
+        // every one of them failed — starting a connect can block on a credential prompt while an
+        // earlier one fails, and that failure must not close the tab under the rest.
+        List<Runnable> releases = new ArrayList<>();
+        grids.forEach(grid -> releases.add(grid.holdOpen()));
+        try {
+            for (int i = 0; i < sessions.size(); i++) {
+                SshSessionConfig cfg = sessions.get(i);
+                PaneGrid grid = grids.get(i / perTab);
+                grid.openAsync((ready, failed) -> connectAsync(cfg, ready::accept, failed), session ->
+                        grid.placeSessionInBestSplit(session, SessionFactory.ssh(cfg, connectionService)));
+            }
+        } finally {
+            releases.forEach(Runnable::run);
         }
     }
 

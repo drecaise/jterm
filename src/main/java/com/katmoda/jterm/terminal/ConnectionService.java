@@ -96,7 +96,9 @@ public final class ConnectionService {
                 try {
                     SshSession session = get();
                     onConnected.accept(session);
-                    if (connectMacro != null) {
+                    // The tab may have been closed while this connected, in which case the session
+                    // was closed on arrival rather than placed: there is nothing to replay into.
+                    if (connectMacro != null && session.connector().isConnected()) {
                         MacroRunner.run(connectMacro.name(), connectMacro.steps(), session.connector());
                     }
                 } catch (Exception e) {
