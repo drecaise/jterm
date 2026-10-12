@@ -1,6 +1,6 @@
 app-id: com.katmoda.jterm
 runtime: org.freedesktop.Platform
-runtime-version: '24.08'
+runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
 # Provides a JDK at build time; its install.sh copies a JRE into /app at /app/jre.
 sdk-extensions:
