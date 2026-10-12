@@ -32,6 +32,12 @@ and commits here land straight on master, so on its own it produces nothing but 
 (the old `-Pinstaller` Maven profile was removed); the Flatpak manifest lives in
 `packaging/flatpak/`.
 
+The `Security` workflow's `packaging-eol` job (`.github/check-packaging-eol.sh`, runnable locally)
+fails when the Flatpak runtime or the snap base has gone end of life — neither is a Maven
+dependency, and a retired one still builds. Bumping the Flatpak runtime touches **two** places: the
+manifest's `runtime-version` and the `freedesktop-<version>` container tag of `build-flatpak` in
+`release.yml`.
+
 There **is** a JUnit 5 suite under `src/test/java` (`mvn -q test`), but it only covers headless
 logic — credential/vault resolution, session-store inheritance, SFTP transfer maths, agent socket
 trust. Nothing Swing-facing is tested, so a green suite is not evidence the UI works.

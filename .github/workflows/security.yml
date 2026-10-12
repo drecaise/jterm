@@ -1,10 +1,11 @@
 name: Security
 
-# Unit tests on every push/PR, plus an OWASP dependency-vulnerability scan. The scan also runs
-# weekly so newly-disclosed CVEs in pinned dependencies surface even without a code change.
+# Unit tests on every push/PR, plus an OWASP dependency-vulnerability scan and an end-of-life
+# check on the Flatpak runtime and snap base. Both also run weekly so newly-disclosed CVEs in
+# pinned dependencies, and a runtime retired upstream, surface even without a code change.
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
   schedule:
     - cron: '17 5 * * 1'   # Mondays 05:17 UTC
@@ -57,3 +58,17 @@ jobs:
           name: dependency-check-report
           path: target/dependency-check-report.html
           if-no-files-found: ignore
+
+  # The Flatpak runtime and the snap base are invisible to the dependency scan above, and a
+  # retired one still builds -- the warning only ever appears on a user's machine at install.
+  # See .github/check-packaging-eol.sh (runs locally too).
+  packaging-eol:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install flatpak
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends flatpak
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+      - run: .github/check-packaging-eol.sh
