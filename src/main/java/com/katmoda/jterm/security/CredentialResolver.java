@@ -20,6 +20,7 @@
 package com.katmoda.jterm.security;
 
 import com.katmoda.jterm.session.JumpHostConfig;
+import com.katmoda.jterm.session.RdpSessionConfig;
 import com.katmoda.jterm.session.SessionStore;
 import com.katmoda.jterm.session.SshSessionConfig;
 import com.katmoda.jterm.terminal.ssh.SshConnect;
@@ -107,6 +108,57 @@ public final class CredentialResolver {
             return secret;
         }
         return promptSessionPasswordOnEdt(cfg.getName(), null, null, false);
+    }
+
+    /**
+     * An RDP password to try: where it came from decides what a failed logon means. A vault password
+     * that fails is stale (re-prompt); a typed one marked {@code remember} is saved only once the
+     * server accepts it (see {@link #rememberRdpPassword}).
+     */
+    public record RdpPassword(char[] password, boolean fromVault, boolean remember) { }
+
+    /**
+     * Resolves the password for an RDP session (EDT). Unless {@code retryError} is set, the
+     * session's saved vault password is used when it has one; otherwise — or on a retry after a
+     * failed logon, whose message is shown in the prompt — the user is prompted, with the option to
+     * remember it. Returns {@code null} if the prompt is cancelled.
+     *
+     * <p>RDP sessions take no inherited folder/global default password: those are SSH conventions,
+     * and a Windows credential silently reused against another host type would be a surprise.</p>
+     */
+    public RdpPassword resolveRdpPassword(RdpSessionConfig cfg, String retryError) {
+        if (retryError == null && cfg.isSavePassword()) {
+            String saved = resolveVaultSecret(List.of(VaultKeys.sessionPassword(cfg.getId())));
+            if (saved != null) {
+                return new RdpPassword(saved.toCharArray(), true, false);
+            }
+        }
+        SessionPassword typed = promptSessionPasswordResultOnEdt(cfg.getName(), cfg.hostLabel(),
+                retryError, true);
+        return typed == null ? null : new RdpPassword(typed.password(), false, typed.remember());
+    }
+
+    /**
+     * Saves an RDP password the user asked to remember, after the server accepted it (EDT-marshalled,
+     * best-effort). {@code password} is zeroed.
+     */
+    public void rememberRdpPassword(RdpSessionConfig cfg, char[] password) {
+        char[] copy = password.clone();
+        Arrays.fill(password, '\0');
+        runOnEdt(() -> {
+            try {
+                if (!vault.ensureUnlocked()) {
+                    return;
+                }
+                vault.vault().setPassword(VaultKeys.sessionPassword(cfg.getId()), copy);
+                cfg.setSavePassword(true);
+                sessionStore.save();
+            } catch (VaultException e) {
+                LOG.warn("failed to save the RDP password to the vault", e);
+            } finally {
+                Arrays.fill(copy, '\0');
+            }
+        });
     }
 
     /**

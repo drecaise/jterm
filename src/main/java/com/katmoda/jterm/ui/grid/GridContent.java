@@ -65,4 +65,12 @@ public interface GridContent {
 
     /** Short label for tab decoration when this content is the active cell. */
     String displayTitle();
+
+    /**
+     * Icon-library id for the tab when this content is the active cell, or {@code null} for the
+     * generic non-terminal icon. (Terminal panes are decorated from their session instead.)
+     */
+    default String tabIconId() {
+        return null;
+    }
 }

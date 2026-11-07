@@ -27,8 +27,15 @@ package com.katmoda.jterm.session;
  */
 final class SessionMigrations {
 
-    /** Schema version written by this build. */
-    static final int CURRENT_VERSION = 1;
+    /**
+     * Schema version written by this build.
+     *
+     * <p>v2 changes no data: it marks the point where the tree may contain {@code "type": "rdp"}
+     * nodes ({@link RdpSessionConfig}). A build that predates v2 fails on that unknown type id and
+     * quarantines the file, so moving to v2 is a one-way upgrade — the stamp makes the boundary
+     * visible in the file itself.</p>
+     */
+    static final int CURRENT_VERSION = 2;
 
     /** The size the pre-v1 session dialog forced onto every session (its spinner's seed value). */
     private static final int LEGACY_FORCED_FONT_SIZE = 14;

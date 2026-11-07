@@ -26,6 +26,7 @@ import com.katmoda.jterm.config.AppPaths;
 import com.katmoda.jterm.security.CredentialVault;
 import com.katmoda.jterm.security.PassphraseBox;
 import com.katmoda.jterm.security.VaultException;
+import com.katmoda.jterm.security.VaultKeys;
 
 import javax.crypto.AEADBadTagException;
 import java.io.File;
@@ -61,7 +62,7 @@ public final class SessionExportService {
     // ---- export ----
 
     /**
-     * Gathers plaintext passwords for every password-saving SSH session under {@code folder} into
+     * Gathers plaintext passwords for every password-saving SSH/RDP session under {@code folder} into
      * {@code out}, keyed by session id. Requires an already-unlocked {@code vault}.
      */
     public static void collectCredentials(FolderNode folder, CredentialVault vault, Map<String, String> out)
@@ -73,6 +74,11 @@ public final class SessionExportService {
                 String password = vault.getPassword(ssh.getId());
                 if (password != null) {
                     out.put(ssh.getId(), password);
+                }
+            } else if (child instanceof RdpSessionConfig rdp && rdp.isSavePassword()) {
+                String password = vault.getPassword(VaultKeys.sessionPassword(rdp.getId()));
+                if (password != null) {
+                    out.put(rdp.getId(), password);
                 }
             }
         }
@@ -168,6 +174,16 @@ public final class SessionExportService {
                 String oldId = ssh.getId();
                 String newId = UUID.randomUUID().toString();
                 ssh.setId(newId);
+                String password = (oldCreds != null) ? oldCreds.get(oldId) : null;
+                if (password != null) {
+                    newCreds.put(newId, password);
+                }
+            } else if (child instanceof RdpSessionConfig rdp) {
+                // Same rule as SSH: an imported RDP session must never share (or inherit) the vault
+                // entry of an existing session with the same id.
+                String oldId = rdp.getId();
+                String newId = UUID.randomUUID().toString();
+                rdp.setId(newId);
                 String password = (oldCreds != null) ? oldCreds.get(oldId) : null;
                 if (password != null) {
                     newCreds.put(newId, password);

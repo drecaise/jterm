@@ -511,7 +511,8 @@ public final class TabPane extends JPanel {
             return; // leave the current label (e.g. an SSH tab that's still connecting)
         }
         if (!(content instanceof TerminalPane pane)) {
-            tabs.setIconAt(idx, IconLibrary.get().icon("builtin/folder", 16));
+            String iconId = content.tabIconId();
+            tabs.setIconAt(idx, IconLibrary.get().icon(iconId != null ? iconId : "builtin/folder", 16));
             tabs.setTitleAt(idx, content.displayTitle());
             setTabColor(idx, null);
             applyActivityIndicator(idx, grid, content);

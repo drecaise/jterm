@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 `jterm` — a Java 21 Swing desktop terminal emulator: tabbed windows, a uniform 3×3
-splittable pane grid, a saved-sessions sidebar (folders + SSH sessions with icons),
+splittable pane grid, a saved-sessions sidebar (folders + SSH/RDP sessions with icons),
 drag-and-drop session launching, input broadcast, light/dark theming, and SSH with
 ssh-agent + key + password auth backed by an encrypted credential vault.
 
@@ -302,6 +302,45 @@ Font(...)` sizes, hand-drawn `Graphics` metrics — are *not* scaled and must be
 payloads. The sidebar tree and the "Local Terminal" button are drag sources; each `TerminalPane`
 is a drop target. Drop position decides the split: top 60% → new column, bottom 40% → new row
 (`dnd.DropRegion`). SSH connects async then splits; local splits synchronously.
+
+### RDP sessions run FreeRDP out of process; jterm paints and owns input
+Design and measurements: `docs/superpowers/specs/2026-11-07-rdp-session-design.md`. FreeRDP runs
+in `native/rdp-helper` (a small C client, built per OS; `build-windows.cmd` on Windows), never in
+the JVM: a codec crash or a server-triggered memory bug then can't take down every SSH session, or
+reach the unlocked vault. jterm speaks a versioned binary protocol over the helper's stdin/stdout —
+`native/rdp-helper/src/protocol.h` is the source of truth, `terminal.rdp.RdpProtocol` its Java
+mirror; **change both together**.
+
+`ui.rdp.RdpPane` is a `GridContent` (like `SftpPane`), opened in a new tab by default. It places
+itself first and connects second, so a failure leaves the pane showing Reconnect / Close instead of
+an error over an empty tab; it removes itself only through Close (`onContentEnded`). Dev runs need
+`-Djterm.rdp.helper=<path to jterm-rdp-helper[.exe]>` (with its DLLs beside it); installed builds
+look only in the install dir (`terminal.rdp.RdpHelperLocator`) — **never `PATH` or the jar's
+directory**, because the helper is handed the password.
+
+Sharp edges, all commented in place:
+- **Pipe the helper's stderr, never inherit it.** The Windows helper is GUI-subsystem (no console
+  window); handed an inherited *console* stderr it has no valid fd 2. It now survives that, but its
+  log must be drained or the pipe eventually blocks it.
+- **Certificates:** pins (`terminal.rdp.RdpKnownHosts`, `rdp_known_hosts.json`) go to the helper in
+  CONNECT and FreeRDP accepts a match before anything else; only a cert that is neither pinned nor
+  CA-valid comes back as a prompt. The helper answers FreeRDP "accept for this session" so
+  FreeRDP's own store is never written. There is deliberately no "ignore certificate errors".
+- **Passwords:** vault first, else a prompt; a typed password marked "remember" is saved only after
+  `CONNECTED`, and a credential failure (`Disconnected.credentialsRejected()`) re-prompts.
+- **Keyboard:** printable keys without Ctrl/Alt/Meta go as Unicode (layout-independent), the rest as
+  Windows VKs that the helper maps to scancodes. `MainWindow`'s dispatcher claims only Ctrl+Shift
+  strokes while an RDP pane has focus (`RdpKeyMap.jtermMayClaim`) — Ctrl+T/W/C belong to the remote.
+- **Cursor size:** AWT stretches custom cursors to the platform's best size (48×48 at 150%), so the
+  remote cursor is padded onto a best-size canvas rather than scaled.
+- **GNOME Remote Desktop** ignores the scale factor in the connection data; the helper sends size
+  and scale per monitor over Display Control, which is also what resizes the remote desktop to the
+  pane. GNOME still renders at 100% for 150% (fractional scaling needs mutter's experimental flag).
+- **H.264** is advertised only when the helper's decoder actually starts (Media Foundation on
+  Windows). Servers without a hardware encoder (orion: no VA-API driver) still send RemoteFX.
+- `RdpSessionConfig` is `@JsonIgnoreProperties(ignoreUnknown = true)`: `JsonStore` fails on unknown
+  fields and quarantines the *whole* `sessions.json`. RDP nodes bumped the schema to v2 — an older
+  build can't read the file (one-way upgrade).
 
 ### Sessions, icons, and persistence (Jackson JSON in the OS config dir)
 `config.AppPaths` resolves the per-OS config dir (`~/.config/jterm`, `~/Library/Application

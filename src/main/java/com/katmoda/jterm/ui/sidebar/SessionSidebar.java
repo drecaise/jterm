@@ -23,6 +23,7 @@ import com.formdev.flatlaf.extras.FlatSVGIcon;
 import com.formdev.flatlaf.util.UIScale;
 import com.katmoda.jterm.dnd.FolderTransferable;
 import com.katmoda.jterm.dnd.LocalTransferable;
+import com.katmoda.jterm.dnd.RdpTransferable;
 import com.katmoda.jterm.dnd.SessionTransferable;
 import com.katmoda.jterm.dnd.WslTransferable;
 import com.katmoda.jterm.icon.IconLibrary;
@@ -32,6 +33,7 @@ import com.katmoda.jterm.macro.MacroLibrary;
 import com.katmoda.jterm.session.EncryptedSessionExport;
 import com.katmoda.jterm.session.FolderNode;
 import com.katmoda.jterm.session.JumpHostConfig;
+import com.katmoda.jterm.session.RdpSessionConfig;
 import com.katmoda.jterm.session.SessionExport;
 import com.katmoda.jterm.session.SessionExportService;
 import com.katmoda.jterm.session.SessionNode;
@@ -139,6 +141,7 @@ public final class SessionSidebar extends JPanel {
     private final BiConsumer<String, OpenMode> onOpenWsl;
     private final Consumer<SshSessionConfig> onOpenSftp;
     private final BiConsumer<FolderNode, FolderOpenMode> onOpenFolder;
+    private final BiConsumer<RdpSessionConfig, OpenMode> onOpenRdp;
 
     /**
      * The pinned, non-editable "WSL" folder of runtime-detected WSL2 distributions, or
@@ -158,7 +161,8 @@ public final class SessionSidebar extends JPanel {
                           Consumer<OpenMode> onOpenLocal,
                           BiConsumer<String, OpenMode> onOpenWsl,
                           Consumer<SshSessionConfig> onOpenSftp,
-                          BiConsumer<FolderNode, FolderOpenMode> onOpenFolder) {
+                          BiConsumer<FolderNode, FolderOpenMode> onOpenFolder,
+                          BiConsumer<RdpSessionConfig, OpenMode> onOpenRdp) {
         super(new BorderLayout());
         this.store = store;
         this.onOpenSsh = onOpenSsh;
@@ -166,6 +170,7 @@ public final class SessionSidebar extends JPanel {
         this.onOpenWsl = onOpenWsl;
         this.onOpenSftp = onOpenSftp;
         this.onOpenFolder = onOpenFolder;
+        this.onOpenRdp = onOpenRdp;
         this.wslFolder = isWindows() ? new FolderNode("WSL") : null;
 
         this.model = new DefaultTreeModel(buildRoot());
@@ -190,6 +195,9 @@ public final class SessionSidebar extends JPanel {
                 if (node instanceof SshSessionConfig ssh) {
                     return new SessionTransferable(ssh);
                 }
+                if (node instanceof RdpSessionConfig rdp) {
+                    return new RdpTransferable(rdp); // folder moves only; panes don't accept it
+                }
                 if (node instanceof FolderNode folder
                         && folder != store.root() && folder != wslFolder) {
                     return new FolderTransferable(folder); // root / WSL folder stay put
@@ -209,7 +217,8 @@ public final class SessionSidebar extends JPanel {
                 if (target == null) {
                     return false;
                 }
-                if (support.isDataFlavorSupported(SessionTransferable.SESSION_FLAVOR)) {
+                if (support.isDataFlavorSupported(SessionTransferable.SESSION_FLAVOR)
+                        || support.isDataFlavorSupported(RdpTransferable.RDP_FLAVOR)) {
                     return true;
                 }
                 if (support.isDataFlavorSupported(FolderTransferable.FOLDER_FLAVOR)) {
@@ -236,6 +245,10 @@ public final class SessionSidebar extends JPanel {
                         FolderNode dragged = (FolderNode) support.getTransferable()
                                 .getTransferData(FolderTransferable.FOLDER_FLAVOR);
                         return moveFolder(dragged, target);
+                    }
+                    if (support.isDataFlavorSupported(RdpTransferable.RDP_FLAVOR)) {
+                        return moveSession((SessionNode) support.getTransferable()
+                                .getTransferData(RdpTransferable.RDP_FLAVOR), target);
                     }
                     SshSessionConfig dragged = (SshSessionConfig) support.getTransferable()
                             .getTransferData(SessionTransferable.SESSION_FLAVOR);
@@ -394,6 +407,7 @@ public final class SessionSidebar extends JPanel {
         bar.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
         bar.add(iconButton("icons/folder-plus.svg", "New folder", e -> newFolder()));
         bar.add(iconButton("icons/terminal-plus.svg", "New SSH session", e -> newSsh()));
+        bar.add(iconButton("icons/rdp-plus.svg", "New RDP session", e -> newRdp()));
         return bar;
     }
 
@@ -595,14 +609,14 @@ public final class SessionSidebar extends JPanel {
         if (uo instanceof FolderNode folder) {
             return folder == wslFolder ? null : folder; // can't drop into the runtime WSL folder
         }
-        if (uo instanceof SshSessionConfig ssh) {
-            return parentFolderOf(ssh); // dropping onto a session targets its containing folder
+        if (uo instanceof SshSessionConfig || uo instanceof RdpSessionConfig) {
+            return parentFolderOf((SessionNode) uo); // dropping onto a session targets its folder
         }
         return null;
     }
 
     /** Reparents {@code session} into {@code target}. Returns whether anything changed. */
-    private boolean moveSession(SshSessionConfig session, FolderNode target) {
+    private boolean moveSession(SessionNode session, FolderNode target) {
         FolderNode current = parentFolderOf(session);
         if (current == null || target == null || target == current) {
             return false;
@@ -897,6 +911,8 @@ public final class SessionSidebar extends JPanel {
         SessionNode node = selectedNode();
         if (node instanceof SshSessionConfig ssh) {
             onOpenSsh.accept(ssh, OpenMode.NEW_TAB);
+        } else if (node instanceof RdpSessionConfig rdp) {
+            onOpenRdp.accept(rdp, OpenMode.NEW_TAB);
         } else if (node instanceof WslDistroNode wsl) {
             onOpenWsl.accept(wsl.distro(), OpenMode.NEW_TAB);
         }
@@ -909,6 +925,8 @@ public final class SessionSidebar extends JPanel {
     public void duplicateSelected() {
         if (selectedNode() instanceof SshSessionConfig ssh) {
             duplicateSession(ssh);
+        } else if (selectedNode() instanceof RdpSessionConfig rdp) {
+            duplicateRdp(rdp);
         }
     }
 
@@ -1067,13 +1085,42 @@ public final class SessionSidebar extends JPanel {
             menu.add(duplicate);
             menu.add(delete);
             addMoveItems(menu, ssh);
+        } else if (node instanceof RdpSessionConfig rdp) {
+            JMenuItem open = new JMenuItem("Open");
+            open.addActionListener(a -> onOpenRdp.accept(rdp, OpenMode.NEW_TAB));
+            JMenuItem openActive = new JMenuItem("Open in Active Pane");
+            openActive.addActionListener(a -> onOpenRdp.accept(rdp, OpenMode.ACTIVE));
+            JMenu split = new JMenu("Open in Split Pane");
+            JMenuItem right = new JMenuItem("Split Right (new column)");
+            right.addActionListener(a -> onOpenRdp.accept(rdp, OpenMode.SPLIT_COLUMN));
+            JMenuItem below = new JMenuItem("Split Below (new row)");
+            below.addActionListener(a -> onOpenRdp.accept(rdp, OpenMode.SPLIT_ROW));
+            split.add(right);
+            split.add(below);
+            JMenuItem edit = new JMenuItem("Edit…");
+            edit.addActionListener(a -> editRdp(rdp));
+            JMenuItem duplicate = new JMenuItem("Duplicate");
+            duplicate.addActionListener(a -> duplicateRdp(rdp));
+            JMenuItem delete = new JMenuItem("Delete");
+            delete.addActionListener(a -> deleteSelected());
+            menu.add(open);
+            menu.add(openActive);
+            menu.add(split);
+            menu.addSeparator();
+            menu.add(edit);
+            menu.add(duplicate);
+            menu.add(delete);
+            addMoveItems(menu, rdp);
         } else {
             JMenuItem newFolder = new JMenuItem("New Folder…");
             newFolder.addActionListener(a -> newFolder());
             JMenuItem newSsh = new JMenuItem("New SSH Session…");
             newSsh.addActionListener(a -> newSsh());
+            JMenuItem newRdp = new JMenuItem("New RDP Session…");
+            newRdp.addActionListener(a -> newRdp());
             menu.add(newFolder);
             menu.add(newSsh);
+            menu.add(newRdp);
             if (node instanceof FolderNode folder) {
                 if (!SessionStore.collectSshSessions(folder).isEmpty()) {
                     JMenuItem openSplit = new JMenuItem("Open All in Split Panes");
@@ -1234,6 +1281,157 @@ public final class SessionSidebar extends JPanel {
         if (showFolderDialog(folder, "Edit Folder")) {
             rebuild();
         }
+    }
+
+    // ---- RDP sessions ----
+
+    private void newRdp() {
+        RdpSessionConfig cfg = new RdpSessionConfig();
+        FolderNode dest = showRdpDialog(cfg, "New RDP Session", targetFolder());
+        if (dest != null) {
+            dest.getChildren().add(cfg);
+            rebuild();
+        }
+    }
+
+    private void editRdp(RdpSessionConfig rdp) {
+        FolderNode current = parentFolderOf(rdp);
+        FolderNode dest = showRdpDialog(rdp, "Edit RDP Session", current);
+        if (dest == null) {
+            return;
+        }
+        if (current != null && dest != current) {
+            current.getChildren().remove(rdp);
+            dest.getChildren().add(rdp);
+        }
+        rebuild();
+    }
+
+    /** Like {@link #duplicateSession}: a prefilled dialog for a copy with a fresh id and no password. */
+    private void duplicateRdp(RdpSessionConfig original) {
+        RdpSessionConfig copy = original.copyWithNewId();
+        copy.setName(uniqueDuplicateName(original.getName()));
+        FolderNode parent = parentFolderOf(original);
+        FolderNode dest = showRdpDialog(copy, "Duplicate RDP Session",
+                parent != null ? parent : store.root());
+        if (dest != null) {
+            dest.getChildren().add(copy);
+            rebuild();
+        }
+    }
+
+    /**
+     * Tabbed form dialog ("Basic settings" + "Display"); mutates {@code cfg} on OK. Returns the
+     * folder chosen for the session, or {@code null} if cancelled.
+     */
+    private FolderNode showRdpDialog(RdpSessionConfig cfg, String title, FolderNode initialFolder) {
+        JTextField name = new JTextField(cfg.getName());
+        JTextField host = new JTextField(cfg.getHost());
+        JTextField port = new JTextField(String.valueOf(cfg.getPort()));
+        JTextField user = new JTextField(cfg.getUser());
+        JTextField domain = new JTextField(cfg.getDomain());
+        domain.putClientProperty("JTextField.placeholderText", "(none)");
+
+        boolean hasSaved = cfg.isSavePassword()
+                && VaultManager.get().vault().hasPassword(VaultKeys.sessionPassword(cfg.getId()));
+        ToggleSwitch savePassword = new ToggleSwitch(cfg.isSavePassword());
+        JPasswordField password = new JPasswordField();
+        password.putClientProperty("JTextField.placeholderText",
+                hasSaved ? "(leave blank to keep saved)" : "(prompt on connect)");
+        Runnable syncPassword = () -> password.setEnabled(savePassword.isSelected());
+        savePassword.addActionListener(a -> syncPassword.run());
+        syncPassword.run();
+
+        String[] iconId = {cfg.getIconId()};
+        Icon fallback = IconLibrary.get().icon("builtin/rdp", 16);
+        JButton iconBtn = new JButton();
+        updateIconButton(iconBtn, iconId[0], fallback);
+        iconBtn.addActionListener(a -> {
+            String picked = IconPickerDialog.pick(this, deletedId -> {
+                revertDeletedIcon(deletedId);
+                if (deletedId.equals(iconId[0])) {
+                    iconId[0] = null;
+                    updateIconButton(iconBtn, iconId[0], fallback);
+                }
+            });
+            if (picked != null) {
+                iconId[0] = picked.isEmpty() ? null : picked;
+                updateIconButton(iconBtn, iconId[0], fallback);
+            }
+        });
+
+        List<FolderOption> folders = folderOptions();
+        JComboBox<FolderOption> folderCombo = new JComboBox<>(folders.toArray(new FolderOption[0]));
+        for (FolderOption option : folders) {
+            if (option.folder() == initialFolder) {
+                folderCombo.setSelectedItem(option);
+                break;
+            }
+        }
+
+        JPanel basic = formPanel();
+        row(basic, "Name:", name);
+        row(basic, "Folder:", folderCombo);
+        row(basic, "Host:", host);
+        row(basic, "Port:", port);
+        row(basic, "User:", user);
+        row(basic, "Domain:", domain);
+        row(basic, "Icon:", iconBtn);
+        row(basic, "Save password:", savePassword);
+        row(basic, "Password:", password);
+
+        JComboBox<String> sizing = new JComboBox<>(new String[]{"Fit to pane", "Fixed resolution"});
+        sizing.setSelectedIndex(cfg.getWidthMode() == RdpSessionConfig.WidthMode.FIXED ? 1 : 0);
+        JTextField width = new JTextField(String.valueOf(cfg.getWidth()));
+        JTextField height = new JTextField(String.valueOf(cfg.getHeight()));
+        Runnable syncSizing = () -> {
+            boolean fixed = sizing.getSelectedIndex() == 1;
+            width.setEnabled(fixed);
+            height.setEnabled(fixed);
+        };
+        sizing.addActionListener(a -> syncSizing.run());
+        syncSizing.run();
+        sizing.setToolTipText("Fit to pane asks the server to resize its desktop whenever the pane "
+                + "changes size; a fixed resolution is scaled to fit the pane.");
+
+        JPanel display = formPanel();
+        row(display, "Desktop size:", sizing);
+        row(display, "Width (pixels):", width);
+        row(display, "Height (pixels):", height);
+
+        JTabbedPane tabs = new JTabbedPane();
+        tabs.addTab("Basic settings", basic);
+        tabs.addTab("Display", display);
+
+        int result = DialogFocus.showConfirm(this, tabs, title, name);
+        if (result != JOptionPane.OK_OPTION) {
+            java.util.Arrays.fill(password.getPassword(), '\0');
+            return null;
+        }
+        cfg.setName(blankToDefault(name.getText(), "rdp"));
+        cfg.setHost(host.getText());
+        cfg.setUser(user.getText());
+        cfg.setDomain(domain.getText());
+        cfg.setIconId(iconId[0]);
+        try {
+            cfg.setPort(Integer.parseInt(port.getText().trim()));
+        } catch (NumberFormatException ex) {
+            cfg.setPort(RdpSessionConfig.DEFAULT_PORT);
+        }
+        cfg.setWidthMode(sizing.getSelectedIndex() == 1
+                ? RdpSessionConfig.WidthMode.FIXED : RdpSessionConfig.WidthMode.FIT_TO_TAB);
+        try {
+            cfg.setWidth(Integer.parseInt(width.getText().trim()));
+            cfg.setHeight(Integer.parseInt(height.getText().trim()));
+        } catch (NumberFormatException ex) {
+            // keep the previous size
+        }
+        // On: a typed password is stored, a blank field keeps any saved one. Off: forget it.
+        cfg.setSavePassword(applyVaultPassword(VaultKeys.sessionPassword(cfg.getId()),
+                savePassword.isSelected(), password.getPassword()));
+
+        FolderOption chosen = (FolderOption) folderCombo.getSelectedItem();
+        return chosen != null ? chosen.folder() : initialFolder;
     }
 
     /** Shared name + icon dialog for creating and editing folders. Mutates {@code folder} on OK. */
@@ -1619,6 +1817,8 @@ public final class SessionSidebar extends JPanel {
             for (JumpHostConfig jh : ssh.getJumpHosts()) {
                 vault.removePassword(jh.getId());
             }
+        } else if (node instanceof RdpSessionConfig rdp) {
+            vault.removePassword(VaultKeys.sessionPassword(rdp.getId()));
         } else if (node instanceof FolderNode folder) {
             vault.removePassword(VaultKeys.folderPassword(folder.getId()));
             vault.removePassword(VaultKeys.folderKeyPassphrase(folder.getId()));

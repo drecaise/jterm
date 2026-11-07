@@ -35,11 +35,15 @@ import com.katmoda.jterm.security.VaultManager;
 import com.katmoda.jterm.session.FolderNode;
 import com.katmoda.jterm.session.SessionNode;
 import com.katmoda.jterm.session.SessionStore;
+import com.katmoda.jterm.session.RdpSessionConfig;
 import com.katmoda.jterm.session.SshSessionConfig;
 import com.katmoda.jterm.session.TunnelConfig;
 import com.katmoda.jterm.session.TunnelStore;
 import com.katmoda.jterm.terminal.ConnectionService;
 import com.katmoda.jterm.terminal.SessionFactory;
+import com.katmoda.jterm.terminal.rdp.RdpHelperLocator;
+import com.katmoda.jterm.terminal.rdp.RdpKeyMap;
+import com.katmoda.jterm.terminal.rdp.RdpKnownHosts;
 import com.katmoda.jterm.terminal.TerminalSession;
 import com.katmoda.jterm.terminal.ssh.SshConnect;
 import com.katmoda.jterm.terminal.ssh.SshSession;
@@ -55,6 +59,7 @@ import com.katmoda.jterm.ui.pane.TerminalPane;
 import com.katmoda.jterm.ui.preferences.PreferencesDialog;
 import com.katmoda.jterm.ui.preferences.ShortcutsDialog;
 import com.katmoda.jterm.ui.security.MasterPasswordDialog;
+import com.katmoda.jterm.ui.rdp.RdpPane;
 import com.katmoda.jterm.ui.sftp.SftpLauncher;
 import com.katmoda.jterm.ui.sidebar.FolderOpenMode;
 import com.katmoda.jterm.ui.sidebar.OpenMode;
@@ -130,6 +135,7 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
     private final Keymap keymap = Keymap.loadOrDefaults();
     private final CredentialResolver credentialResolver;
     private final ConnectionService connectionService;
+    private RdpPane.Services rdpServices;
     private final TabPane tabPane;
 
     /** While true, the global terminal-shortcut dispatcher stands down so the editor can capture keys. */
@@ -196,7 +202,7 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
     public void show() {
         sidebar = new SessionSidebar(sessionStore, this::openSshSession,
                 this::openLocalInCurrent, this::openWslSession, this::openSftpForConfig,
-                this::openFolderSessions);
+                this::openFolderSessions, this::openRdpSession);
 
         split = new SidebarSplit(sidebar, tabPane, AppSettings.get().getSidebarWidth(),
                 AppSettings.get().isSidebarVisible());
@@ -607,6 +613,55 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         host.decorateTab(fresh);
     }
 
+    // ---- RDP ----
+
+    /**
+     * Opens a saved RDP session. The pane is placed at once (showing "Connecting…") and connects
+     * itself, so unlike SSH there is no async connect-then-place: a failure leaves the pane in place
+     * with Reconnect / Close rather than an error dialog over an empty tab. A new tab is the default,
+     * since a desktop wants the room; a split falls back to a new tab when the grid is full.
+     */
+    private void openRdpSession(RdpSessionConfig cfg, OpenMode mode) {
+        RdpPane pane = new RdpPane(cfg, rdpServices());
+        PaneGrid grid = tabPane.currentGrid();
+        switch (mode) {
+            case ACTIVE -> {
+                if (grid != null) {
+                    grid.placeContentInActive(pane);
+                    tabPane.decorateTab(grid);
+                } else {
+                    openContentInNewTab(pane);
+                }
+            }
+            case SPLIT_COLUMN, SPLIT_ROW -> {
+                if (grid != null && grid.openContentInBestSplit(pane)) {
+                    tabPane.decorateTab(grid);
+                } else {
+                    openContentInNewTab(pane);
+                }
+            }
+            default -> openContentInNewTab(pane);
+        }
+        pane.start();
+    }
+
+    private void openContentInNewTab(GridContent content) {
+        PaneGrid fresh = tabPane.newGrid();
+        tabPane.insertGrid(fresh);
+        fresh.initEmpty();
+        fresh.placeContentInActive(content);
+        tabPane.decorateTab(fresh);
+    }
+
+    /** Created on first RDP use, so nothing RDP-related is read or located at startup. */
+    private RdpPane.Services rdpServices() {
+        if (rdpServices == null) {
+            rdpServices = new RdpPane.Services(credentialResolver, RdpKnownHosts.load(),
+                    RdpHelperLocator::locate);
+        }
+        return rdpServices;
+    }
+
     /** Opens a detected WSL2 distribution (synchronously — it's a local pty, no network connect). */
     private void openWslSession(String distro, OpenMode mode) {
         if (mode == OpenMode.NEW_TAB) {
@@ -747,6 +802,12 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(e -> {
             if (e.getID() != KeyEvent.KEY_PRESSED || shortcutCaptureActive) {
                 return false; // let the shortcut editor capture keys while it's recording
+            }
+            // An RDP pane owns the keyboard: jterm claims only Ctrl+Shift+… strokes there, so
+            // Ctrl+T, Ctrl+W, Ctrl+C, the F-keys and macro hotkeys reach the remote desktop.
+            if (RdpPane.ownsFocus(KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner())
+                    && !RdpKeyMap.jtermMayClaim(e.getModifiersEx())) {
+                return false;
             }
             // A stopped pane claims bare Return / R / S so those actions work wherever focus sits in
             // the pane (e.g. on the dead terminal), not only on the small "Session stopped" strip.
