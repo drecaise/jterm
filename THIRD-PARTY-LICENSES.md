@@ -18,6 +18,23 @@ set declared in `pom.xml` and must be updated when dependencies change.
 | java-keyring | `com.github.javakeyring:java-keyring` | 1.0.4 | ISC (see note) | https://opensource.org/licenses/ISC |
 | SLF4J Simple | `org.slf4j:slf4j-simple` | 2.0.13 | MIT | https://opensource.org/licenses/MIT |
 
+## Native components (RDP helper)
+
+The RDP helper (`native/rdp-helper`, installed under `rdp/`) bundles the following native
+libraries. Their license texts ship beside the binaries in `rdp/licenses/`. Versions are pinned
+by `native/rdp-helper/FREERDP_VERSION` and, on Windows, by the `vcpkg.json` baseline.
+
+| Library | Version | Bundled on | License | License text |
+|---|---|---|---|---|
+| FreeRDP (libfreerdp, libfreerdp-client, WinPR) | 3.33.0 | all targets | Apache-2.0 | https://github.com/FreeRDP/FreeRDP/blob/master/LICENSE |
+| OpenSSL | 3.6.5 | Windows (Linux uses the system OpenSSL 3) | Apache-2.0 | https://www.openssl.org/source/license.html |
+| zlib | 1.3.2 | Windows (Linux uses the system zlib) | Zlib | https://zlib.net/zlib_license.html |
+| cJSON | 1.7.19 (Windows), distribution package (Linux) | all targets | MIT | https://github.com/DaveGamble/cJSON/blob/master/LICENSE |
+| Microsoft Visual C++ runtime | 14.x | Windows | Microsoft redistributable | https://visualstudio.microsoft.com/license-terms/ |
+
+On Windows, H.264 decoding uses the operating system's Media Foundation decoder; no H.264 codec is
+bundled.
+
 ## Notices and obligations
 
 ### LGPL-3.0 — JediTerm (core + ui)
@@ -47,3 +64,11 @@ should be confirmed against the upstream `LICENSE` file before a commercial rele
 
 ### MIT — SLF4J Simple
 Licensed under the MIT License.
+
+### Apache-2.0 — FreeRDP, OpenSSL (RDP helper)
+Unmodified FreeRDP and OpenSSL libraries, run in a separate helper process. The Apache-2.0 texts
+ship in `rdp/licenses/`. Source: https://github.com/FreeRDP/FreeRDP (tag in `FREERDP_VERSION`) and
+https://github.com/openssl/openssl. Apache-2.0 is compatible with jterm's GPL-3.0-or-later.
+
+### Zlib, MIT — zlib, cJSON (RDP helper)
+Permissive licenses; their texts ship in `rdp/licenses/`.

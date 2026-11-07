@@ -305,8 +305,13 @@ is a drop target. Drop position decides the split: top 60% → new column, botto
 
 ### RDP sessions run FreeRDP out of process; jterm paints and owns input
 Design and measurements: `docs/superpowers/specs/2026-11-07-rdp-session-design.md`. FreeRDP runs
-in `native/rdp-helper` (a small C client, built per OS; `build-windows.cmd` on Windows), never in
-the JVM: a codec crash or a server-triggered memory bug then can't take down every SSH session, or
+in `native/rdp-helper` (a small C client, built per OS), never in the JVM. Build FreeRDP first
+(`build-freerdp-windows.cmd <workdir>` / `build-freerdp-linux.sh <workdir>`, version pinned in
+`FREERDP_VERSION`, Windows deps by `vcpkg.json`'s baseline), then the helper (`build-windows.cmd` /
+`build-linux.sh`), which stages it with its libraries and license texts in `build/stage/` — the
+directory that installers ship as `rdp/`. Keep the Windows work dir short (MAX_PATH). Linux bundles
+need only libc, OpenSSL 3 and zlib from the system (ICU/systemd are compiled out, cJSON is bundled).
+FreeRDP stays out of the JVM: a codec crash or a server-triggered memory bug then can't take down every SSH session, or
 reach the unlocked vault. jterm speaks a versioned binary protocol over the helper's stdin/stdout —
 `native/rdp-helper/src/protocol.h` is the source of truth, `terminal.rdp.RdpProtocol` its Java
 mirror; **change both together**.

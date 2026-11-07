@@ -55,5 +55,33 @@ SLF4J Simple  (org.slf4j:slf4j-simple) — 2.0.13
     https://opensource.org/licenses/MIT
 
 
+Bundled with the RDP helper (native code, in the rdp/ folder of an installed jterm;
+license texts in rdp/licenses/):
+
+FreeRDP  (libfreerdp, libfreerdp-client, WinPR) — 3.33.0
+    Remote Desktop Protocol implementation used by RDP sessions.
+    License: Apache License 2.0
+    https://www.freerdp.com/
+    https://www.apache.org/licenses/LICENSE-2.0
+
+OpenSSL — 3.6.5 (Windows; Linux uses the system OpenSSL)
+    TLS for RDP connections.
+    License: Apache License 2.0
+    https://www.openssl.org/
+
+zlib — 1.3.2 (Windows; Linux uses the system zlib)
+    Compression.
+    License: zlib License
+    https://zlib.net/
+
+cJSON — 1.7.19 (Windows; the distribution's package on Linux)
+    JSON parsing in FreeRDP.
+    License: MIT License
+    https://github.com/DaveGamble/cJSON
+
+Microsoft Visual C++ runtime (Windows)
+    Redistributed under Microsoft's Visual Studio license terms.
+
+
 Full license texts are available at the URLs listed above and from each
 project's source repository.

@@ -23,6 +23,7 @@
 #include <string.h>
 
 #include <winpr/crt.h>
+#include <winpr/interlocked.h>
 #include <winpr/synch.h>
 #include <winpr/thread.h>
 #include <winpr/input.h>

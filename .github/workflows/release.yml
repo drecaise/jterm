@@ -119,6 +119,27 @@ jobs:
       - name: Build fat jar
         shell: bash
         run: mvn -B -q package -DskipTests
+      # RDP: FreeRDP (version pinned in native/rdp-helper/FREERDP_VERSION, dependencies pinned by
+      # vcpkg.json's baseline) is built once per pin and cached; the helper itself is always rebuilt.
+      # VCPKG_ROOT points at our own clone, not the runner's, so the baseline commit is guaranteed
+      # to be in its history.
+      - name: Cache FreeRDP
+        id: freerdp-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            frdp/dist
+            frdp/vcpkg_installed
+          key: freerdp-win-x64-${{ hashFiles('native/rdp-helper/FREERDP_VERSION', 'native/rdp-helper/vcpkg.json', 'native/rdp-helper/build-freerdp-windows.cmd') }}
+      - name: Build FreeRDP
+        if: steps.freerdp-cache.outputs.cache-hit != 'true'
+        shell: cmd
+        env:
+          VCPKG_ROOT: ${{ github.workspace }}\frdp\vcpkg
+        run: native\rdp-helper\build-freerdp-windows.cmd "%GITHUB_WORKSPACE%\frdp"
+      - name: Build RDP helper
+        shell: cmd
+        run: native\rdp-helper\build-windows.cmd "%GITHUB_WORKSPACE%\frdp\dist" "%GITHUB_WORKSPACE%\frdp\vcpkg_installed\x64-windows"
       # Best-effort .ico from the app SVG (rendered via the project's own classpath, then
       # assembled with ImageMagick). If anything here fails the MSI still builds with
       # jpackage's default icon.
@@ -149,8 +170,12 @@ jobs:
       - name: Build MSI
         shell: bash
         run: |
-          mkdir -p staging dist
+          mkdir -p staging/rdp dist
           cp target/jterm.jar staging/
+          # --input lands in the install's app\ dir: the helper (and its DLLs, which Windows loads
+          # from the exe's own directory first) ends up in app\rdp\, where RdpHelperLocator looks.
+          # No jars there, so jpackage's classpath stays jterm.jar alone.
+          cp native/rdp-helper/build/stage/* staging/rdp/
           ICON_ARG=""
           [ -f app.ico ] && ICON_ARG="--icon app.ico"
           jpackage \
