@@ -38,6 +38,12 @@ dependency, and a retired one still builds. Bumping the Flatpak runtime touches 
 manifest's `runtime-version` and the `freedesktop-<version>` container tag of `build-flatpak` in
 `release.yml`.
 
+Its `freerdp` job (`.github/check-freerdp.sh`, runnable locally; `GITHUB_TOKEN` avoids the API rate
+limit) fails on a published FreeRDP advisory affecting the bundled version, on a newer 3.x release
+more than 14 days old, and on drift between the pins. **Bumping FreeRDP touches two places**:
+`native/rdp-helper/FREERDP_VERSION` and the `freerdp` module's tarball url + `sha256` in the
+Flatpak manifest (the script verifies the hash against the real tarball).
+
 There **is** a JUnit 5 suite under `src/test/java` (`mvn -q test`), but it only covers headless
 logic — credential/vault resolution, session-store inheritance, SFTP transfer maths, agent socket
 trust. Nothing Swing-facing is tested, so a green suite is not evidence the UI works.
