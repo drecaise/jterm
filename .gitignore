@@ -8,3 +8,7 @@ site/
 .tokensave
 packaging/flatpak/*.png
 packaging/flatpak/build-dir/
+# Staged by the release workflow's build-snap job (snapcraft only sees packaging/snap).
+packaging/snap/jterm.jar
+packaging/snap/*.png
+packaging/snap/rdp-helper-src/

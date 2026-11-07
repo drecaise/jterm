@@ -319,6 +319,9 @@ jobs:
         run: |
           cp dist-jar/jterm.jar packaging/snap/jterm.jar
           cp dist-jar/com.katmoda.jterm-256.png packaging/snap/
+          # The rdp-helper part builds from here: snapcraft only sees packaging/snap.
+          mkdir -p packaging/snap/rdp-helper-src
+          tar -C native/rdp-helper --exclude=./build --exclude=./spike -cf - . | tar -C packaging/snap/rdp-helper-src -xf -
       # Snap accepts the full version string (incl. -SNAPSHOT) -- no numeric
       # flooring needed, unlike jpackage.
       - name: Set snap version

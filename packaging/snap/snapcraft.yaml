@@ -34,3 +34,31 @@ parts:
       jterm-launch.sh: bin/jterm
       com.katmoda.jterm.desktop: share/applications/com.katmoda.jterm.desktop
       com.katmoda.jterm-256.png: share/icons/hicolor/256x256/apps/com.katmoda.jterm.png
+    stage:
+      - -rdp-helper-src          # the rdp-helper part's source, not app content
+
+  # RDP helper + the FreeRDP it runs, built by the same scripts as the RPM/DEB, and installed as
+  # $SNAP/rdp/ (RdpHelperLocator looks there when $SNAP is set). CI copies native/rdp-helper to
+  # rdp-helper-src/ first, because snapcraft only sees this directory. The bundle carries RPATH
+  # $ORIGIN and needs only libc, OpenSSL 3 and zlib from the system — under classic confinement,
+  # the host's.
+  rdp-helper:
+    plugin: nil
+    source: rdp-helper-src
+    build-packages:
+      - git
+      - cmake
+      - ninja-build
+      - gcc
+      - g++
+      - make
+      - pkg-config
+      - patchelf
+      - libssl-dev
+      - zlib1g-dev
+      - libcjson-dev
+    override-build: |
+      sh ./build-freerdp-linux.sh "$CRAFT_PART_BUILD/freerdp"
+      sh ./build-linux.sh "$CRAFT_PART_BUILD/freerdp/dist"
+      mkdir -p "$CRAFT_PART_INSTALL/rdp"
+      cp -a build/stage/. "$CRAFT_PART_INSTALL/rdp/"

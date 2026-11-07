@@ -24,6 +24,93 @@ modules:
     build-commands:
       - /usr/lib/sdk/openjdk21/install.sh
 
+  # ---- RDP helper (native/rdp-helper) and the FreeRDP it runs ----
+  # Built against the runtime's OpenSSL and zlib. FreeRDP's version must match
+  # native/rdp-helper/FREERDP_VERSION (every target bundles the same one); tarballs are pinned by
+  # sha256. Libraries go to /app/lib (on the sandbox's default library path), the helper to
+  # /app/lib/jterm/rdp, where RdpHelperLocator looks when FLATPAK_ID is set.
+  - name: cjson
+    buildsystem: cmake-ninja
+    builddir: true
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DENABLE_CJSON_TEST=OFF
+      - -DENABLE_CJSON_UTILS=OFF
+      - -DBUILD_SHARED_AND_STATIC_LIBS=OFF
+      # cJSON 1.7.19 still declares cmake_minimum_required < 3.5, which the SDK's CMake 4 refuses.
+      - -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+    # flatpak-builder records each module's LICENSE under /app/share/licenses/<app-id>/<module>/.
+    cleanup:
+      - /include
+      - /lib/cmake
+      - /lib/pkgconfig
+    sources:
+      - type: archive
+        url: https://github.com/DaveGamble/cJSON/archive/refs/tags/v1.7.19.tar.gz
+        sha256: 7fa616e3046edfa7a28a32d5f9eacfd23f92900fe1f8ccd988c1662f30454562
+
+  - name: freerdp
+    buildsystem: cmake-ninja
+    builddir: true                 # FreeRDP refuses in-source builds
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DCMAKE_INSTALL_LIBDIR=lib
+      - -DBUILD_SHARED_LIBS=ON
+      - -DWITH_CLIENT_COMMON=ON
+      - -DWITH_CLIENT=OFF
+      - -DWITH_CLIENT_SDL=OFF
+      - -DWITH_X11=OFF
+      - -DWITH_WAYLAND=OFF
+      - -DWITH_SERVER=OFF
+      - -DWITH_SHADOW=OFF
+      - -DWITH_PROXY=OFF
+      - -DWITH_SAMPLE=OFF
+      - -DWITH_FFMPEG=OFF
+      - -DWITH_SWSCALE=OFF
+      - -DWITH_WEBVIEW=OFF
+      - -DWITH_MANPAGES=OFF
+      - -DWITH_PULSE=OFF
+      - -DWITH_ALSA=OFF
+      - -DWITH_OSS=OFF
+      - -DWITH_CUPS=OFF
+      - -DWITH_PCSC=OFF
+      - -DWITH_FUSE=OFF
+      - -DWITH_KRB5=OFF
+      - -DWITH_PKCS11=OFF
+      - -DWITH_URIPARSER=OFF
+      - -DCHANNEL_URBDRC=OFF
+      - -DWITH_CJSON_REQUIRED=ON
+      - -DWITH_UNICODE_BUILTIN=ON
+      - -DWITH_SYSTEMD=OFF
+      - -DWITH_WINPR_TOOLS=OFF
+      - -DWITH_VERBOSE_WINPR_ASSERT=OFF
+      - -DBUILD_TESTING=OFF
+      - -DWITH_INTERNAL_RC4=ON
+      - -DWITH_INTERNAL_MD4=ON
+      - -DWITH_INTERNAL_MD5=ON
+    cleanup:
+      - /bin
+      - /include
+      - /lib/cmake
+      - /lib/pkgconfig
+    sources:
+      - type: archive
+        url: https://github.com/FreeRDP/FreeRDP/archive/refs/tags/3.33.0.tar.gz
+        sha256: 3b5e7733e667ad66f54e0db51d952268c9d08b2e71a4fade44c716ab29dd5657
+
+  - name: jterm-rdp-helper
+    buildsystem: simple
+    build-commands:
+      - cmake -S . -B _build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/app
+      - cmake --build _build
+      - install -Dm755 _build/jterm-rdp-helper /app/lib/jterm/rdp/jterm-rdp-helper
+    sources:
+      - type: dir
+        path: ../../native/rdp-helper
+        skip:
+          - build
+          - spike
+
   - name: jterm
     buildsystem: simple
     build-commands:
