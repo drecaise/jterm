@@ -1,5 +1,6 @@
 #!/bin/sh
 # Builds jterm-rdp-helper against a FreeRDP 3 install and stages it with FreeRDP's libraries.
+# Needs patchelf, besides the toolchain build-freerdp-linux.sh lists.
 # Usage: build-linux.sh [FREERDP_DIST]   (default: build/freerdp/dist from build-freerdp-linux.sh)
 # Output: build/stage/  (jterm-rdp-helper + libfreerdp3, libfreerdp-client3, libwinpr3; RPATH
 #         $ORIGIN, so the directory is self-contained apart from the system's OpenSSL and libc)
@@ -14,6 +15,13 @@ cmake --install "$HERE/build/helper"
 
 for lib in libfreerdp3 libfreerdp-client3 libwinpr3; do
     cp -P "$DIST"/lib/"$lib".so* "$HERE/build/stage/"
+    # FreeRDP forces RPATH $ORIGIN/../lib (an internal CMake cache entry, not overridable). Point
+    # each library at its own directory, so every binary in the bundle resolves its siblings by
+    # itself — at run time and when jpackage runs ldd on each file to compute package
+    # dependencies (which would otherwise resolve cJSON to the system's, i.e. EPEL's, copy).
+    for f in "$HERE/build/stage/$lib".so.*.*; do
+        [ -L "$f" ] || patchelf --set-rpath '$ORIGIN' "$f"
+    done
 done
 # cJSON ships with the helper too: it is not in every distribution's base repositories (EPEL on
 # RHEL), and a package must not depend on an optional repo. Copied under its soname.

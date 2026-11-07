@@ -384,10 +384,30 @@ jobs:
         with:
           name: jterm-jar
           path: dist-jar
+      # RDP helper: built in this job's own container so it links this distribution's OpenSSL.
+      # FreeRDP is built once per (distribution, pin) and cached; the helper is always rebuilt.
+      - name: Install RDP helper build dependencies
+        run: sh native/rdp-helper/install-build-deps-linux.sh
+      - name: Cache FreeRDP
+        id: freerdp-cache
+        uses: actions/cache@v4
+        with:
+          path: native/rdp-helper/build/freerdp/dist
+          key: freerdp-${{ matrix.el }}-${{ hashFiles('native/rdp-helper/FREERDP_VERSION', 'native/rdp-helper/build-freerdp-linux.sh') }}
+      - name: Build FreeRDP
+        if: steps.freerdp-cache.outputs.cache-hit != 'true'
+        run: sh native/rdp-helper/build-freerdp-linux.sh native/rdp-helper/build/freerdp
+      - name: Build RDP helper
+        run: sh native/rdp-helper/build-linux.sh
       - name: Build RPM
         run: |
-          mkdir -p staging dist
+          mkdir -p staging/rdp dist
           cp dist-jar/jterm.jar staging/
+          # --input lands in /opt/jterm/lib/app: the helper and its libraries (RPATH $ORIGIN) end
+          # up in lib/app/rdp/, where RdpHelperLocator looks. No jars there, so the classpath is
+          # still jterm.jar alone; jpackage's ldd scan adds only system libraries (OpenSSL, zlib)
+          # to Requires, since the bundled ones resolve inside the image.
+          cp -a native/rdp-helper/build/stage/. staging/rdp/
           ICON_ARG=""
           [ -f dist-jar/com.katmoda.jterm-256.png ] && ICON_ARG="--icon dist-jar/com.katmoda.jterm-256.png"
           # jpackage takes a single --resource-dir, so assemble one holding both
@@ -457,10 +477,25 @@ jobs:
         with:
           name: jterm-jar
           path: dist-jar
+      # RDP helper: same as build-rpm (see there), built against Ubuntu 26.04's OpenSSL.
+      - name: Install RDP helper build dependencies
+        run: sh native/rdp-helper/install-build-deps-linux.sh
+      - name: Cache FreeRDP
+        id: freerdp-cache
+        uses: actions/cache@v4
+        with:
+          path: native/rdp-helper/build/freerdp/dist
+          key: freerdp-ubuntu2604-${{ hashFiles('native/rdp-helper/FREERDP_VERSION', 'native/rdp-helper/build-freerdp-linux.sh') }}
+      - name: Build FreeRDP
+        if: steps.freerdp-cache.outputs.cache-hit != 'true'
+        run: sh native/rdp-helper/build-freerdp-linux.sh native/rdp-helper/build/freerdp
+      - name: Build RDP helper
+        run: sh native/rdp-helper/build-linux.sh
       - name: Build DEB
         run: |
-          mkdir -p staging dist
+          mkdir -p staging/rdp dist
           cp dist-jar/jterm.jar staging/
+          cp -a native/rdp-helper/build/stage/. staging/rdp/
           ICON_ARG=""
           [ -f dist-jar/com.katmoda.jterm-256.png ] && ICON_ARG="--icon dist-jar/com.katmoda.jterm-256.png"
           # rpm/deb versions may not contain dashes, so use the floored numeric
