@@ -1,0 +1,81 @@
+# RDP sessions
+
+jterm can open **Remote Desktop (RDP)** sessions next to your terminals. A remote desktop opens in
+a tab like any other session and can also be placed in a split pane. It connects to Windows hosts
+and to Linux desktops running an RDP server, such as GNOME Remote Desktop.
+
+## Creating a session
+
+Click **New RDP session** in the sidebar toolbar, or right-click a folder and choose **New RDP
+Session…**.
+
+**Basic settings**
+
+- **Host** and **Port** (3389 by default).
+- **User**, plus a **Domain** for Windows domain accounts (leave it empty otherwise).
+- **Save password**: when on, a password you type is stored encrypted in the
+  [credential vault](ssh-auth-and-vault.md). Leave the field blank to keep a password that is
+  already saved. Turning the switch off deletes the saved password.
+
+**Display**
+
+- **Fit to pane** (default): the remote desktop is resized to fill the pane, and follows it when you
+  resize the window or split the tab.
+- **Fixed resolution**: the desktop keeps the width and height you enter and is scaled to fit the
+  pane.
+
+RDP sessions can be edited, duplicated, deleted and dragged into other folders, just like SSH
+sessions.
+
+## Opening a session
+
+Double-click the session, or right-click it and choose **Open** (a new tab), **Open in Active
+Pane**, or **Open in Split Pane**. Dropping an RDP session onto a pane is not supported yet.
+
+When you connect without a saved password, jterm asks for it and offers to **remember** it. The
+password is only saved once the server accepts it. If the server rejects the user name or password,
+jterm asks again.
+
+## Verifying the server
+
+The first time you connect to a server whose certificate jterm can't verify, which is normal for
+self-signed certificates, you are shown the certificate's **SHA-256 fingerprint**. Compare it with
+the server's own before you click **Trust**. Some ways to find it:
+
+- **GNOME Remote Desktop:** `grdctl status` (or `sudo grdctl --system status` for remote login) shows
+  the certificate file; `openssl x509 -noout -fingerprint -sha256 -in <file>` prints the fingerprint.
+- **Windows:** the fingerprint of the Remote Desktop certificate in the computer's certificate store
+  (*Remote Desktop* folder).
+
+jterm remembers trusted fingerprints in `rdp_known_hosts.json` in the
+[configuration directory](config-files.md). If a server you trusted later presents a **different**
+certificate, jterm shows a warning, because that can mean someone is intercepting the connection.
+Only trust the new certificate if you know the server's certificate was replaced.
+
+There is deliberately no option to ignore certificate errors.
+
+## Keyboard and mouse
+
+While a remote desktop has focus, **keys go to the remote computer**: Ctrl+C, Ctrl+T, Ctrl+W and
+the function keys all act on the remote desktop. Only jterm shortcuts that use **both Ctrl and
+Shift** (such as ++ctrl+shift+t++ for a new tab) still work. Characters are sent in a way that
+doesn't depend on the remote keyboard layout matching yours.
+
+The Windows key and Alt+Tab can't be captured. Use the **Ctrl+Alt+Del** button in the pane's bottom
+bar to send that combination.
+
+## When the connection ends
+
+A disconnected desktop stays in its pane with **Reconnect** and **Close** buttons and the reason it
+ended.
+
+## Requirements and limitations
+
+- RDP support uses a bundled FreeRDP helper. If a build of jterm doesn't include it, the pane says
+  so instead of connecting.
+- **Clipboard sharing and file/drive redirection are not available yet.** Nothing on your computer
+  is shared with the server.
+- Full-screen video is only smooth when the server can encode **H.264**. jterm decodes it when the
+  server offers it. A Linux server without a hardware video encoder sends a slower format.
+- GNOME Remote Desktop applies display scaling only in whole steps (100% or 200%) unless fractional
+  scaling is enabled on the server.

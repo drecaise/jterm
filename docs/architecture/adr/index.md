@@ -16,6 +16,7 @@ Short, dated records for jterm's non-obvious architectural choices. Each ADR fol
 | [0009](0009-selection-tracking-across-scrolls.md) | Track the terminal selection across scrolls by extending JediTerm | Accepted |
 | [0010](0010-shortcut-fall-through-on-no-op.md) | Unapplied shortcuts fall through to the terminal | Accepted |
 | [0011](0011-sftp-shortcut-and-keymap-migration.md) | Open SFTP moves to Ctrl+Shift+F, with a `keymap.json` migration | Accepted |
+| [0012](0012-rdp-via-out-of-process-freerdp.md) | RDP through an out-of-process FreeRDP helper | Accepted |
 
 ## Writing a new ADR
 

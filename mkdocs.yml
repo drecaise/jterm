@@ -85,6 +85,7 @@ nav:
   - SSH sessions: ssh-sessions.md
   - SSH auth & vault: ssh-auth-and-vault.md
   - SFTP file browser: sftp.md
+  - RDP sessions: rdp-sessions.md
   - Port forwarding (tunnels): tunnels.md
   - Broadcast input: broadcast.md
   - Macros: macros.md
@@ -114,4 +115,5 @@ nav:
       - 0009 Selection tracking across scrolls: architecture/adr/0009-selection-tracking-across-scrolls.md
       - 0010 Shortcut fall-through on no-op: architecture/adr/0010-shortcut-fall-through-on-no-op.md
       - 0011 SFTP shortcut and keymap migration: architecture/adr/0011-sftp-shortcut-and-keymap-migration.md
+      - 0012 RDP via out-of-process FreeRDP: architecture/adr/0012-rdp-via-out-of-process-freerdp.md
   - Troubleshooting: troubleshooting.md
