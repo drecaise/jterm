@@ -802,9 +802,10 @@ public final class TabPane extends JPanel {
         // connection — the same action as its ⋮ menu and the keyboard shortcut. Offered only when
         // there is one to rename: an SFTP tab has no connection name, and an SSH tab that is still
         // connecting has no active pane yet.
-        if (grid.activeContent() instanceof TerminalPane pane) {
+        GridContent renamable = grid.activeContent();
+        if (renamable != null && renamable.canRename()) {
             JMenuItem rename = new JMenuItem("Rename Connection…");
-            rename.addActionListener(a -> pane.promptRename());
+            rename.addActionListener(a -> renamable.promptRename());
             menu.add(rename);
             menu.addSeparator();
         }

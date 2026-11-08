@@ -929,11 +929,11 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
      */
     private void registerPane(GridContent content) {
         content.setOnFocus(() -> setActiveByContent(content));
+        content.setOnTitleChanged(() -> notifyTitleChanged(content));
         if (content instanceof TerminalPane pane) {
             pane.setOnContentEnded(() -> handleSessionEnd(pane));
             pane.setOnBroadcastToggle(this::updateBorders);
             pane.setDuplicateHandler(toNewTab -> duplicatePane(pane, toNewTab));
-            pane.setOnTitleChanged(() -> notifyTitleChanged(pane));
             // A freshly placed/adopted pane has no unseen output yet.
             pane.setActivity(PaneActivity.NONE);
             broadcastBus.register(pane);

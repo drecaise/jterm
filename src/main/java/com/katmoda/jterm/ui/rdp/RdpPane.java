@@ -31,7 +31,9 @@ import com.katmoda.jterm.terminal.rdp.RdpKeyMap;
 import com.katmoda.jterm.terminal.rdp.RdpKnownHosts;
 import com.katmoda.jterm.terminal.rdp.RdpProtocol;
 import com.katmoda.jterm.ui.ErrorDialog;
+import com.katmoda.jterm.ui.component.DialogFocus;
 import com.katmoda.jterm.ui.component.DropHighlighter;
+import com.katmoda.jterm.ui.pane.PaneTitle;
 import com.katmoda.jterm.ui.grid.GridContent;
 import com.katmoda.jterm.ui.theme.ThemeColors;
 import com.formdev.flatlaf.util.UIScale;
@@ -45,6 +47,9 @@ import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
+import javax.swing.JMenuItem;
+import javax.swing.JTextField;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
@@ -127,6 +132,9 @@ public final class RdpPane extends JPanel implements GridContent {
     private char[] pendingRemember;
     private Runnable onFocus;
     private Runnable onEnded;
+    private Runnable onTitleChanged;
+    /** The user's runtime-only name for this tab (already sanitised), or null for the saved name. */
+    private String customName;
 
     public RdpPane(RdpSessionConfig cfg, Services services) {
         super(new BorderLayout());
@@ -160,6 +168,28 @@ public final class RdpPane extends JPanel implements GridContent {
         bar.setLayout(new javax.swing.BoxLayout(bar, javax.swing.BoxLayout.X_AXIS));
         bar.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
         status.setIcon(IconLibrary.get().icon(tabIconId(), 16));
+        status.setToolTipText("Right-click to rename this tab");
+        status.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mousePressed(java.awt.event.MouseEvent e) {
+                popup(e);
+            }
+
+            @Override
+            public void mouseReleased(java.awt.event.MouseEvent e) {
+                popup(e);
+            }
+
+            private void popup(java.awt.event.MouseEvent e) {
+                if (e.isPopupTrigger()) {
+                    JPopupMenu menu = new JPopupMenu();
+                    JMenuItem rename = new JMenuItem("Rename…");
+                    rename.addActionListener(a -> promptRename());
+                    menu.add(rename);
+                    menu.show(e.getComponent(), e.getX(), e.getY());
+                }
+            }
+        });
         for (JButton b : new JButton[]{ctrlAltDel, reconnect, close}) {
             b.setFocusable(false);
             b.putClientProperty("JButton.buttonType", "toolBarButton");
@@ -563,7 +593,40 @@ public final class RdpPane extends JPanel implements GridContent {
 
     @Override
     public String displayTitle() {
-        return cfg.getName();
+        return customName != null ? customName : cfg.getName();
+    }
+
+    @Override
+    public void setOnTitleChanged(Runnable onTitleChanged) {
+        this.onTitleChanged = onTitleChanged;
+    }
+
+    /**
+     * Renames this tab. Runtime only, like a terminal pane's rename: the saved session is never
+     * touched and the name dies with the pane. The text goes through {@link PaneTitle#sanitizeName}
+     * because a tab title is also rendered from pasted text; blank restores the saved name.
+     */
+    @Override
+    public boolean canRename() {
+        return true;
+    }
+
+    @Override
+    public boolean promptRename() {
+        JTextField field = new JTextField(customName == null ? "" : customName, 24);
+        JPanel panel = new JPanel(new BorderLayout(0, 6));
+        panel.add(new JLabel("Name for this connection:"), BorderLayout.NORTH);
+        panel.add(field, BorderLayout.CENTER);
+        JLabel hint = new JLabel("Leave blank to use the saved name.");
+        hint.setEnabled(false);
+        panel.add(hint, BorderLayout.SOUTH);
+        if (DialogFocus.showConfirm(this, panel, "Rename", field) == JOptionPane.OK_OPTION) {
+            customName = PaneTitle.sanitizeName(field.getText());
+            if (onTitleChanged != null) {
+                onTitleChanged.run();
+            }
+        }
+        return true;
     }
 
     @Override

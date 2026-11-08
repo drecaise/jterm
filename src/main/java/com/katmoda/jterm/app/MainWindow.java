@@ -956,9 +956,9 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
                 }
             }
             case RENAME_PANE -> {
-                if (grid != null && grid.activeContent() instanceof TerminalPane pane) {
-                    pane.promptRename();
-                }
+                // A content that cannot be renamed (SFTP, an empty cell) lets the key through.
+                GridContent c = grid != null ? grid.activeContent() : null;
+                return c != null && c.canRename() && c.promptRename();
             }
             case MOVE_TAB_LEFT -> {
                 if (active != null) {

@@ -73,4 +73,21 @@ public interface GridContent {
     default String tabIconId() {
         return null;
     }
+
+    /** Whether this content can be renamed, so menus and the shortcut can offer or pass the key. */
+    default boolean canRename() {
+        return false;
+    }
+
+    /**
+     * Asks the user for a runtime-only name for this content (shown on the tab). Returns whether
+     * the content supports renaming (see {@link #canRename()}). Not persisted: a saved session is never touched.
+     */
+    default boolean promptRename() {
+        return false;
+    }
+
+    /** Set the callback fired when {@link #displayTitle()} changes (e.g. after a rename). */
+    default void setOnTitleChanged(Runnable onTitleChanged) {
+    }
 }
