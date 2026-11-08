@@ -1,6 +1,6 @@
 # RDP session type — investigation & design
 
-**Status:** Investigation, revision 2 (branch `feature/rdp-session`)
+**Status:** Investigation, revision 3 (branch `feature/rdp-session`)
 **Date:** 2026-11-07
 
 ## Goal
@@ -278,6 +278,58 @@ The branch is about five months behind master and touches `MainWindow`, `Session
 1. RDP opens as a single-cell grid in a new tab (`GridContent`), not the prototype's `RdpTab`.
 2. In an RDP pane, only Ctrl+Shift+… jterm shortcuts are intercepted.
 3. FreeRDP is bundled on every target.
+4. Clipboard sharing is per session and off by default; see [Clipboard](#clipboard-revision-3).
+
+## Clipboard (revision 3)
+
+**Scope:** text (`CF_UNICODETEXT`) and images (`CF_DIB`), through FreeRDP's `cliprdr` channel. Files,
+HTML, RTF and every other format are ignored. Protocol version 2.
+
+**Policy (decided 2026-11-08).** Two session settings, both off unless the user turns them on:
+
+| Setting | Field | Default | Effect |
+| --- | --- | --- | --- |
+| Share clipboard | `redirectClipboard` | off | Opens the `cliprdr` channel. What the server copies lands on the local clipboard **without a prompt**. |
+| Remote can paste mine | `clipboardToRemote` | on (only meaningful with sharing on) | The server may also paste what is on the local clipboard. Off: sharing is one-way, remote to local. |
+
+The earlier idea of an explicit "copy from remote" action was dropped. The common case is a user
+connecting to their own machine, where a confirmation step is friction without a threat. The
+protection is the opt-in itself: with sharing off, `CONNECT` carries `clipboardFlags = 0`, the helper
+never sets `FreeRDP_RedirectClipboard`, and the server cannot see that a clipboard channel exists.
+The helper enforces both directions on its own, so a bug on the Java side cannot widen what a
+session allows.
+
+**Delayed rendering both ways.** Nothing is copied until it is wanted.
+
+- *Local to remote:* jterm announces a **kind** (`CLIP_OFFER`); the helper turns it into a format
+  list. The bytes are read from the local clipboard only when the server pastes
+  (`CLIP_REQUEST` → `CLIP_DATA`). Whatever sits on the clipboard goes nowhere unless a remote
+  application asks for it, and the server can only ask for a format that was offered, one request at
+  a time.
+- *Remote to local:* the server's format list becomes `CLIP_REMOTE_OFFER`; jterm answers `CLIP_FETCH`
+  for text, else an image, and the helper requests that single format (`CLIP_REMOTE_DATA`).
+
+**Limits.** 32 MiB per transfer either way, refused rather than truncated. Before any pixel buffer
+is allocated, the DIB header is checked against the data present, and compressed DIBs (RLE,
+embedded JPEG/PNG) are refused. The server's payload is untrusted: that is the helper-process
+boundary doing its job, but the Java decoder must be defensive too.
+
+**Echo.** What was written for the server is remembered by object identity, and the clipboard event
+it causes is not announced back.
+
+**A new copy is not always an event.** `SunClipboard.checkChange` returns early when the set of
+formats is unchanged (read from the JDK's bytecode), so copying new text over old text sends no
+`FlavorEvent`. A Windows server caches what it has rendered until it receives a new format list. So
+the pane re-announces whenever the remote desktop gains focus (`RdpClipboardBridge.refresh`), which
+is when someone who copied locally is about to paste.
+
+**Not done:** file copy (`CB_STREAM_FILECLIP_ENABLED`, needs FUSE or a virtual-file layer), CF_HTML,
+`CF_DIBV5`-only servers (the JDK's BMP reader's support for 124-byte V5 headers is unverified, and
+Windows always also offers `CF_DIB`), clip-data locking.
+
+**Verified:** unit tests for the protocol, the codec and the bridge (against a private
+`Clipboard`), and the helper's v2 handshake and `CONNECT` parsing against a closed port.
+**Not yet verified against a live server.**
 
 ## Spike status
 

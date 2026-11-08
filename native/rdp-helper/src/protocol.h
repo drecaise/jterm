@@ -10,13 +10,20 @@
  *   HELLO        u16 version                                     (first message)
  *   CONNECT      str host, u16 port, str user, str domain, str password,
  *                str pinnedFingerprints ("sha256:aa:bb:..,..." or empty),
- *                u16 width, u16 height (device pixels), u16 scalePercent (100 = none)
+ *                u16 width, u16 height (device pixels), u16 scalePercent (100 = none),
+ *                u8 clipboardFlags (JRDP_CLIP_*; 0 = the clipboard channel is not opened at all)
  *   KEY          u8 down, u16 windowsVirtualKey, u8 flags (JRDP_KEY_*)
  *   UNICODE      u8 down, u16 utf16CodeUnit
  *   MOUSE        u16 ptrFlags (PTR_FLAGS_*), u16 x, u16 y
  *   CERT_REPLY   u8 accept (answers CERT_REQUEST; accept means "this session only")
  *   RESIZE       u16 width, u16 height (device pixels), u16 scalePercent — sent to the server over
  *                the Display Control channel once it is ready (servers without it ignore this)
+ *   CLIP_OFFER   u8 kinds (JRDP_CLIPKIND_*; 0 = nothing) — what the local clipboard can supply now.
+ *                Announced to the server only; the bytes leave jterm when the server pastes. Ignored
+ *                unless JRDP_CLIP_LOCAL_TO_REMOTE was set in CONNECT.
+ *   CLIP_DATA    u8 kind, u8 ok, bytes — answers CLIP_REQUEST (ok=0: could not supply it)
+ *   CLIP_FETCH   u8 kind — fetch that kind of the server's clipboard (answered by CLIP_REMOTE_DATA).
+ *                Ignored unless JRDP_CLIP_REMOTE_TO_LOCAL was set in CONNECT.
  *   BYE          (or simply close stdin)
  *
  * helper -> jterm
@@ -30,15 +37,23 @@
  *   POINTER_HIDE / POINTER_DEFAULT
  *   CERT_REQUEST     str host, u16 port, str commonName, str subject, str issuer,
  *                    str sha256Fingerprint, u32 flags (VERIFY_CERT_FLAG_*)
+ *   CLIP_REMOTE_OFFER  u8 kinds — what the server's clipboard now holds (0 = emptied)
+ *   CLIP_REMOTE_DATA   u8 kind, u8 ok, bytes — answers CLIP_FETCH. Text is CF_UNICODETEXT as the
+ *                      server sent it (UTF-16LE, usually NUL-terminated); an image is a CF_DIB
+ *                      (BITMAPINFOHEADER + pixels, no BITMAPFILEHEADER). ok=0: failed or too large.
+ *   CLIP_REQUEST       u8 kind — the server pastes: send CLIP_DATA for it (always answered)
  *   DISCONNECTED     u32 freerdpErrorCode, str message (last message before exit)
  */
 #ifndef JTERM_RDP_PROTOCOL_H
 #define JTERM_RDP_PROTOCOL_H
 
-#define JRDP_PROTOCOL_VERSION 1
+#define JRDP_PROTOCOL_VERSION 2
 
-/* Inbound messages are small; anything larger is a framing error. */
-#define JRDP_MAX_INBOUND (64u * 1024u)
+/* Largest clipboard payload either way. Both sides refuse (ok=0) rather than truncate. */
+#define JRDP_CLIP_MAX_BYTES (32u * 1024u * 1024u)
+
+/* Inbound messages are small, except CLIP_DATA; anything larger is a framing error. */
+#define JRDP_MAX_INBOUND (JRDP_CLIP_MAX_BYTES + 1024u)
 
 /* jterm -> helper */
 #define JRDP_HELLO 0x01
@@ -48,7 +63,18 @@
 #define JRDP_MOUSE 0x05
 #define JRDP_CERT_REPLY 0x06
 #define JRDP_RESIZE 0x07
+#define JRDP_CLIP_OFFER 0x08
+#define JRDP_CLIP_DATA 0x09
+#define JRDP_CLIP_FETCH 0x0A
 #define JRDP_BYE 0x0F
+
+/* CONNECT clipboardFlags */
+#define JRDP_CLIP_REMOTE_TO_LOCAL 0x01 /* the server's clipboard may be fetched into jterm */
+#define JRDP_CLIP_LOCAL_TO_REMOTE 0x02 /* the server may paste from jterm's clipboard */
+
+/* CLIP_* kinds (a bit mask in offers, a single value elsewhere) */
+#define JRDP_CLIPKIND_TEXT 0x01
+#define JRDP_CLIPKIND_IMAGE 0x02
 
 #define JRDP_KEY_FORCE_EXTENDED 0x01     /* e.g. numpad Enter */
 #define JRDP_KEY_FORCE_NOT_EXTENDED 0x02 /* e.g. numpad arrows with NumLock off */
@@ -65,6 +91,9 @@
 #define JRDP_POINTER_HIDE 0x88
 #define JRDP_POINTER_DEFAULT 0x89
 #define JRDP_CERT_REQUEST 0x8A
+#define JRDP_CLIP_REMOTE_OFFER 0x8B
+#define JRDP_CLIP_REMOTE_DATA 0x8C
+#define JRDP_CLIP_REQUEST 0x8D
 #define JRDP_DISCONNECTED 0x8F
 
 #endif

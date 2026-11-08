@@ -63,7 +63,7 @@ class RdpProtocolTest {
     @Test
     void connectLaysOutEveryFieldInOrder() {
         byte[] msg = RdpProtocol.connect("orion.lan", 3390, "mark", "", "pä55".toCharArray(),
-                "sha256:aa:bb", 1920, 1200, 150);
+                "sha256:aa:bb", 1920, 1200, 150, RdpProtocol.clipboardFlags(true, true));
         ByteBuffer b = body(msg, RdpProtocol.CONNECT);
         assertEquals("orion.lan", str(b));
         assertEquals(3390, b.getShort() & 0xFFFF);
@@ -74,7 +74,62 @@ class RdpProtocolTest {
         assertEquals(1920, b.getShort() & 0xFFFF);
         assertEquals(1200, b.getShort() & 0xFFFF);
         assertEquals(150, b.getShort() & 0xFFFF);
+        assertEquals(RdpProtocol.CLIP_REMOTE_TO_LOCAL | RdpProtocol.CLIP_LOCAL_TO_REMOTE, b.get());
         assertFalse(b.hasRemaining());
+    }
+
+    @Test
+    void clipboardFlagsAreIndependentAndZeroKeepsTheChannelClosed() {
+        assertEquals(0, RdpProtocol.clipboardFlags(false, false));
+        assertEquals(RdpProtocol.CLIP_REMOTE_TO_LOCAL, RdpProtocol.clipboardFlags(true, false));
+        assertEquals(RdpProtocol.CLIP_LOCAL_TO_REMOTE, RdpProtocol.clipboardFlags(false, true));
+    }
+
+    @Test
+    void clipboardMessagesGoOutInTheDocumentedLayout() {
+        ByteBuffer offer = body(RdpProtocol.clipOffer(RdpProtocol.CLIPKIND_TEXT | RdpProtocol.CLIPKIND_IMAGE),
+                RdpProtocol.CLIP_OFFER);
+        assertEquals(3, offer.get());
+        assertFalse(offer.hasRemaining());
+
+        ByteBuffer data = body(RdpProtocol.clipData(RdpProtocol.CLIPKIND_TEXT, true, new byte[]{1, 2, 3}),
+                RdpProtocol.CLIP_DATA);
+        assertEquals(RdpProtocol.CLIPKIND_TEXT, data.get());
+        assertEquals(1, data.get());
+        byte[] rest = new byte[data.remaining()];
+        data.get(rest);
+        assertArrayEquals(new byte[]{1, 2, 3}, rest);
+
+        ByteBuffer refused = body(RdpProtocol.clipData(RdpProtocol.CLIPKIND_IMAGE, false, new byte[]{9}),
+                RdpProtocol.CLIP_DATA);
+        assertEquals(RdpProtocol.CLIPKIND_IMAGE, refused.get());
+        assertEquals(0, refused.get());
+        assertFalse(refused.hasRemaining(), "a refusal carries no payload, whatever was passed");
+
+        ByteBuffer fetch = body(RdpProtocol.clipFetch(RdpProtocol.CLIPKIND_IMAGE), RdpProtocol.CLIP_FETCH);
+        assertEquals(RdpProtocol.CLIPKIND_IMAGE, fetch.get());
+    }
+
+    @Test
+    void decodesClipboardMessagesAndCopiesTheData() {
+        RdpProtocol.ClipRemoteOffer offer = assertInstanceOf(RdpProtocol.ClipRemoteOffer.class,
+                RdpProtocol.decode(RdpProtocol.CLIP_REMOTE_OFFER, inbound(1).put((byte) 2).flip()));
+        assertEquals(RdpProtocol.CLIPKIND_IMAGE, offer.kinds());
+
+        ByteBuffer buf = inbound(8).put((byte) 1).put((byte) 1).put(new byte[]{'h', 0, 'i', 0});
+        RdpProtocol.ClipRemoteData data = assertInstanceOf(RdpProtocol.ClipRemoteData.class,
+                RdpProtocol.decode(RdpProtocol.CLIP_REMOTE_DATA, buf.flip()));
+        assertTrue(data.ok());
+        assertArrayEquals(new byte[]{'h', 0, 'i', 0}, data.data());
+
+        RdpProtocol.ClipRemoteData failed = assertInstanceOf(RdpProtocol.ClipRemoteData.class,
+                RdpProtocol.decode(RdpProtocol.CLIP_REMOTE_DATA, inbound(2).put((byte) 1).put((byte) 0).flip()));
+        assertFalse(failed.ok());
+        assertEquals(0, failed.data().length);
+
+        RdpProtocol.ClipRequest req = assertInstanceOf(RdpProtocol.ClipRequest.class,
+                RdpProtocol.decode(RdpProtocol.CLIP_REQUEST, inbound(1).put((byte) 1).flip()));
+        assertEquals(RdpProtocol.CLIPKIND_TEXT, req.kind());
     }
 
     @Test

@@ -27,6 +27,7 @@
 #include <winpr/synch.h>
 #include <winpr/thread.h>
 #include <winpr/input.h>
+#include <winpr/user.h>
 #include <winpr/winsock.h>
 
 #include <freerdp/freerdp.h>
@@ -40,6 +41,8 @@
 #include <freerdp/codec/color.h>
 #include <freerdp/codec/h264.h>
 #include <freerdp/client/disp.h>
+#include <freerdp/client/cliprdr.h>
+#include <freerdp/channels/cliprdr.h>
 #include <freerdp/utils/helpers.h>
 #include <freerdp/version.h>
 
@@ -149,6 +152,15 @@ static void buf_str(Buf* b, const char* s)
 	if (n && buf_reserve(b, n))
 	{
 		memcpy(b->data + b->len, s, n);
+		b->len += n;
+	}
+}
+
+static void buf_bytes(Buf* b, const BYTE* p, size_t n)
+{
+	if (n && buf_reserve(b, n))
+	{
+		memcpy(b->data + b->len, p, n);
 		b->len += n;
 	}
 }
@@ -506,6 +518,268 @@ static BOOL j_authenticate(freerdp* instance, char** username, char** password, 
 }
 
 /* ------------------------------------------------------------------------------------------ */
+/* Clipboard (cliprdr)                                                                         */
+/*
+ * Two directions, each opt-in per session (CONNECT's clipboardFlags; the channel is not even opened
+ * when both are off). Both rely on the protocol's delayed rendering, so nothing is copied until it
+ * is wanted:
+ *  - local -> remote: jterm offers a *kind* (CLIP_OFFER); the helper announces the matching format.
+ *    The bytes cross only when the server pastes (ServerFormatDataRequest -> CLIP_REQUEST ->
+ *    CLIP_DATA -> ClientFormatDataResponse).
+ *  - remote -> local: the server's format list becomes CLIP_REMOTE_OFFER; jterm answers CLIP_FETCH
+ *    and the helper requests that one format (ClientFormatDataRequest -> CLIP_REMOTE_DATA).
+ * Only text (CF_UNICODETEXT) and images (CF_DIB) are understood; every other format is ignored.
+ *
+ * Threads: FreeRDP's channel calls happen on the RDP thread, like the monitor layout. The stdin
+ * reader thread therefore only queues a job and signals g_clip_event; the main loop drains it.
+ */
+typedef struct ClipJob
+{
+	struct ClipJob* next;
+	UINT8 type; /* JRDP_CLIP_OFFER / CLIP_DATA / CLIP_FETCH */
+	UINT8 kind; /* for an offer: the kinds mask */
+	UINT8 ok;
+	BYTE* data;
+	size_t len;
+} ClipJob;
+
+static CRITICAL_SECTION g_clip_lock;
+static ClipJob* g_clip_head = NULL;
+static ClipJob* g_clip_tail = NULL;
+static HANDLE g_clip_event = NULL;
+static UINT8 g_clip_flags = 0; /* written once by apply_connect, before the reader thread starts */
+
+/* RDP thread only from here. */
+static CliprdrClientContext* g_clip = NULL;
+static BOOL g_clip_ready = FALSE;    /* MonitorReady seen: the server accepts our format list */
+static UINT8 g_clip_local_kinds = 0; /* what jterm last offered */
+static BOOL g_remote_has_text = FALSE;
+static BOOL g_remote_has_image = FALSE;
+static UINT8 g_fetch_kind = 0; /* our request to the server awaiting its response */
+static UINT8 g_serve_kind = 0; /* the server's request awaiting jterm's CLIP_DATA */
+
+static UINT32 clip_format_for(UINT8 kind)
+{
+	return kind == JRDP_CLIPKIND_TEXT ? CF_UNICODETEXT : (kind == JRDP_CLIPKIND_IMAGE ? CF_DIB : 0);
+}
+
+/* Reader thread. Takes ownership of data. */
+static void clip_post(UINT8 type, UINT8 kind, UINT8 ok, BYTE* data, size_t len)
+{
+	ClipJob* job = calloc(1, sizeof(*job));
+	if (!job)
+	{
+		free(data);
+		return;
+	}
+	job->type = type;
+	job->kind = kind;
+	job->ok = ok;
+	job->data = data;
+	job->len = len;
+	EnterCriticalSection(&g_clip_lock);
+	if (g_clip_tail)
+		g_clip_tail->next = job;
+	else
+		g_clip_head = job;
+	g_clip_tail = job;
+	LeaveCriticalSection(&g_clip_lock);
+	SetEvent(g_clip_event);
+}
+
+static ClipJob* clip_pop(void)
+{
+	EnterCriticalSection(&g_clip_lock);
+	ClipJob* job = g_clip_head;
+	if (job)
+	{
+		g_clip_head = job->next;
+		if (!g_clip_head)
+			g_clip_tail = NULL;
+	}
+	LeaveCriticalSection(&g_clip_lock);
+	return job;
+}
+
+static void send_clip_kinds(UINT8 type, UINT8 kinds)
+{
+	Buf b = { 0 };
+	buf_u8(&b, kinds);
+	send_msg(type, &b);
+	free(b.data);
+}
+
+static void send_clip_data(UINT8 type, UINT8 kind, BOOL ok, const BYTE* data, size_t len)
+{
+	Buf b = { 0 };
+	buf_u8(&b, kind);
+	buf_u8(&b, ok ? 1 : 0);
+	if (ok)
+		buf_bytes(&b, data, len);
+	send_msg(type, &b);
+	free(b.data);
+}
+
+/* Announces what jterm offered (nothing, when local -> remote is off or the clipboard is empty). */
+static void clip_send_format_list(void)
+{
+	if (!g_clip || !g_clip_ready)
+		return;
+	CLIPRDR_FORMAT formats[2] = { 0 };
+	UINT32 n = 0;
+	if (g_clip_flags & JRDP_CLIP_LOCAL_TO_REMOTE)
+	{
+		if (g_clip_local_kinds & JRDP_CLIPKIND_TEXT)
+			formats[n++].formatId = CF_UNICODETEXT;
+		if (g_clip_local_kinds & JRDP_CLIPKIND_IMAGE)
+			formats[n++].formatId = CF_DIB;
+	}
+	CLIPRDR_FORMAT_LIST list = { 0 };
+	list.common.msgType = CB_FORMAT_LIST;
+	list.numFormats = n;
+	list.formats = formats;
+	const UINT rc = g_clip->ClientFormatList(g_clip, &list);
+	if (rc != CHANNEL_RC_OK)
+		fprintf(stderr, "jterm-rdp-helper: clipboard format list failed (%u)\n", (unsigned)rc);
+}
+
+static UINT clip_respond(BOOL ok, const BYTE* data, size_t len)
+{
+	CLIPRDR_FORMAT_DATA_RESPONSE r = { 0 };
+	r.common.msgType = CB_FORMAT_DATA_RESPONSE;
+	r.common.msgFlags = ok ? CB_RESPONSE_OK : CB_RESPONSE_FAIL;
+	r.common.dataLen = ok ? (UINT32)len : 0;
+	r.requestedFormatData = ok ? data : NULL;
+	return g_clip->ClientFormatDataResponse(g_clip, &r);
+}
+
+static UINT j_clip_monitor_ready(CliprdrClientContext* ctx, const CLIPRDR_MONITOR_READY* ready)
+{
+	WINPR_UNUSED(ready);
+	CLIPRDR_GENERAL_CAPABILITY_SET general = { 0 };
+	general.capabilitySetType = CB_CAPSTYPE_GENERAL;
+	general.capabilitySetLength = CB_CAPSTYPE_GENERAL_LEN;
+	general.version = CB_CAPS_VERSION_2;
+	general.generalFlags = CB_USE_LONG_FORMAT_NAMES; /* no file transfer, no clip-data locking */
+	CLIPRDR_CAPABILITIES caps = { 0 };
+	caps.common.msgType = CB_CLIP_CAPS;
+	caps.cCapabilitiesSets = 1;
+	caps.capabilitySets = (CLIPRDR_CAPABILITY_SET*)&general;
+	const UINT rc = ctx->ClientCapabilities(ctx, &caps);
+	if (rc != CHANNEL_RC_OK)
+		return rc;
+	g_clip_ready = TRUE;
+	clip_send_format_list(); /* the first list is required, even an empty one */
+	return CHANNEL_RC_OK;
+}
+
+static UINT j_clip_server_format_list(CliprdrClientContext* ctx, const CLIPRDR_FORMAT_LIST* list)
+{
+	CLIPRDR_FORMAT_LIST_RESPONSE ack = { 0 };
+	ack.common.msgType = CB_FORMAT_LIST_RESPONSE;
+	ack.common.msgFlags = CB_RESPONSE_OK;
+	const UINT rc = ctx->ClientFormatListResponse(ctx, &ack);
+	if (rc != CHANNEL_RC_OK || !(g_clip_flags & JRDP_CLIP_REMOTE_TO_LOCAL))
+		return rc; /* acknowledged, and otherwise ignored */
+	g_remote_has_text = FALSE;
+	g_remote_has_image = FALSE;
+	for (UINT32 i = 0; i < list->numFormats; i++)
+	{
+		if (list->formats[i].formatId == CF_UNICODETEXT)
+			g_remote_has_text = TRUE;
+		else if (list->formats[i].formatId == CF_DIB)
+			g_remote_has_image = TRUE;
+	}
+	send_clip_kinds(JRDP_CLIP_REMOTE_OFFER, (UINT8)((g_remote_has_text ? JRDP_CLIPKIND_TEXT : 0) |
+	                                               (g_remote_has_image ? JRDP_CLIPKIND_IMAGE : 0)));
+	return CHANNEL_RC_OK;
+}
+
+/* The server pastes. It may only ever get what jterm offered, once at a time. */
+static UINT j_clip_server_format_data_request(CliprdrClientContext* ctx,
+                                              const CLIPRDR_FORMAT_DATA_REQUEST* req)
+{
+	WINPR_UNUSED(ctx);
+	UINT8 kind = 0;
+	if (req->requestedFormatId == CF_UNICODETEXT)
+		kind = JRDP_CLIPKIND_TEXT;
+	else if (req->requestedFormatId == CF_DIB)
+		kind = JRDP_CLIPKIND_IMAGE;
+	if (!(g_clip_flags & JRDP_CLIP_LOCAL_TO_REMOTE) || !kind || g_serve_kind ||
+	    !(g_clip_local_kinds & kind))
+		return clip_respond(FALSE, NULL, 0);
+	g_serve_kind = kind;
+	send_clip_kinds(JRDP_CLIP_REQUEST, kind);
+	return CHANNEL_RC_OK;
+}
+
+/* The server's answer to a CLIP_FETCH. */
+static UINT j_clip_server_format_data_response(CliprdrClientContext* ctx,
+                                               const CLIPRDR_FORMAT_DATA_RESPONSE* r)
+{
+	WINPR_UNUSED(ctx);
+	const UINT8 kind = g_fetch_kind;
+	g_fetch_kind = 0;
+	if (!kind)
+		return CHANNEL_RC_OK; /* nothing was asked for */
+	const BOOL ok = (r->common.msgFlags & CB_RESPONSE_OK) && r->requestedFormatData &&
+	                r->common.dataLen > 0 && r->common.dataLen <= JRDP_CLIP_MAX_BYTES;
+	send_clip_data(JRDP_CLIP_REMOTE_DATA, kind, ok, r->requestedFormatData, r->common.dataLen);
+	return CHANNEL_RC_OK;
+}
+
+/* RDP thread: applies what the reader thread queued. */
+static void clip_process_jobs(void)
+{
+	ClipJob* job;
+	while ((job = clip_pop()) != NULL)
+	{
+		switch (job->type)
+		{
+			case JRDP_CLIP_OFFER:
+				g_clip_local_kinds = job->kind;
+				clip_send_format_list();
+				break;
+			case JRDP_CLIP_DATA:
+				if (g_clip && g_serve_kind && job->kind == g_serve_kind)
+				{
+					g_serve_kind = 0;
+					(void)clip_respond(job->ok && job->len <= JRDP_CLIP_MAX_BYTES, job->data,
+					                   job->len);
+				}
+				break;
+			case JRDP_CLIP_FETCH:
+			{
+				BOOL have = FALSE;
+				if (job->kind == JRDP_CLIPKIND_TEXT)
+					have = g_remote_has_text;
+				else if (job->kind == JRDP_CLIPKIND_IMAGE)
+					have = g_remote_has_image;
+				BOOL started = FALSE;
+				if (g_clip && g_clip_ready && (g_clip_flags & JRDP_CLIP_REMOTE_TO_LOCAL) && have &&
+				    !g_fetch_kind)
+				{
+					CLIPRDR_FORMAT_DATA_REQUEST req = { 0 };
+					req.common.msgType = CB_FORMAT_DATA_REQUEST;
+					req.requestedFormatId = clip_format_for(job->kind);
+					g_fetch_kind = job->kind;
+					started = g_clip->ClientFormatDataRequest(g_clip, &req) == CHANNEL_RC_OK;
+					if (!started)
+						g_fetch_kind = 0;
+				}
+				if (!started)
+					send_clip_data(JRDP_CLIP_REMOTE_DATA, job->kind, FALSE, NULL, 0);
+				break;
+			}
+			default:
+				break;
+		}
+		free(job->data);
+		free(job);
+	}
+}
+
+/* ------------------------------------------------------------------------------------------ */
 /* Connection lifecycle                                                                        */
 
 /* Sends the wanted monitor layout. RDP thread only. */
@@ -561,6 +835,16 @@ static void j_channel_connected(void* context, const ChannelConnectedEventArgs* 
 		g_disp->DisplayControlCaps = j_disp_caps;
 		return;
 	}
+	if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0)
+	{
+		g_clip = (CliprdrClientContext*)e->pInterface;
+		g_clip->custom = context;
+		g_clip->MonitorReady = j_clip_monitor_ready;
+		g_clip->ServerFormatList = j_clip_server_format_list;
+		g_clip->ServerFormatDataRequest = j_clip_server_format_data_request;
+		g_clip->ServerFormatDataResponse = j_clip_server_format_data_response;
+		return;
+	}
 	freerdp_client_OnChannelConnectedEventHandler(context, e);
 }
 
@@ -570,6 +854,14 @@ static void j_channel_disconnected(void* context, const ChannelDisconnectedEvent
 	{
 		InterlockedExchange(&g_disp_ready, 0);
 		g_disp = NULL;
+		return;
+	}
+	if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0)
+	{
+		g_clip = NULL;
+		g_clip_ready = FALSE;
+		g_fetch_kind = 0;
+		g_serve_kind = 0;
 		return;
 	}
 	freerdp_client_OnChannelDisconnectedEventHandler(context, e);
@@ -719,6 +1011,27 @@ static DWORD WINAPI reader_thread(LPVOID arg)
 			InterlockedExchange(&g_want_scale, get_u16(&m));
 			SetEvent(g_layout_event); /* the RDP thread sends it */
 		}
+		else if (m.type == JRDP_CLIP_OFFER)
+		{
+			const UINT8 kinds = get_u8(&m);
+			clip_post(JRDP_CLIP_OFFER, kinds, 0, NULL, 0);
+		}
+		else if (m.type == JRDP_CLIP_FETCH)
+		{
+			const UINT8 kind = get_u8(&m);
+			clip_post(JRDP_CLIP_FETCH, kind, 0, NULL, 0);
+		}
+		else if (m.type == JRDP_CLIP_DATA)
+		{
+			const UINT8 kind = get_u8(&m);
+			const UINT8 ok = get_u8(&m);
+			const size_t len = m.pos <= m.len ? m.len - m.pos : 0;
+			BYTE* copy = (ok && len) ? malloc(len) : NULL;
+			if (copy)
+				memcpy(copy, m.data + m.pos, len);
+			/* An "ok" with nothing to send, or one we could not copy, is a failure. */
+			clip_post(JRDP_CLIP_DATA, kind, (UINT8)(copy != NULL), copy, copy ? len : 0);
+		}
 		else
 			handle_input(&m);
 		msg_free(&m);
@@ -758,6 +1071,8 @@ static BOOL apply_connect(rdpSettings* s, Msg* m)
 	const UINT16 width = get_u16(m);
 	const UINT16 height = get_u16(m);
 	const UINT16 scale = get_u16(m);
+	/* Absent in a v1 CONNECT: reads as 0, i.e. no clipboard. */
+	g_clip_flags = get_u8(m) & (JRDP_CLIP_REMOTE_TO_LOCAL | JRDP_CLIP_LOCAL_TO_REMOTE);
 
 	BOOL ok = host && *host && user && domain && password && pins &&
 	          freerdp_settings_set_string(s, FreeRDP_ServerHostname, host) &&
@@ -772,8 +1087,9 @@ static BOOL apply_connect(rdpSettings* s, Msg* m)
 	          /* The graphics pipeline is off by default for clients; GNOME Remote Desktop and
 	           * modern Windows servers want it. */
 	          freerdp_settings_set_bool(s, FreeRDP_SupportGraphicsPipeline, TRUE) &&
-	          /* Redirections default off: the server gets nothing local unless jterm asks. */
-	          freerdp_settings_set_bool(s, FreeRDP_RedirectClipboard, FALSE) &&
+	          /* Redirections default off: the server gets nothing local unless jterm asks. The
+	           * clipboard channel is opened only when the session enabled a direction. */
+	          freerdp_settings_set_bool(s, FreeRDP_RedirectClipboard, g_clip_flags != 0) &&
 	          freerdp_settings_set_bool(s, FreeRDP_DeviceRedirection, FALSE);
 
 	/* H.264 is off by default for library clients (only the command-line parser enables it).
@@ -838,6 +1154,8 @@ int main(int argc, char* argv[])
 	InitializeCriticalSection(&g_input_lock);
 	g_cert_event = CreateEvent(NULL, TRUE, FALSE, NULL);
 	g_layout_event = CreateEvent(NULL, TRUE, FALSE, NULL); /* manual reset: cleared by the loop */
+	InitializeCriticalSection(&g_clip_lock);
+	g_clip_event = CreateEvent(NULL, TRUE, FALSE, NULL); /* manual reset: cleared by the loop */
 
 	/* Sockets need Winsock initialised on Windows (a no-op in WinPR elsewhere). */
 	WSADATA wsa;
@@ -918,17 +1236,23 @@ int main(int argc, char* argv[])
 	HANDLE handles[MAXIMUM_WAIT_OBJECTS] = { 0 };
 	while (!freerdp_shall_disconnect_context(context))
 	{
-		const DWORD n = freerdp_get_event_handles(context, handles, ARRAYSIZE(handles) - 1);
+		const DWORD n = freerdp_get_event_handles(context, handles, ARRAYSIZE(handles) - 2);
 		if (n == 0)
 			break;
 		handles[n] = g_layout_event;
-		const DWORD status = WaitForMultipleObjects(n + 1, handles, FALSE, INFINITE);
+		handles[n + 1] = g_clip_event;
+		const DWORD status = WaitForMultipleObjects(n + 2, handles, FALSE, INFINITE);
 		if (status == WAIT_FAILED)
 			break;
 		if (WaitForSingleObject(g_layout_event, 0) == WAIT_OBJECT_0)
 		{
 			ResetEvent(g_layout_event); /* before reading the wanted layout, so none is lost */
 			send_monitor_layout();
+		}
+		if (WaitForSingleObject(g_clip_event, 0) == WAIT_OBJECT_0)
+		{
+			ResetEvent(g_clip_event); /* before draining, so a job posted meanwhile re-signals */
+			clip_process_jobs();
 		}
 		if (!freerdp_check_event_handles(context))
 			break;

@@ -59,6 +59,8 @@ public final class RdpSessionConfig implements SessionNode {
     private WidthMode widthMode = WidthMode.FIT_TO_TAB;
     private int width = 1280;
     private int height = 800;
+    private boolean redirectClipboard = false;
+    private boolean clipboardToRemote = true;
 
     public RdpSessionConfig() {
     }
@@ -160,6 +162,32 @@ public final class RdpSessionConfig implements SessionNode {
         this.height = clampDimension(height, 800);
     }
 
+    /**
+     * Whether the clipboard is shared with the remote desktop (text and images). Off by default: a
+     * session opens the clipboard channel only when this is set, so the server never even sees it.
+     * When on, what the server copies lands on the local clipboard without a prompt.
+     */
+    public boolean isRedirectClipboard() {
+        return redirectClipboard;
+    }
+
+    public void setRedirectClipboard(boolean redirectClipboard) {
+        this.redirectClipboard = redirectClipboard;
+    }
+
+    /**
+     * With {@link #isRedirectClipboard()} on, whether the remote desktop may also paste what is on
+     * the local clipboard. Without it sharing is one-way, remote to local. Meaningless (and ignored)
+     * while sharing is off.
+     */
+    public boolean isClipboardToRemote() {
+        return clipboardToRemote;
+    }
+
+    public void setClipboardToRemote(boolean clipboardToRemote) {
+        this.clipboardToRemote = clipboardToRemote;
+    }
+
     /** {@code host} or {@code host:port} when the port isn't the default — for titles and prompts. */
     public String hostLabel() {
         return port == DEFAULT_PORT ? host : host + ":" + port;
@@ -177,6 +205,8 @@ public final class RdpSessionConfig implements SessionNode {
         copy.setWidthMode(widthMode);
         copy.setWidth(width);
         copy.setHeight(height);
+        copy.setRedirectClipboard(redirectClipboard);
+        copy.setClipboardToRemote(clipboardToRemote);
         return copy;
     }
 

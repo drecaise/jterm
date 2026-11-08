@@ -36,7 +36,7 @@ import java.util.Arrays;
  */
 public final class RdpProtocol {
 
-    public static final int VERSION = 1;
+    public static final int VERSION = 2;
 
     // jterm -> helper
     static final int HELLO = 0x01;
@@ -46,7 +46,21 @@ public final class RdpProtocol {
     static final int MOUSE = 0x05;
     static final int CERT_REPLY = 0x06;
     static final int RESIZE = 0x07;
+    static final int CLIP_OFFER = 0x08;
+    static final int CLIP_DATA = 0x09;
+    static final int CLIP_FETCH = 0x0A;
     static final int BYE = 0x0F;
+
+    /** CONNECT clipboardFlags: which directions of clipboard sharing the session allows. */
+    public static final int CLIP_REMOTE_TO_LOCAL = 0x01;
+    public static final int CLIP_LOCAL_TO_REMOTE = 0x02;
+
+    /** Clipboard kinds (a mask in offers, one value elsewhere). */
+    public static final int CLIPKIND_TEXT = 0x01;
+    public static final int CLIPKIND_IMAGE = 0x02;
+
+    /** Largest clipboard payload either way; both sides refuse rather than truncate. */
+    public static final int CLIP_MAX_BYTES = 32 * 1024 * 1024;
 
     public static final int KEY_FORCE_EXTENDED = 0x01;
     public static final int KEY_FORCE_NOT_EXTENDED = 0x02;
@@ -63,6 +77,9 @@ public final class RdpProtocol {
     static final int POINTER_HIDE = 0x88;
     static final int POINTER_DEFAULT = 0x89;
     static final int CERT_REQUEST = 0x8A;
+    static final int CLIP_REMOTE_OFFER = 0x8B;
+    static final int CLIP_REMOTE_DATA = 0x8C;
+    static final int CLIP_REQUEST = 0x8D;
     static final int DISCONNECTED = 0x8F;
 
     /** Certificate flags (FreeRDP {@code VERIFY_CERT_FLAG_*}). */
@@ -109,6 +126,11 @@ public final class RdpProtocol {
             return this;
         }
 
+        Writer bytes(byte[] b) {
+            buf.write(b, 0, b.length);
+            return this;
+        }
+
         Writer str(String s) {
             byte[] b = (s != null ? s : "").getBytes(StandardCharsets.UTF_8);
             int n = Math.min(b.length, 0xFFFF);
@@ -134,12 +156,38 @@ public final class RdpProtocol {
     /**
      * CONNECT. {@code password} is copied into the message and the caller should zero its own array.
      * {@code pins} is a comma-separated {@code sha256:aa:bb:...} list (empty for none).
+     * {@code clipboardFlags} is a mask of {@link #CLIP_REMOTE_TO_LOCAL} / {@link #CLIP_LOCAL_TO_REMOTE};
+     * 0 keeps the clipboard channel closed.
      */
     static byte[] connect(String host, int port, String user, String domain, char[] password,
-                          String pins, int width, int height, int scalePercent) {
+                          String pins, int width, int height, int scalePercent, int clipboardFlags) {
         String pw = password != null ? new String(password) : "";
         return new Writer(CONNECT).str(host).u16(port).str(user).str(domain).str(pw).str(pins)
-                .u16(width).u16(height).u16(scalePercent).build();
+                .u16(width).u16(height).u16(scalePercent).u8(clipboardFlags).build();
+    }
+
+    /** The CONNECT clipboard mask for a session's two settings. */
+    public static int clipboardFlags(boolean remoteToLocal, boolean localToRemote) {
+        return (remoteToLocal ? CLIP_REMOTE_TO_LOCAL : 0) | (localToRemote ? CLIP_LOCAL_TO_REMOTE : 0);
+    }
+
+    /** What the local clipboard can supply now ({@code kinds} is a mask; 0 means nothing). */
+    static byte[] clipOffer(int kinds) {
+        return new Writer(CLIP_OFFER).u8(kinds).build();
+    }
+
+    /** The answer to {@link ClipRequest}: the data, or {@code ok == false} when it can't be supplied. */
+    static byte[] clipData(int kind, boolean ok, byte[] data) {
+        Writer w = new Writer(CLIP_DATA).u8(kind).u8(ok ? 1 : 0);
+        if (ok && data != null) {
+            w.bytes(data);
+        }
+        return w.build();
+    }
+
+    /** Asks for one kind of the server's clipboard; answered by {@link ClipRemoteData}. */
+    static byte[] clipFetch(int kind) {
+        return new Writer(CLIP_FETCH).u8(kind).build();
     }
 
     static byte[] key(boolean down, int windowsVk, int flags) {
@@ -233,6 +281,21 @@ public final class RdpProtocol {
         }
     }
 
+    /** What the server's clipboard now holds, as a {@code CLIPKIND_*} mask (0 = emptied). */
+    public record ClipRemoteOffer(int kinds) implements Inbound {
+    }
+
+    /**
+     * The server's clipboard content for a fetch. Text is CF_UNICODETEXT as sent (UTF-16LE, usually
+     * NUL-terminated); an image is a CF_DIB without a file header. {@code data} is a copy.
+     */
+    public record ClipRemoteData(int kind, boolean ok, byte[] data) implements Inbound {
+    }
+
+    /** The server pastes: answer with {@link RdpConnection#sendClipboardData}, always. */
+    public record ClipRequest(int kind) implements Inbound {
+    }
+
     public record Unknown(int type, int length) implements Inbound {
     }
 
@@ -270,6 +333,15 @@ public final class RdpProtocol {
             case POINTER_DEFAULT -> new PointerDefault();
             case CERT_REQUEST -> new CertRequest(str(body), u16(body), str(body), str(body),
                     str(body), str(body), body.getInt());
+            case CLIP_REMOTE_OFFER -> new ClipRemoteOffer(body.get() & 0xFF);
+            case CLIP_REMOTE_DATA -> {
+                int kind = body.get() & 0xFF;
+                boolean ok = body.get() != 0;
+                byte[] data = new byte[ok ? body.remaining() : 0];
+                body.get(data);
+                yield new ClipRemoteData(kind, ok, data);
+            }
+            case CLIP_REQUEST -> new ClipRequest(body.get() & 0xFF);
             case DISCONNECTED -> new Disconnected(Integer.toUnsignedLong(body.getInt()), str(body));
             default -> new Unknown(type, body.remaining());
         };

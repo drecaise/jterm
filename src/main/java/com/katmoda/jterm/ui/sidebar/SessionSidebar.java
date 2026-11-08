@@ -1321,7 +1321,7 @@ public final class SessionSidebar extends JPanel {
     }
 
     /**
-     * Tabbed form dialog ("Basic settings" + "Display"); mutates {@code cfg} on OK. Returns the
+     * Tabbed form dialog ("Basic settings", "Display", "Local resources"); mutates {@code cfg} on OK. Returns the
      * folder chosen for the session, or {@code null} if cancelled.
      */
     private FolderNode showRdpDialog(RdpSessionConfig cfg, String title, FolderNode initialFolder) {
@@ -1399,9 +1399,25 @@ public final class SessionSidebar extends JPanel {
         row(display, "Width (pixels):", width);
         row(display, "Height (pixels):", height);
 
+        ToggleSwitch shareClipboard = new ToggleSwitch(cfg.isRedirectClipboard());
+        ToggleSwitch clipboardToRemote = new ToggleSwitch(cfg.isClipboardToRemote());
+        Runnable syncClipboard = () -> clipboardToRemote.setEnabled(shareClipboard.isSelected());
+        shareClipboard.addActionListener(a -> syncClipboard.run());
+        syncClipboard.run();
+        shareClipboard.setToolTipText("Text and images the remote desktop copies are placed on this "
+                + "computer's clipboard, without asking.");
+        clipboardToRemote.setToolTipText("Lets the remote desktop paste what is on this computer's "
+                + "clipboard. Nothing is sent until an application there pastes. Off: sharing runs one "
+                + "way, remote to local.");
+
+        JPanel resources = formPanel();
+        row(resources, "Share clipboard:", shareClipboard);
+        row(resources, "Remote can paste mine:", clipboardToRemote);
+
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Basic settings", basic);
         tabs.addTab("Display", display);
+        tabs.addTab("Local resources", resources);
 
         int result = DialogFocus.showConfirm(this, tabs, title, name);
         if (result != JOptionPane.OK_OPTION) {
@@ -1426,6 +1442,8 @@ public final class SessionSidebar extends JPanel {
         } catch (NumberFormatException ex) {
             // keep the previous size
         }
+        cfg.setRedirectClipboard(shareClipboard.isSelected());
+        cfg.setClipboardToRemote(clipboardToRemote.isSelected());
         // On: a typed password is stored, a blank field keeps any saved one. Off: forget it.
         cfg.setSavePassword(applyVaultPassword(VaultKeys.sessionPassword(cfg.getId()),
                 savePassword.isSelected(), password.getPassword()));

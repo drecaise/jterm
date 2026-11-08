@@ -24,6 +24,14 @@ Session…**.
 - **Fixed resolution**: the desktop keeps the width and height you enter and is scaled to fit the
   pane.
 
+**Local resources**
+
+- **Share clipboard** (off by default): text and images you copy on the remote desktop are placed on
+  your computer's clipboard, **without asking**. Turn it on for computers you trust.
+- **Remote can paste mine** (on by default, available once sharing is on): applications on the
+  remote desktop may paste what is on your clipboard. Nothing is sent until one of them pastes.
+  Turn it off to share one way only, remote to local.
+
 RDP sessions can be edited, duplicated, deleted and dragged into other folders, just like SSH
 sessions.
 
@@ -64,6 +72,23 @@ doesn't depend on the remote keyboard layout matching yours.
 The Windows key and Alt+Tab can't be captured. Use the **Ctrl+Alt+Del** button in the pane's bottom
 bar to send that combination.
 
+## Clipboard
+
+With **Share clipboard** on, copy and paste work between your computer and the remote desktop for
+**plain text and images**. Files, formatted text and other formats are not shared, and a single copy
+is limited to 32 MiB.
+
+- Copying on the remote desktop puts the text or image on your clipboard straight away. When the
+  remote copy holds both, the text is used.
+- Copying on your computer makes it available to the remote desktop. The content itself is only
+  read and sent when something there pastes.
+- Images are sent without transparency (a transparent area becomes white).
+- Opening the session can bring the remote clipboard's current content onto your clipboard.
+- If you copy on your computer and then click into the remote desktop, paste there as usual. jterm
+  tells the server again when the desktop gains focus.
+
+With sharing off, the server isn't told that a clipboard exists.
+
 ## When the connection ends
 
 A disconnected desktop stays in its pane with **Reconnect** and **Close** buttons and the reason it
@@ -73,8 +98,9 @@ ended.
 
 - RDP support uses a bundled FreeRDP helper. If a build of jterm doesn't include it, the pane says
   so instead of connecting.
-- **Clipboard sharing and file/drive redirection are not available yet.** Nothing on your computer
-  is shared with the server.
+- **File and drive redirection are not available.** Clipboard sharing covers text and images
+  only, and only when you turn it on for the session. Nothing else on your computer is shared with
+  the server.
 - Full-screen video is only smooth when the server can encode **H.264**. jterm decodes it when the
   server offers it. A Linux server without a hardware video encoder sends a slower format.
 - GNOME Remote Desktop applies display scaling only in whole steps (100% or 200%) unless fractional

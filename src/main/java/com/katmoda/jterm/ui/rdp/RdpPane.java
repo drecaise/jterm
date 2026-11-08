@@ -115,6 +115,8 @@ public final class RdpPane extends JPanel implements GridContent {
     private final Timer resizeDebounce = new Timer(300, e -> requestRemoteResize());
 
     private RdpConnection connection;
+    /** The current connect attempt's callbacks; owns that attempt's clipboard bridge. */
+    private Listener listener;
     private int generation;
     private boolean connected;
     private boolean closed;
@@ -204,6 +206,18 @@ public final class RdpPane extends JPanel implements GridContent {
         connect(null);
     }
 
+    /**
+     * The desktop gained focus: whoever copied something locally is about to paste, and the JDK does
+     * not announce a new copy of the same kind, so tell the server again (see
+     * {@link RdpClipboardBridge}).
+     */
+    private void refreshClipboard() {
+        Listener l = listener;
+        if (l != null) {
+            l.refreshClipboard();
+        }
+    }
+
     /** EDT. {@code retryError} non-null means "the last password was rejected: prompt again". */
     private void connect(String retryError) {
         if (closed) {
@@ -234,10 +248,15 @@ public final class RdpPane extends JPanel implements GridContent {
         RdpConnection.Target target = new RdpConnection.Target(cfg.getHost(), cfg.getPort(),
                 cfg.getUser(), cfg.getDomain(), pw.password(),
                 services.knownHosts().pinsForConnect(cfg.getHost(), cfg.getPort()),
-                size.width, size.height, scalePercent());
+                size.width, size.height, scalePercent(),
+                RdpProtocol.clipboardFlags(cfg.isRedirectClipboard(),
+                        cfg.isRedirectClipboard() && cfg.isClipboardToRemote()));
         try {
-            connection = RdpConnection.start(helper, target, new Listener(myGeneration));
+            listener = new Listener(myGeneration);
+            connection = RdpConnection.start(helper, target, listener);
+            listener.attach(connection);
         } catch (Exception e) {
+            listener = null;
             Arrays.fill(pw.password(), '\0');
             clearPendingRemember();
             connection = null;
@@ -289,9 +308,59 @@ public final class RdpPane extends JPanel implements GridContent {
     /** Connection callbacks, bound to the connect attempt that created them. */
     private final class Listener implements RdpConnection.Listener {
         private final int gen;
+        /** Null when the session does not share its clipboard. */
+        private final RdpClipboardBridge clipboard;
+        private volatile RdpConnection conn;
 
         Listener(int gen) {
             this.gen = gen;
+            this.clipboard = cfg.isRedirectClipboard()
+                    ? new RdpClipboardBridge(new RdpClipboardBridge.Sink() {
+                        @Override
+                        public void offer(int kinds) {
+                            RdpConnection c = conn;
+                            if (c != null) {
+                                c.offerClipboard(kinds);
+                            }
+                        }
+
+                        @Override
+                        public void data(int kind, boolean ok, byte[] bytes) {
+                            RdpConnection c = conn;
+                            if (c != null) {
+                                c.sendClipboardData(kind, ok, bytes);
+                            }
+                        }
+
+                        @Override
+                        public void fetch(int kind) {
+                            RdpConnection c = conn;
+                            if (c != null) {
+                                c.fetchClipboard(kind);
+                            }
+                        }
+                    }, Toolkit.getDefaultToolkit().getSystemClipboard(), true, cfg.isClipboardToRemote())
+                    : null;
+        }
+
+        /** Called once the helper is running: from here the bridge may talk to it. */
+        void attach(RdpConnection c) {
+            conn = c;
+            if (clipboard != null) {
+                clipboard.start();
+            }
+        }
+
+        void refreshClipboard() {
+            if (clipboard != null) {
+                clipboard.refresh();
+            }
+        }
+
+        void closeClipboard() {
+            if (clipboard != null) {
+                clipboard.close();
+            }
         }
 
         private boolean stale() {
@@ -325,6 +394,21 @@ public final class RdpPane extends JPanel implements GridContent {
                     Cursor c = view.cursors.get(p.id());
                     view.setCursor(c != null ? c : Cursor.getDefaultCursor());
                 });
+                case RdpProtocol.ClipRemoteOffer o -> {
+                    if (clipboard != null) {
+                        clipboard.onRemoteOffer(o.kinds());
+                    }
+                }
+                case RdpProtocol.ClipRemoteData d -> {
+                    if (clipboard != null) {
+                        clipboard.onRemoteData(d.kind(), d.ok(), d.data());
+                    }
+                }
+                case RdpProtocol.ClipRequest r -> {
+                    if (clipboard != null) {
+                        clipboard.onRequest(r.kind());
+                    }
+                }
                 case RdpProtocol.PointerHide h -> SwingUtilities.invokeLater(() -> view.setCursor(blankCursor()));
                 case RdpProtocol.PointerDefault d -> SwingUtilities.invokeLater(
                         () -> view.setCursor(Cursor.getDefaultCursor()));
@@ -345,6 +429,7 @@ public final class RdpPane extends JPanel implements GridContent {
 
         @Override
         public void onClosed(RdpProtocol.Disconnected last, String stderrTail) {
+            closeClipboard(); // this attempt's, whether or not a reconnect has replaced it
             SwingUtilities.invokeLater(() -> {
                 if (stale()) {
                     return;
@@ -428,6 +513,10 @@ public final class RdpPane extends JPanel implements GridContent {
         closed = true;
         resizeDebounce.stop();
         clearPendingRemember();
+        if (listener != null) {
+            listener.closeClipboard();
+            listener = null;
+        }
         if (connection != null) {
             connection.close();
             connection = null;
@@ -601,6 +690,7 @@ public final class RdpPane extends JPanel implements GridContent {
             addFocusListener(new FocusAdapter() {
                 @Override
                 public void focusGained(FocusEvent e) {
+                    refreshClipboard();
                     if (onFocus != null) {
                         onFocus.run();
                     }

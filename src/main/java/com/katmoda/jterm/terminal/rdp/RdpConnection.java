@@ -77,7 +77,7 @@ public final class RdpConnection {
 
     /** What to connect to. {@code password} is copied into the CONNECT message and then zeroed. */
     public record Target(String host, int port, String user, String domain, char[] password,
-                         String pins, int width, int height, int scalePercent) {
+                         String pins, int width, int height, int scalePercent, int clipboardFlags) {
     }
 
     private final Process process;
@@ -107,7 +107,7 @@ public final class RdpConnection {
             conn.send(RdpProtocol.hello());
             conn.send(RdpProtocol.connect(target.host(), target.port(), target.user(), target.domain(),
                     target.password(), target.pins(), target.width(), target.height(),
-                    target.scalePercent()));
+                    target.scalePercent(), target.clipboardFlags()));
         } finally {
             if (target.password() != null) {
                 Arrays.fill(target.password(), '\0');
@@ -136,6 +136,23 @@ public final class RdpConnection {
     /** Asks the server to re-lay out its desktop (Display Control); ignored by servers without it. */
     public void requestResize(int width, int height, int scalePercent) {
         send(RdpProtocol.resize(width, height, scalePercent));
+    }
+
+    // Clipboard. Only meaningful for a session that enabled it (the helper ignores them otherwise).
+
+    /** Tells the server which kinds ({@code RdpProtocol.CLIPKIND_*} mask) the local clipboard can supply. */
+    public void offerClipboard(int kinds) {
+        send(RdpProtocol.clipOffer(kinds));
+    }
+
+    /** Answers a {@link RdpProtocol.ClipRequest}. Every request must be answered, even with {@code ok=false}. */
+    public void sendClipboardData(int kind, boolean ok, byte[] data) {
+        send(RdpProtocol.clipData(kind, ok, data));
+    }
+
+    /** Asks for one kind of the server's clipboard; the answer is a {@link RdpProtocol.ClipRemoteData}. */
+    public void fetchClipboard(int kind) {
+        send(RdpProtocol.clipFetch(kind));
     }
 
     public boolean isAlive() {

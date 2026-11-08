@@ -349,6 +349,25 @@ Sharp edges, all commented in place:
   pane. GNOME still renders at 100% for 150% (fractional scaling needs mutter's experimental flag).
 - **H.264** is advertised only when the helper's decoder actually starts (Media Foundation on
   Windows). Servers without a hardware encoder (orion: no VA-API driver) still send RemoteFX.
+- **Clipboard is per session and opens no channel unless asked** (`redirectClipboard`, plus
+  `clipboardToRemote` for the other direction; both go to the helper as CONNECT's `clipboardFlags`,
+  protocol v2). With both off the helper never sets `FreeRDP_RedirectClipboard`, so the server cannot
+  see that a clipboard channel exists. The helper also enforces each direction itself. Text
+  (`CF_UNICODETEXT`) and images (`CF_DIB`) only, 32 MiB cap, refused rather than truncated.
+  Remote → local needs no prompt by decision: the opt-in is the protection. Delayed rendering both
+  ways: jterm *offers kinds*, and content is read from the local clipboard only when the server
+  pastes (`CLIP_REQUEST` → `CLIP_DATA`). `RdpClipboardCodec` (Swing-free) treats the server's bytes as
+  hostile: the DIB header is checked against the data present *before* any pixel buffer exists, and
+  compressed DIBs are refused. `ui.rdp.RdpClipboardBridge` owns the system-clipboard side.
+  - **A new copy of the same kind is not a `FlavorEvent`.** `SunClipboard.checkChange` returns early
+    when the format set is unchanged (read in the bytecode), so text copied over text is silent, and
+    a Windows server keeps serving the data it already rendered until it gets a new format list.
+    `RdpClipboardBridge.refresh()` re-announces; `RdpPane` calls it on every focus gain. Don't
+    "optimise" it away by relying on the listener alone, and don't dedupe offers by kind.
+  - **No echo:** what the bridge wrote for the server is remembered by identity (`written`, set
+    *before* `setContents` because the event can fire before it returns).
+  - FreeRDP's cliprdr calls run on the RDP thread; the stdin reader thread only queues a `ClipJob`
+    and signals `g_clip_event`, like the monitor layout. Don't call the channel from the reader.
 - `RdpSessionConfig` is `@JsonIgnoreProperties(ignoreUnknown = true)`: `JsonStore` fails on unknown
   fields and quarantines the *whole* `sessions.json`. RDP nodes bumped the schema to v2 — an older
   build can't read the file (one-way upgrade).
