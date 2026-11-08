@@ -175,7 +175,7 @@ jobs:
           # --input lands in the install's app\ dir: the helper (and its DLLs, which Windows loads
           # from the exe's own directory first) ends up in app\rdp\, where RdpHelperLocator looks.
           # No jars there, so jpackage's classpath stays jterm.jar alone.
-          cp native/rdp-helper/build/stage/* staging/rdp/
+          cp -a native/rdp-helper/build/stage/. staging/rdp/
           ICON_ARG=""
           [ -f app.ico ] && ICON_ARG="--icon app.ico"
           jpackage \
