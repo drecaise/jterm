@@ -1418,6 +1418,7 @@ public final class SessionSidebar extends JPanel {
         tabs.addTab("Basic settings", basic);
         tabs.addTab("Display", display);
         tabs.addTab("Local resources", resources);
+        matchSshDialogWidth(tabs, basic, display, resources);
 
         int result = DialogFocus.showConfirm(this, tabs, title, name);
         if (result != JOptionPane.OK_OPTION) {
@@ -1751,6 +1752,23 @@ public final class SessionSidebar extends JPanel {
         return combo;
     }
 
+
+    /**
+     * Gives the RDP dialog the width of the SSH one. A tabbed pane is as wide as its widest tab, and
+     * the SSH tabs hold wide forms (terminal settings, jump hosts) where the RDP tabs are short
+     * fields in a grid, so left alone the RDP dialog opens visibly narrower. The floor is measured
+     * from the same terminal-settings form the SSH dialog uses, so it follows font and UI scaling.
+     */
+    private static void matchSshDialogWidth(JTabbedPane tabs, JComponent... pages) {
+        int sshContent = new TerminalSettingsForm(true, "", "", "", 0).component().getPreferredSize().width;
+        int ownContent = 0;
+        for (JComponent page : pages) {
+            ownContent = Math.max(ownContent, page.getPreferredSize().width);
+        }
+        Dimension pref = tabs.getPreferredSize();
+        int chrome = pref.width - ownContent; // tab border and insets around the page
+        tabs.setPreferredSize(new Dimension(Math.max(pref.width, sshContent + chrome), pref.height));
+    }
 
     private static JPanel formPanel() {
         return new JPanel(new GridLayout(0, 2, 6, 6));
