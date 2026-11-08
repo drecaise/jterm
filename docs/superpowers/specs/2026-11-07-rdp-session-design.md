@@ -329,7 +329,11 @@ Windows always also offers `CF_DIB`), clip-data locking.
 
 **Verified:** unit tests for the protocol, the codec and the bridge (against a private
 `Clipboard`), and the helper's v2 handshake and `CONNECT` parsing against a closed port.
-**Not yet verified against a live server.**
+
+**Live (2026-11-08)**, against Windows 11 Pro 23H2 (a Proxmox VM) from jterm on Rocky Linux 10
+(Wayland, via XWayland), with sharing on: text both ways, text copied over text (the focus
+re-announce), and images both ways all worked. Not exercised live: sharing off, `Remote can paste
+mine` off, GNOME Remote Desktop as the server, and a transfer near the 32 MiB cap.
 
 ## Spike status
 
