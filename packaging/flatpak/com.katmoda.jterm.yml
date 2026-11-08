@@ -65,6 +65,14 @@ modules:
       - -DWITH_SHADOW=OFF
       - -DWITH_PROXY=OFF
       - -DWITH_SAMPLE=OFF
+      # H.264: OpenH264 is loaded at run time and never bundled (Cisco's patent license covers only
+      # the binary Cisco delivers; the runtime's org.freedesktop.Platform.openh264 extension is that
+      # binary). The build needs only its headers, plus a placeholder file for configure's library
+      # check; neither lands in the app. See native/rdp-helper/build-freerdp-linux.sh.
+      - -DWITH_OPENH264=ON
+      - -DWITH_OPENH264_LOADING=ON
+      - -DOPENH264_INCLUDE_DIR=/run/build/freerdp/openh264-src/codec/api
+      - -DOPENH264_LIBRARY=/run/build/freerdp/openh264-src/libopenh264.so
       - -DWITH_FFMPEG=OFF
       - -DWITH_SWSCALE=OFF
       - -DWITH_WEBVIEW=OFF
@@ -97,6 +105,16 @@ modules:
       - type: archive
         url: https://github.com/FreeRDP/FreeRDP/archive/refs/tags/3.33.0.tar.gz
         sha256: 3b5e7733e667ad66f54e0db51d952268c9d08b2e71a4fade44c716ab29dd5657
+      # OpenH264 headers (BSD) — keep the version in step with OH264_VERSION in build-freerdp-linux.sh.
+      - type: archive
+        url: https://github.com/cisco/openh264/archive/refs/tags/v2.6.0.tar.gz
+        sha256: 558544ad358283a7ab2930d69a9ceddf913f4a51ee9bf1bfb9e377322af81a69
+        strip-components: 1
+        dest: openh264-src
+      - type: inline
+        contents: placeholder
+        dest: openh264-src
+        dest-filename: libopenh264.so
 
   - name: jterm-rdp-helper
     buildsystem: simple

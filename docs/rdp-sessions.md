@@ -94,6 +94,23 @@ With sharing off, the server isn't told that a clipboard exists.
 A disconnected desktop stays in its pane with **Reconnect** and **Close** buttons and the reason it
 ended.
 
+## H.264 video
+
+H.264 is smoother and lighter on the network than the fallback formats. Where the decoder comes from
+depends on the system, because H.264 is patent-encumbered and jterm cannot simply ship one:
+
+| System | Decoder | What you do |
+|---|---|---|
+| Windows | Media Foundation, part of Windows | Nothing. (Windows "N" editions need Microsoft's Media Feature Pack.) |
+| macOS | VideoToolbox, part of macOS | Nothing. |
+| Linux (RPM, DEB, snap, jar) | Cisco's OpenH264 | Turn on **Preferences → General → H.264 video for RDP**. jterm downloads Cisco's decoder (about 0.6 MB) into your settings folder, checks it against a known checksum, and you can turn it off again, which deletes it. |
+| Linux Flatpak | The runtime's `org.freedesktop.Platform.openh264` extension | Nothing; Flatpak installs it with the runtime. |
+
+*OpenH264 Video Codec provided by Cisco Systems, Inc.* Cisco's patent license covers the decoder when
+it is downloaded to your machine as above. jterm's installers contain no H.264 codec.
+
+Without a decoder the session still works; the server just sends another format.
+
 ## Requirements and limitations
 
 - RDP support uses a bundled FreeRDP helper. If a build of jterm doesn't include it, the pane says
@@ -103,5 +120,6 @@ ended.
   the server.
 - Full-screen video is only smooth when the server can encode **H.264**. jterm decodes it when the
   server offers it. A Linux server without a hardware video encoder sends a slower format.
+  See "H.264 video" below for where the decoder comes from on each system.
 - GNOME Remote Desktop applies display scaling only in whole steps (100% or 200%) unless fractional
   scaling is enabled on the server.

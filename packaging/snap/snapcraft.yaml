@@ -47,6 +47,7 @@ parts:
     source: rdp-helper-src
     build-packages:
       - git
+      - curl
       - cmake
       - ninja-build
       - gcc

@@ -7,7 +7,7 @@
 #   <workdir>/src    FreeRDP checkout (cloned if missing)
 #   <workdir>/dist   install prefix: lib/, include/  (the helper builds against this)
 #
-# Needs: git cmake ninja gcc pkg-config, and the OpenSSL, zlib and cJSON development packages
+# Needs: git curl cmake ninja gcc pkg-config, and the OpenSSL, zlib and cJSON development packages
 # (Rocky/RHEL: openssl-devel zlib-ng-compat-devel cjson-devel[EPEL]; Debian/Ubuntu: libssl-dev
 # zlib1g-dev libcjson-dev).
 set -eu
@@ -18,6 +18,23 @@ mkdir -p "$WORK"
 
 if [ ! -d "$WORK/src/.git" ]; then
     git clone --depth 1 --branch "$VERSION" https://github.com/FreeRDP/FreeRDP.git "$WORK/src"
+fi
+
+# H.264: FreeRDP loads Cisco's OpenH264 at run time (WITH_OPENH264_LOADING) and ships none. Only the
+# BSD-licensed headers are needed here. The library is never built, linked or bundled: Cisco's patent
+# license covers only the binary Cisco itself delivers to the user's machine (see
+# docs/rdp-sessions.md, "H.264 on Linux"). FreeRDP's configure insists that an OPENH264_LIBRARY file
+# exists, so it gets an empty placeholder; nothing is linked against it.
+OH264_VERSION=2.6.0
+OH264_SHA256=558544ad358283a7ab2930d69a9ceddf913f4a51ee9bf1bfb9e377322af81a69
+OH264="$WORK/openh264-$OH264_VERSION"
+if [ ! -f "$OH264/include/wels/codec_api.h" ]; then
+    mkdir -p "$OH264/include" "$OH264/lib"
+    curl -fsSL -o "$OH264/src.tar.gz" "https://github.com/cisco/openh264/archive/refs/tags/v$OH264_VERSION.tar.gz"
+    echo "$OH264_SHA256  $OH264/src.tar.gz" | sha256sum -c -
+    tar -xzf "$OH264/src.tar.gz" -C "$OH264/include" --strip-components=3 "openh264-$OH264_VERSION/codec/api/wels"
+    rm -f "$OH264/src.tar.gz"
+    : > "$OH264/lib/libopenh264.so"
 fi
 
 # Client libraries only: no stock clients (so no X11/Wayland/SDL), no server, no audio/printing/
@@ -34,6 +51,8 @@ cmake -S "$WORK/src" -B "$WORK/build" -G Ninja \
     -DWITH_CLIENT_COMMON=ON -DWITH_CLIENT=OFF -DWITH_CLIENT_SDL=OFF \
     -DWITH_X11=OFF -DWITH_WAYLAND=OFF \
     -DWITH_SERVER=OFF -DWITH_SHADOW=OFF -DWITH_PROXY=OFF -DWITH_SAMPLE=OFF \
+    -DWITH_OPENH264=ON -DWITH_OPENH264_LOADING=ON \
+    -DOPENH264_INCLUDE_DIR="$OH264/include" -DOPENH264_LIBRARY="$OH264/lib/libopenh264.so" \
     -DWITH_FFMPEG=OFF -DWITH_SWSCALE=OFF -DWITH_WEBVIEW=OFF -DWITH_MANPAGES=OFF \
     -DWITH_PULSE=OFF -DWITH_ALSA=OFF -DWITH_OSS=OFF -DWITH_CUPS=OFF -DWITH_PCSC=OFF \
     -DWITH_FUSE=OFF -DWITH_KRB5=OFF -DWITH_PKCS11=OFF -DWITH_URIPARSER=OFF \

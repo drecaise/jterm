@@ -16,6 +16,8 @@ set declared in `pom.xml` and must be updated when dependencies change.
 | EdDSA-Java (ed25519) | `net.i2p.crypto:eddsa` | 0.3.0 | CC0-1.0 (public domain) | https://creativecommons.org/publicdomain/zero/1.0/legalcode |
 | Jackson Databind | `com.fasterxml.jackson.core:jackson-databind` | 2.19.0 | Apache-2.0 | https://www.apache.org/licenses/LICENSE-2.0 |
 | java-keyring | `com.github.javakeyring:java-keyring` | 1.0.4 | ISC (see note) | https://opensource.org/licenses/ISC |
+| Apache Commons Compress | `org.apache.commons:commons-compress` | 1.28.0 | Apache-2.0 | https://www.apache.org/licenses/LICENSE-2.0 |
+| Apache Commons Codec / IO / Lang | `commons-codec`, `commons-io`, `org.apache.commons:commons-lang3` (via Commons Compress) | 1.19.0 / 2.20.0 / 3.18.0 | Apache-2.0 | https://www.apache.org/licenses/LICENSE-2.0 |
 | SLF4J Simple | `org.slf4j:slf4j-simple` | 2.0.13 | MIT | https://opensource.org/licenses/MIT |
 
 ## Native components (RDP helper)
@@ -33,7 +35,28 @@ by `native/rdp-helper/FREERDP_VERSION` and, on Windows, by the `vcpkg.json` base
 | Microsoft Visual C++ runtime | 14.x | Windows | Microsoft redistributable | https://visualstudio.microsoft.com/license-terms/ |
 
 On Windows, H.264 decoding uses the operating system's Media Foundation decoder; no H.264 codec is
-bundled.
+bundled. On macOS it will use Apple's VideoToolbox.
+
+**OpenH264 (Linux, optional, not bundled).** On Linux the helper can load Cisco's OpenH264 decoder.
+jterm does not ship it: when the user turns on Preferences → General → "H.264 video for RDP", jterm
+downloads Cisco's own binary from `ciscobinary.openh264.org` (checked against a pinned SHA-256) into
+the user's settings folder. The Flatpak uses the runtime's `org.freedesktop.Platform.openh264`
+extension instead. FreeRDP is built against OpenH264's BSD-licensed headers only.
+
+> About the Cisco-provided binary of OpenH264: it is provided under the BSD license, and is licensed
+> under Cisco's AVC/H.264 Patent Portfolio License from MPEG LA, at no cost to the user, provided that
+> the conditions in https://www.openh264.org/BINARY_LICENSE.txt are met. This product's use of the
+> binary is as follows: the Cisco-provided binary is separately downloaded to the end user's device and
+> is not integrated into or combined with third party software prior to being downloaded; the end user
+> can control (enable, disable or re-enable) its use; and the text "OpenH264 Video Codec provided by
+> Cisco Systems, Inc." is displayed where the user controls it.
+>
+> AVC/H.264 PATENT PORTFOLIO LICENSE NOTICE: THIS PRODUCT IS LICENSED UNDER THE AVC PATENT PORTFOLIO
+> LICENSE FOR THE PERSONAL USE OF A CONSUMER OR OTHER USES IN WHICH IT DOES NOT RECEIVE REMUNERATION TO
+> (i) ENCODE VIDEO IN COMPLIANCE WITH THE AVC STANDARD ("AVC VIDEO") AND/OR (ii) DECODE AVC VIDEO THAT
+> WAS ENCODED BY A CONSUMER ENGAGED IN A PERSONAL ACTIVITY AND/OR WAS OBTAINED FROM A VIDEO PROVIDER
+> LICENSED TO PROVIDE AVC VIDEO. NO LICENSE IS GRANTED OR SHALL BE IMPLIED FOR ANY OTHER USE.
+> ADDITIONAL INFORMATION MAY BE OBTAINED FROM MPEG LA, L.L.C. SEE HTTP://WWW.MPEGLA.COM
 
 ## Notices and obligations
 

@@ -368,6 +368,18 @@ Sharp edges, all commented in place:
     *before* `setContents` because the event can fire before it returns).
   - FreeRDP's cliprdr calls run on the RDP thread; the stdin reader thread only queues a `ClipJob`
     and signals `g_clip_event`, like the monitor layout. Don't call the channel from the reader.
+- **H.264 decoders, and why Linux downloads one.** Windows uses Media Foundation, macOS has VideoToolbox
+  built into FreeRDP 3.33 (default on; the macOS helper build does not exist yet). On Linux FreeRDP is
+  built with `WITH_OPENH264_LOADING` (headers only, from a pinned Cisco source tarball; configure
+  insists on a library file, so it gets an empty placeholder) and the packages carry **no codec**:
+  Cisco's patent license covers only the binary *Cisco* delivers to the user's machine, separately,
+  user-controllable, with the notice shown where it is controlled. A self-built or installer-bundled
+  copy has no patent license. So `terminal.rdp.OpenH264` downloads Cisco's `.so.bz2` on opt-in
+  (Preferences → General), verifies a **pinned SHA-256** before touching it, and `RdpPane` passes its
+  directory to the helper as `LD_LIBRARY_PATH` (`Target.codecDir`). The helper decides per connect
+  (`h264_decoder_available`), so enabling needs no restart. Flatpak relies on the runtime's openh264
+  extension instead. **Don't bundle a codec in any installer, and keep the pinned hashes and
+  `OH264_VERSION` in step with a version bump** (the Flatpak manifest has the header tarball too).
 - `RdpSessionConfig` is `@JsonIgnoreProperties(ignoreUnknown = true)`: `JsonStore` fails on unknown
   fields and quarantines the *whole* `sessions.json`. RDP nodes bumped the schema to v2 — an older
   build can't read the file (one-way upgrade).

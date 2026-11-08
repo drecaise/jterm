@@ -23,6 +23,8 @@ import com.katmoda.jterm.dnd.DropRegion;
 import com.katmoda.jterm.icon.IconLibrary;
 import com.katmoda.jterm.security.CredentialResolver;
 import com.katmoda.jterm.session.RdpSessionConfig;
+import com.katmoda.jterm.config.AppSettings;
+import com.katmoda.jterm.terminal.rdp.OpenH264;
 import com.katmoda.jterm.terminal.rdp.RdpConnection;
 import com.katmoda.jterm.terminal.rdp.RdpHelperLocator;
 import com.katmoda.jterm.terminal.rdp.RdpKeyMap;
@@ -250,7 +252,8 @@ public final class RdpPane extends JPanel implements GridContent {
                 services.knownHosts().pinsForConnect(cfg.getHost(), cfg.getPort()),
                 size.width, size.height, scalePercent(),
                 RdpProtocol.clipboardFlags(cfg.isRedirectClipboard(),
-                        cfg.isRedirectClipboard() && cfg.isClipboardToRemote()));
+                        cfg.isRedirectClipboard() && cfg.isClipboardToRemote()),
+                OpenH264.libraryDir(AppSettings.get().isOpenH264Enabled(), OpenH264.defaultDir()));
         try {
             listener = new Listener(myGeneration);
             connection = RdpConnection.start(helper, target, listener);

@@ -77,7 +77,8 @@ public final class RdpConnection {
 
     /** What to connect to. {@code password} is copied into the CONNECT message and then zeroed. */
     public record Target(String host, int port, String user, String domain, char[] password,
-                         String pins, int width, int height, int scalePercent, int clipboardFlags) {
+                         String pins, int width, int height, int scalePercent, int clipboardFlags,
+                         Path codecDir) {
     }
 
     private final Process process;
@@ -99,6 +100,12 @@ public final class RdpConnection {
     public static RdpConnection start(Path helper, Target target, Listener listener) throws IOException {
         ProcessBuilder pb = new ProcessBuilder(helper.toAbsolutePath().toString());
         pb.environment().putIfAbsent("WLOG_LEVEL", "WARN");
+        if (target.codecDir() != null) {
+            // Where the helper's FreeRDP finds a downloaded libopenh264 (see OpenH264).
+            String inherited = pb.environment().get("LD_LIBRARY_PATH");
+            pb.environment().put("LD_LIBRARY_PATH", target.codecDir()
+                    + (inherited == null || inherited.isBlank() ? "" : java.io.File.pathSeparator + inherited));
+        }
         pb.redirectError(ProcessBuilder.Redirect.PIPE);
         Process process = pb.start();
         RdpConnection conn = new RdpConnection(process, listener);

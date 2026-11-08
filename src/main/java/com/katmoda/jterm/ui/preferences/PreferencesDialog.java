@@ -24,6 +24,7 @@ import com.katmoda.jterm.config.AppSettings;
 import com.katmoda.jterm.macro.Macro;
 import com.katmoda.jterm.macro.MacroCrypto;
 import com.katmoda.jterm.macro.MacroLibrary;
+import com.katmoda.jterm.terminal.rdp.OpenH264;
 import com.katmoda.jterm.security.VaultException;
 import com.katmoda.jterm.security.VaultKeys;
 import com.katmoda.jterm.security.VaultManager;
@@ -45,6 +46,9 @@ import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JProgressBar;
+import javax.swing.SwingUtilities;
+import javax.swing.SwingWorker;
 import javax.swing.JPasswordField;
 import javax.swing.JSpinner;
 import javax.swing.JTabbedPane;
@@ -52,6 +56,10 @@ import javax.swing.JTextField;
 import javax.swing.SpinnerNumberModel;
 import java.awt.BorderLayout;
 import java.awt.Component;
+import java.awt.Dialog;
+import java.awt.Window;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.awt.FlowLayout;
 import java.awt.GraphicsEnvironment;
 import java.awt.GridLayout;
@@ -100,6 +108,7 @@ public final class PreferencesDialog {
         ToggleSwitch showWorkingDirectory = new ToggleSwitch(settings.isShowWorkingDirectory());
         ToggleSwitch checkForUpdates = new ToggleSwitch(settings.isUpdateCheckEnabled());
         ToggleSwitch encryptMacros = new ToggleSwitch(settings.isEncryptMacros());
+        ToggleSwitch openH264 = new ToggleSwitch(settings.isOpenH264Enabled());
         JPanel general = new JPanel(new GridBagLayout());
         int row = 0;
         addToggleRow(general, row++, "Copy to clipboard on select:", copyOnSelect);
@@ -133,6 +142,16 @@ public final class PreferencesDialog {
                 + " and a macro's text is still typed into the terminal in the clear.");
         addHint(general, row++, "If you lose the master password, encrypted macros cannot be"
                 + " recovered — export them first if you want a copy you can still read.");
+        if (OpenH264.assetForThisMachine() != null) {
+            addToggleRow(general, row++, "H.264 video for RDP:", openH264);
+            addHint(general, row++, "Lets remote desktops send H.264 video, which is smoother and lighter"
+                    + " on the network. Turning it on downloads Cisco's OpenH264 decoder from Cisco"
+                    + " (about 0.6 MB) into your jterm settings folder; turning it off deletes it. "
+                    + OpenH264.NOTICE);
+        } else if (OpenH264.providedByFlatpak()) {
+            addHint(general, row++, "H.264 video for RDP comes from the Flatpak runtime's OpenH264"
+                    + " extension (org.freedesktop.Platform.openh264). " + OpenH264.NOTICE);
+        }
 
         // Appearance: the scale and font of the application chrome (sidebar, tabs, menus, dialogs).
         // All three are read by ThemeManager at startup only, hence the restart notice on OK.
@@ -294,6 +313,7 @@ public final class PreferencesDialog {
         // Applied before the settings are saved: re-writing macros.json in the other form can fail
         // or be cancelled, and the flag must not end up claiming a state the file is not in.
         applyMacroEncryption(parent, settings, encryptMacros.isSelected());
+        applyOpenH264(parent, settings, openH264.isSelected());
         // Remember the pre-edit UI scale/font so we only nag about restarting when one changed.
         String previousUiAppearance = uiAppearanceKey(settings);
         settings.setUiScalePercent(percentValue(uiScale.getSelectedItem()));
@@ -433,6 +453,84 @@ public final class PreferencesDialog {
                     "Your macros could not be rewritten, so this setting was left unchanged.",
                     "Encrypt Macros", JOptionPane.ERROR_MESSAGE);
         }
+    }
+
+    /**
+     * Switches the downloaded H.264 decoder on or off. Turning it on fetches Cisco's build after the
+     * user has seen what is downloaded and the Cisco notice (a condition of Cisco's patent license);
+     * the setting changes only if the download succeeds, so it never claims a codec that is not there.
+     */
+    private static void applyOpenH264(Component parent, AppSettings settings, boolean enable) {
+        OpenH264.Asset asset = OpenH264.assetForThisMachine();
+        if (asset == null || enable == settings.isOpenH264Enabled()) {
+            return;
+        }
+        Path dir = OpenH264.defaultDir();
+        if (!enable) {
+            settings.setOpenH264Enabled(false);
+            try {
+                OpenH264.remove(dir);
+            } catch (IOException e) {
+                // the setting is off either way; a leftover file is not loaded
+            }
+            return;
+        }
+        if (!OpenH264.isInstalled(dir)) {
+            int answer = JOptionPane.showConfirmDialog(parent,
+                    "jterm will now download Cisco's OpenH264 video decoder (about 0.6 MB) from\n"
+                    + "ciscobinary.openh264.org and use it for H.264 video in RDP sessions.\n\n"
+                    + OpenH264.NOTICE + "\n\n"
+                    + "Cisco's patent license covers the codec when it is downloaded this way.\n"
+                    + "You can turn it off again here at any time.",
+                    "Download H.264 Codec", JOptionPane.OK_CANCEL_OPTION, JOptionPane.INFORMATION_MESSAGE);
+            if (answer != JOptionPane.OK_OPTION) {
+                return;
+            }
+            IOException failure = downloadWithProgress(parent, dir, asset);
+            if (failure != null) {
+                ErrorDialog.show(parent, "Download H.264 Codec", "The codec could not be downloaded:", failure);
+                return;
+            }
+        }
+        settings.setOpenH264Enabled(true);
+    }
+
+    /** Runs the download behind a modal progress dialog. Returns the failure, or {@code null}. */
+    private static IOException downloadWithProgress(Component parent, Path dir, OpenH264.Asset asset) {
+        Window owner = parent == null ? null : SwingUtilities.getWindowAncestor(parent);
+        javax.swing.JDialog dialog = new javax.swing.JDialog(owner, "Downloading H.264 codec",
+                Dialog.ModalityType.APPLICATION_MODAL);
+        dialog.setDefaultCloseOperation(javax.swing.JDialog.DO_NOTHING_ON_CLOSE);
+        JProgressBar bar = new JProgressBar();
+        bar.setIndeterminate(true);
+        JPanel box = new JPanel(new BorderLayout(0, 8));
+        box.setBorder(BorderFactory.createEmptyBorder(16, 20, 16, 20));
+        box.add(new JLabel("Downloading Cisco's OpenH264 codec…"), BorderLayout.NORTH);
+        box.add(bar, BorderLayout.CENTER);
+        dialog.setContentPane(box);
+        dialog.pack();
+        dialog.setLocationRelativeTo(parent);
+        IOException[] failure = new IOException[1];
+        // done() runs on the EDT, which is busy inside setVisible below, so it cannot fire before
+        // the dialog is up.
+        new SwingWorker<Void, Void>() {
+            @Override
+            protected Void doInBackground() {
+                try {
+                    OpenH264.install(dir, asset);
+                } catch (IOException e) {
+                    failure[0] = e;
+                }
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                dialog.dispose();
+            }
+        }.execute();
+        dialog.setVisible(true);
+        return failure[0];
     }
 
     private static void addToggleRow(JPanel form, int row, String label, ToggleSwitch toggle) {

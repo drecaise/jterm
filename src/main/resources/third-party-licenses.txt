@@ -79,6 +79,24 @@ cJSON — 1.7.19 (Windows; the distribution's package on Linux)
     License: MIT License
     https://github.com/DaveGamble/cJSON
 
+OpenH264 (Linux, optional; downloaded on request, not bundled) — 2.6.0
+    H.264 video decoding in RDP sessions. OpenH264 Video Codec provided by Cisco Systems, Inc.
+    The Cisco-provided binary is licensed under the BSD license and under Cisco's AVC/H.264 Patent
+    Portfolio License from MPEG LA, at no cost to you, provided it is downloaded separately to your
+    device (as jterm does when you turn on "H.264 video for RDP" in Preferences) and you can control
+    its use. https://www.openh264.org/BINARY_LICENSE.txt
+    AVC/H.264 PATENT PORTFOLIO LICENSE NOTICE: THIS PRODUCT IS LICENSED UNDER THE AVC PATENT PORTFOLIO
+    LICENSE FOR THE PERSONAL USE OF A CONSUMER OR OTHER USES IN WHICH IT DOES NOT RECEIVE REMUNERATION
+    TO (i) ENCODE VIDEO IN COMPLIANCE WITH THE AVC STANDARD ("AVC VIDEO") AND/OR (ii) DECODE AVC VIDEO
+    THAT WAS ENCODED BY A CONSUMER ENGAGED IN A PERSONAL ACTIVITY AND/OR WAS OBTAINED FROM A VIDEO
+    PROVIDER LICENSED TO PROVIDE AVC VIDEO. NO LICENSE IS GRANTED OR SHALL BE IMPLIED FOR ANY OTHER USE.
+    ADDITIONAL INFORMATION MAY BE OBTAINED FROM MPEG LA, L.L.C. SEE HTTP://WWW.MPEGLA.COM
+
+Apache Commons Compress 1.28.0 (with Commons Codec, IO and Lang)
+    bzip2 unpacking of the OpenH264 download.
+    License: Apache License 2.0
+    https://commons.apache.org/proper/commons-compress/
+
 Microsoft Visual C++ runtime (Windows)
     Redistributed under Microsoft's Visual Studio license terms.
 

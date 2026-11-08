@@ -8,6 +8,9 @@ set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 DIST=${1:-$HERE/build/freerdp/dist}
 
+# A clean stage every time: on a re-run ldd would resolve cJSON to the stage's own copy of it.
+rm -rf "$HERE/build/stage"
+
 cmake -S "$HERE" -B "$HERE/build/helper" -G Ninja -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_PREFIX_PATH="$DIST" -DCMAKE_INSTALL_PREFIX="$HERE/build/stage"
 cmake --build "$HERE/build/helper"

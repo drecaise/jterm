@@ -10,13 +10,13 @@ case "$ID" in
     rocky|rhel|almalinux|centos)
         dnf -y install dnf-plugins-core epel-release
         dnf config-manager --set-enabled crb
-        dnf -y install git cmake ninja-build gcc gcc-c++ make patchelf \
+        dnf -y install git curl cmake ninja-build gcc gcc-c++ make patchelf \
             'pkgconfig(openssl)' 'pkgconfig(zlib)' 'pkgconfig(libcjson)'
         ;;
     ubuntu|debian)
         export DEBIAN_FRONTEND=noninteractive
         apt-get update
-        apt-get install -y --no-install-recommends ca-certificates git cmake ninja-build \
+        apt-get install -y --no-install-recommends ca-certificates curl git cmake ninja-build \
             gcc g++ make pkg-config patchelf libssl-dev zlib1g-dev libcjson-dev
         ;;
     *)
