@@ -107,8 +107,8 @@ modules:
         sha256: 3b5e7733e667ad66f54e0db51d952268c9d08b2e71a4fade44c716ab29dd5657
       # OpenH264 headers (BSD) — keep the version in step with OH264_VERSION in build-freerdp-linux.sh.
       - type: archive
-        url: https://github.com/cisco/openh264/archive/refs/tags/v2.6.0.tar.gz
-        sha256: 558544ad358283a7ab2930d69a9ceddf913f4a51ee9bf1bfb9e377322af81a69
+        url: https://github.com/cisco/openh264/archive/refs/tags/v2.7.0.tar.gz
+        sha256: 5178775c8b440073e70920e97d195efff721c0e56d0a78cc82c919e95d54924d
         strip-components: 1
         dest: openh264-src
       - type: inline

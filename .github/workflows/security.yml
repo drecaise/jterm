@@ -87,3 +87,16 @@ jobs:
       - run: .github/check-freerdp.sh
         env:
           GITHUB_TOKEN: ${{ github.token }}
+
+  # The OpenH264 decoder jterm downloads on Linux (and builds FreeRDP's headers against). Native,
+  # fed by the remote server, pinned by hash and so updated only by a jterm release -- the Maven scan
+  # can't see it. Fails on a published advisory affecting the pin, on a newer release more than 14
+  # days old, and on the pins (OpenH264.java, build-freerdp-linux.sh, the Flatpak manifest) drifting
+  # or no longer matching Cisco's files. See .github/check-openh264.sh (runs locally too).
+  openh264:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: .github/check-openh264.sh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

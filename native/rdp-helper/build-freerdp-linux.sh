@@ -25,8 +25,8 @@ fi
 # license covers only the binary Cisco itself delivers to the user's machine (see
 # docs/rdp-sessions.md, "H.264 on Linux"). FreeRDP's configure insists that an OPENH264_LIBRARY file
 # exists, so it gets an empty placeholder; nothing is linked against it.
-OH264_VERSION=2.6.0
-OH264_SHA256=558544ad358283a7ab2930d69a9ceddf913f4a51ee9bf1bfb9e377322af81a69
+OH264_VERSION=2.7.0
+OH264_SHA256=5178775c8b440073e70920e97d195efff721c0e56d0a78cc82c919e95d54924d
 OH264="$WORK/openh264-$OH264_VERSION"
 if [ ! -f "$OH264/include/wels/codec_api.h" ]; then
     mkdir -p "$OH264/include" "$OH264/lib"

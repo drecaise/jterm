@@ -79,7 +79,7 @@ cJSON — 1.7.19 (Windows; the distribution's package on Linux)
     License: MIT License
     https://github.com/DaveGamble/cJSON
 
-OpenH264 (Linux, optional; downloaded on request, not bundled) — 2.6.0
+OpenH264 (Linux, optional; downloaded on request, not bundled) — 2.7.0
     H.264 video decoding in RDP sessions. OpenH264 Video Codec provided by Cisco Systems, Inc.
     The Cisco-provided binary is licensed under the BSD license and under Cisco's AVC/H.264 Patent
     Portfolio License from MPEG LA, at no cost to you, provided it is downloaded separately to your

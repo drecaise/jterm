@@ -61,7 +61,7 @@ public final class OpenH264 {
     /** Shown wherever the user controls the codec, and in the license information (Cisco's condition 3/4). */
     public static final String NOTICE = "OpenH264 Video Codec provided by Cisco Systems, Inc.";
 
-    public static final String VERSION = "2.6.0";
+    public static final String VERSION = "2.7.0";
 
     /** The file name FreeRDP's loader tries first for this release (the library's soname). */
     static final String LIBRARY_FILE = "libopenh264.so.8";
@@ -87,9 +87,9 @@ public final class OpenH264 {
         }
         return switch (osArch.toLowerCase(Locale.ROOT)) {
             case "amd64", "x86_64" -> new Asset("libopenh264-" + VERSION + "-linux64.8.so.bz2",
-                    "27ab53323c110b76214c1c72222f459d17febbcd1e252136cadc292b0308d75b");
+                    "44ad0dd2c5af2bac84d26f89f2eb4e268708b8739323d15d33837f7221ce4980");
             case "aarch64", "arm64" -> new Asset("libopenh264-" + VERSION + "-linux-arm64.8.so.bz2",
-                    "a78aea7970150f46bcd3bb7994c9e6dd90bd7a9ea785920f5a73f6964e3fcda7");
+                    "74c7a1d02003d80daf2b4bc7bbb02f73e5548debd4c158b495e1f83d80ebd136");
             default -> null;
         };
     }

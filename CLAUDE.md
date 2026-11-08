@@ -380,6 +380,10 @@ Sharp edges, all commented in place:
   (`h264_decoder_available`), so enabling needs no restart. Flatpak relies on the runtime's openh264
   extension instead. **Don't bundle a codec in any installer, and keep the pinned hashes and
   `OH264_VERSION` in step with a version bump** (the Flatpak manifest has the header tarball too).
+  The `Security` workflow's `openh264` job (`.github/check-openh264.sh`, runnable locally) fails on an
+  advisory affecting the pin, a release more than 14 days newer, or pin drift / hashes that no longer
+  match Cisco's files. Bumping OpenH264 touches `OpenH264.java`, `build-freerdp-linux.sh`, the Flatpak
+  manifest and `third-party-licenses.txt`; the script checks the first three agree.
 - `RdpSessionConfig` is `@JsonIgnoreProperties(ignoreUnknown = true)`: `JsonStore` fails on unknown
   fields and quarantines the *whole* `sessions.json`. RDP nodes bumped the schema to v2 — an older
   build can't read the file (one-way upgrade).
