@@ -1,0 +1,49 @@
+jterm: never read FreeRDP's or WinPR's system-wide JSON configuration files.
+
+Besides certificates.json (patch 0001), a system-wide folder is searched for:
+  settings-defaults-client.json  any FreeRDP setting, applied as a default: it can turn
+                                 certificate checking off or route the connection through a proxy
+  the CredSSP configuration      "SspiModule" names a library that is then LOADED for authentication
+  the NTLM/Negotiate ones        authentication policy
+  remotefx.json                  codec tuning
+On Windows that folder is %ProgramData%\<vendor>\<product>\, and every local user may create
+folders under %ProgramData%. One user of a shared PC could therefore run code in, or take the
+certificate check out of, every other user's RDP helper, the process that holds their password.
+Elsewhere the folder is the build machine's install prefix, which is nobody's to rely on.
+
+jterm configures the helper itself and wants no system-wide policy, so both loaders return
+"no file" for the system-wide location. Per-user files are untouched (the user's own).
+
+Applies to the FreeRDP version in ../FREERDP_VERSION; regenerate it for a new version rather
+than dropping it.
+
+diff --git a/libfreerdp/utils/helpers.c b/libfreerdp/utils/helpers.c
+index b92ae82..7998296 100644
+--- a/libfreerdp/utils/helpers.c
++++ b/libfreerdp/utils/helpers.c
+@@ -300,6 +300,10 @@ char* freerdp_GetConfigFilePath(BOOL system, const char* filename)
+ 
+ WINPR_JSON* freerdp_GetJSONConfigFile(BOOL system, const char* filename)
+ {
++	/* jterm: no system-wide configuration file is ever read (see the patch's description). */
++	if (system)
++		return nullptr;
++
+ 	char* path = freerdp_GetConfigFilePath(system, filename);
+ 	if (!path)
+ 		return nullptr;
+diff --git a/winpr/libwinpr/path/path.c b/winpr/libwinpr/path/path.c
+index 389b362..600f4f8 100644
+--- a/winpr/libwinpr/path/path.c
++++ b/winpr/libwinpr/path/path.c
+@@ -1421,6 +1421,10 @@ char* winpr_GetConfigFilePathV(BOOL system, const char* filename, ...)
+ 
+ WINPR_JSON* winpr_GetJSONConfigFile(BOOL system, const char* filename)
+ {
++	/* jterm: no system-wide configuration file is ever read (see the patch's description). */
++	if (system)
++		return nullptr;
++
+ 	char* path = winpr_GetConfigFilePath(system, filename);
+ 	if (!path)
+ 		return nullptr;

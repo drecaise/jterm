@@ -38,6 +38,9 @@ Autoreq: 0
 %if "xPACKAGE_DEFAULT_DEPENDENCIES" != "x" || "xPACKAGE_CUSTOM_DEPENDENCIES" != "x"
 Requires: PACKAGE_DEFAULT_DEPENDENCIES PACKAGE_CUSTOM_DEPENDENCIES
 %endif
+# RDP smart cards talk to pcscd through libpcsclite (loaded at run time by absolute path). Optional:
+# without it the session dialog finds no reader and no smart-card device is announced.
+Recommends: pcsc-lite
 
 #comment line below to enable effective jar compression
 #it could easily get your package size from 40 to 15Mb but

@@ -64,6 +64,11 @@ public final class TunnelManager {
         return active.containsKey(tunnelId);
     }
 
+    /** How many tunnels are running (for the quit confirmation). */
+    public int runningCount() {
+        return active.size();
+    }
+
     /** The bound listen address of a running tunnel (for status display), or {@code null}. */
     public SshdSocketAddress boundAddress(String tunnelId) {
         ActiveTunnel t = active.get(tunnelId);

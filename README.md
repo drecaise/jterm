@@ -84,7 +84,7 @@ Each [GitHub Release](https://github.com/drecaise/jterm/releases) ships download
 | Platform | Asset | Install / run |
 |----------|-------|---------------|
 | Windows | `jterm-<version>.msi` | Run the installer |
-| macOS | `jterm-<version>.dmg` | Open the disk image, drag to Applications |
+| macOS | `jterm-<version>-arm64.dmg` (Apple Silicon) or `-x64.dmg` (Intel) | Open the disk image, drag to Applications |
 | Linux | `jterm-<version>.flatpak` | `flatpak install jterm-<version>.flatpak` |
 | Any OS | `jterm-<version>.jar` | `java -jar jterm-<version>.jar` (needs a JRE 21) |
 
@@ -114,7 +114,7 @@ gh workflow run release.yml
 gh run list --workflow=release.yml --limit 1
 gh run watch <run-id>
 
-# Download just the RPM artifact (other names: jterm-jar, jterm-msi, jterm-dmg,
+# Download just the RPM artifact (other names: jterm-jar, jterm-msi, jterm-dmg-arm64, jterm-dmg-x64,
 # jterm-flatpak, jterm-snap; omit --name to grab everything)
 gh run download <run-id> --name jterm-rpm-el10
 ```

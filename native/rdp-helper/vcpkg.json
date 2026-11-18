@@ -1,0 +1,11 @@
+{
+  "name": "jterm-rdp-helper-deps",
+  "version-string": "0",
+  "description": "Third-party libraries the bundled FreeRDP is built against on Windows. The baseline pins every port's version; bump it deliberately (it changes the shipped OpenSSL).",
+  "builtin-baseline": "6fdd23fa0a9479a9f9a1c48178696f60cf39255d",
+  "dependencies": [
+    "openssl",
+    "zlib",
+    "cjson"
+  ]
+}

@@ -38,7 +38,12 @@ public final class SessionStore {
     private FolderNode root;
 
     public SessionStore() {
-        this.file = AppPaths.file("sessions.json");
+        this(AppPaths.file("sessions.json"));
+    }
+
+    /** A store over {@code file} instead of the config dir's, so tests can run the real load path. */
+    SessionStore(Path file) {
+        this.file = file;
         this.root = load();
         upgrade();
     }
@@ -99,6 +104,27 @@ public final class SessionStore {
     }
 
     /** All SSH sessions under {@code folder}, recursively, in depth-first tree order. */
+    /**
+     * Every session Open Folder can open under {@code folder}, recursively, in tree order: SSH and
+     * RDP sessions (the WSL folder is virtual and not part of the stored tree). An
+     * {@link UnknownSessionNode} is skipped: this build can't open it.
+     */
+    public static List<SessionNode> collectOpenableSessions(FolderNode folder) {
+        List<SessionNode> out = new ArrayList<>();
+        collectOpenableSessions(folder, out);
+        return out;
+    }
+
+    private static void collectOpenableSessions(FolderNode folder, List<SessionNode> out) {
+        for (SessionNode child : folder.getChildren()) {
+            if (child instanceof SshSessionConfig || child instanceof RdpSessionConfig) {
+                out.add(child);
+            } else if (child instanceof FolderNode sub) {
+                collectOpenableSessions(sub, out);
+            }
+        }
+    }
+
     public static List<SshSessionConfig> collectSshSessions(FolderNode folder) {
         List<SshSessionConfig> out = new ArrayList<>();
         collectSshSessions(folder, out);

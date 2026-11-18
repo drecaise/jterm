@@ -19,11 +19,13 @@
  */
 package com.katmoda.jterm.ui.preferences;
 
+import com.formdev.flatlaf.util.SystemInfo;
 import com.formdev.flatlaf.util.UIScale;
 import com.katmoda.jterm.config.AppSettings;
 import com.katmoda.jterm.macro.Macro;
 import com.katmoda.jterm.macro.MacroCrypto;
 import com.katmoda.jterm.macro.MacroLibrary;
+import com.katmoda.jterm.terminal.rdp.OpenH264;
 import com.katmoda.jterm.security.VaultException;
 import com.katmoda.jterm.security.VaultKeys;
 import com.katmoda.jterm.security.VaultManager;
@@ -38,13 +40,16 @@ import com.katmoda.jterm.ui.theme.ThemeManager;
 
 import java.util.List;
 import javax.swing.BorderFactory;
-import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.DefaultComboBoxModel;
+import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JProgressBar;
+import javax.swing.SwingUtilities;
+import javax.swing.SwingWorker;
 import javax.swing.JPasswordField;
 import javax.swing.JSpinner;
 import javax.swing.JTabbedPane;
@@ -52,9 +57,13 @@ import javax.swing.JTextField;
 import javax.swing.SpinnerNumberModel;
 import java.awt.BorderLayout;
 import java.awt.Component;
+import java.awt.Dialog;
+import java.awt.Window;
+import java.io.IOException;
+import java.io.InterruptedIOException;
+import java.nio.file.Path;
 import java.awt.FlowLayout;
 import java.awt.GraphicsEnvironment;
-import java.awt.GridLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
@@ -100,6 +109,9 @@ public final class PreferencesDialog {
         ToggleSwitch showWorkingDirectory = new ToggleSwitch(settings.isShowWorkingDirectory());
         ToggleSwitch checkForUpdates = new ToggleSwitch(settings.isUpdateCheckEnabled());
         ToggleSwitch encryptMacros = new ToggleSwitch(settings.isEncryptMacros());
+        ToggleSwitch openH264 = new ToggleSwitch(settings.isOpenH264Enabled());
+        ToggleSwitch rdpCmdAsCtrl = new ToggleSwitch(settings.isRdpCmdAsCtrl());
+        ToggleSwitch rdpAacAudio = new ToggleSwitch(settings.isRdpAacAudio());
         JPanel general = new JPanel(new GridBagLayout());
         int row = 0;
         addToggleRow(general, row++, "Copy to clipboard on select:", copyOnSelect);
@@ -133,6 +145,26 @@ public final class PreferencesDialog {
                 + " and a macro's text is still typed into the terminal in the clear.");
         addHint(general, row++, "If you lose the master password, encrypted macros cannot be"
                 + " recovered — export them first if you want a copy you can still read.");
+        if (OpenH264.assetForThisMachine() != null) {
+            addToggleRow(general, row++, "H.264 video for RDP:", openH264);
+            addHint(general, row++, "Lets remote desktops send H.264 video, which is smoother and lighter"
+                    + " on the network. Turning it on downloads Cisco's OpenH264 decoder from Cisco"
+                    + " (about 0.6 MB) into your jterm settings folder; turning it off deletes it. "
+                    + OpenH264.NOTICE);
+        }
+        addToggleRow(general, row++, "Compressed sound (AAC) for RDP:", rdpAacAudio);
+        addHint(general, row++, "Remote desktops that play sound may send it compressed with AAC, which"
+                + " takes about a fifteenth of the network traffic. It is decoded by your system's own"
+                + " decoder" + (SystemInfo.isLinux ? ": libfaad from your distribution, if installed"
+                + " (package faad2-libs, libfaad2 or faad2)" : "") + "; jterm includes no audio codec."
+                + " Without one, or with this off, sound is sent uncompressed. Applies from the next"
+                + " connection.");
+        if (SystemInfo.isMacOS) {
+            addToggleRow(general, row++, "Cmd acts as Ctrl in RDP:", rdpCmdAsCtrl);
+            addHint(general, row++, "In a remote desktop, the Cmd key is sent as Ctrl, so Cmd+C,"
+                    + " Cmd+V and the other shortcuts you are used to work on Windows too. Turn it off to"
+                    + " send Cmd as the Windows key. Ctrl itself always stays Ctrl.");
+        }
 
         // Appearance: the scale and font of the application chrome (sidebar, tabs, menus, dialogs).
         // All three are read by ThemeManager at startup only, hence the restart notice on OK.
@@ -168,18 +200,10 @@ public final class PreferencesDialog {
                 settings.getScrollbackLines(),
                 AppSettings.MIN_SCROLLBACK_LINES, AppSettings.MAX_SCROLLBACK_LINES, 500));
         ToggleSwitch blinkCursor = new ToggleSwitch(settings.isBlinkCursor());
-        // Same two-equal-column grid as TerminalSettingsForm so the label and field line up with
-        // the Type/Font/Size/Charset rows above it.
-        JPanel scrollbackRow = new JPanel(new GridLayout(0, 2, 6, 6));
-        scrollbackRow.add(new JLabel("Scrollback lines:"));
-        scrollbackRow.add(scrollback);
-        JPanel blinkRow = new JPanel(new GridLayout(0, 2, 6, 6));
-        blinkRow.add(new JLabel("Blink cursor:"));
-        // The switch paints a fixed-size icon, so left-align it in its own panel rather than
-        // letting the grid cell stretch its click target across half the tab.
-        JPanel blinkSwitch = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
-        blinkSwitch.add(blinkCursor);
-        blinkRow.add(blinkSwitch);
+        // Added to TerminalSettingsForm's own grid so the label and field line up with the
+        // Type/Font/Size/Charset rows above them (FormGrid keeps the switch at its own size).
+        terminalDefaults.component().row("Scrollback lines:", scrollback);
+        terminalDefaults.component().row("Blink cursor:", blinkCursor);
         // Unlike the defaults above it, this one is read live by JTermSettingsProvider on every
         // repaint tick, so it needs its own hint contradicting the "newly opened" one below.
         JLabel blinkHint = hint("Takes effect immediately, including in terminals that are"
@@ -188,14 +212,8 @@ public final class PreferencesDialog {
         JPanel terminalTop = new JPanel();
         terminalTop.setLayout(new BoxLayout(terminalTop, BoxLayout.PAGE_AXIS));
         terminalDefaults.component().setAlignmentX(Component.LEFT_ALIGNMENT);
-        scrollbackRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-        blinkRow.setAlignmentX(Component.LEFT_ALIGNMENT);
         blinkHint.setAlignmentX(Component.LEFT_ALIGNMENT);
         terminalTop.add(terminalDefaults.component());
-        terminalTop.add(Box.createVerticalStrut(6));
-        terminalTop.add(scrollbackRow);
-        terminalTop.add(Box.createVerticalStrut(6));
-        terminalTop.add(blinkRow);
         terminalTop.add(blinkHint);
         JPanel terminal = new JPanel(new BorderLayout(0, 6));
         terminal.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
@@ -294,6 +312,9 @@ public final class PreferencesDialog {
         // Applied before the settings are saved: re-writing macros.json in the other form can fail
         // or be cancelled, and the flag must not end up claiming a state the file is not in.
         applyMacroEncryption(parent, settings, encryptMacros.isSelected());
+        applyOpenH264(parent, settings, openH264.isSelected());
+        settings.setRdpCmdAsCtrl(rdpCmdAsCtrl.isSelected());
+        settings.setRdpAacAudio(rdpAacAudio.isSelected());
         // Remember the pre-edit UI scale/font so we only nag about restarting when one changed.
         String previousUiAppearance = uiAppearanceKey(settings);
         settings.setUiScalePercent(percentValue(uiScale.getSelectedItem()));
@@ -433,6 +454,108 @@ public final class PreferencesDialog {
                     "Your macros could not be rewritten, so this setting was left unchanged.",
                     "Encrypt Macros", JOptionPane.ERROR_MESSAGE);
         }
+    }
+
+    /**
+     * Switches the downloaded H.264 decoder on or off. Turning it on fetches Cisco's build after the
+     * user has seen what is downloaded and the Cisco notice (a condition of Cisco's patent license);
+     * the setting changes only if the download succeeds, so it never claims a codec that is not there.
+     */
+    private static void applyOpenH264(Component parent, AppSettings settings, boolean enable) {
+        OpenH264.Asset asset = OpenH264.assetForThisMachine();
+        if (asset == null || enable == settings.isOpenH264Enabled()) {
+            return;
+        }
+        Path dir = OpenH264.defaultDir();
+        if (!enable) {
+            settings.setOpenH264Enabled(false);
+            try {
+                OpenH264.remove(dir);
+            } catch (IOException e) {
+                // the setting is off either way; a leftover file is not loaded
+            }
+            return;
+        }
+        if (!OpenH264.isCurrent(dir, asset)) {
+            int answer = JOptionPane.showConfirmDialog(parent,
+                    "jterm will now download Cisco's OpenH264 video decoder (about 0.6 MB) from\n"
+                    + "ciscobinary.openh264.org and use it for H.264 video in RDP sessions.\n\n"
+                    + OpenH264.NOTICE + "\n\n"
+                    + "Cisco's patent license covers the codec when it is downloaded this way.\n"
+                    + "You can turn it off again here at any time.",
+                    "Download H.264 Codec", JOptionPane.OK_CANCEL_OPTION, JOptionPane.INFORMATION_MESSAGE);
+            if (answer != JOptionPane.OK_OPTION) {
+                return;
+            }
+            IOException failure = downloadWithProgress(parent, dir, asset);
+            if (failure instanceof InterruptedIOException) {
+                return; // cancelled: the setting stays off, nothing to report
+            }
+            if (failure != null) {
+                ErrorDialog.show(parent, "Download H.264 Codec", "The codec could not be downloaded:", failure);
+                return;
+            }
+        }
+        settings.setOpenH264Enabled(true);
+    }
+
+    /**
+     * Runs the download behind a modal progress dialog with a Cancel button. Returns the failure
+     * ({@link InterruptedIOException} when cancelled), or {@code null}.
+     */
+    private static IOException downloadWithProgress(Component parent, Path dir, OpenH264.Asset asset) {
+        Window owner = parent == null ? null : SwingUtilities.getWindowAncestor(parent);
+        javax.swing.JDialog dialog = new javax.swing.JDialog(owner, "Downloading H.264 codec",
+                Dialog.ModalityType.APPLICATION_MODAL);
+        dialog.setDefaultCloseOperation(javax.swing.JDialog.DO_NOTHING_ON_CLOSE);
+        OpenH264.Cancel cancel = new OpenH264.Cancel();
+        JButton cancelButton = new JButton("Cancel");
+        // Stops waiting at once: a read blocked on the network cannot be interrupted, so the worker
+        // is abandoned rather than awaited. It writes nothing once cancelled (OpenH264.Cancel).
+        cancelButton.addActionListener(e -> {
+            cancel.cancel();
+            dialog.dispose();
+        });
+        dialog.addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent e) {
+                cancelButton.doClick();
+            }
+        });
+        JProgressBar bar = new JProgressBar();
+        bar.setIndeterminate(true);
+        JPanel box = new JPanel(new BorderLayout(0, 8));
+        box.setBorder(BorderFactory.createEmptyBorder(16, 20, 16, 20));
+        box.add(new JLabel("Downloading Cisco's OpenH264 codec…"), BorderLayout.NORTH);
+        box.add(bar, BorderLayout.CENTER);
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        buttons.add(cancelButton);
+        box.add(buttons, BorderLayout.SOUTH);
+        dialog.setContentPane(box);
+        dialog.pack();
+        dialog.setLocationRelativeTo(parent);
+        IOException[] failure = new IOException[1];
+        // done() runs on the EDT, which is busy inside setVisible below, so it cannot fire before
+        // the dialog is up.
+        new SwingWorker<Void, Void>() {
+            @Override
+            protected Void doInBackground() {
+                try {
+                    OpenH264.install(dir, asset, cancel);
+                } catch (IOException e) {
+                    failure[0] = e;
+                }
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                dialog.dispose();
+            }
+        }.execute();
+        dialog.setVisible(true);
+        // Cancelled: the worker may still be running and write failure[0] later, so don't read it.
+        return cancel.isCancelled() ? new InterruptedIOException("cancelled") : failure[0];
     }
 
     private static void addToggleRow(JPanel form, int row, String label, ToggleSwitch toggle) {

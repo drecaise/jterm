@@ -106,6 +106,13 @@ You can open an **entire folder** of sessions at once. jterm offers two layouts:
 - **separate tabs** — one tab per session; or
 - **a split grid** — the sessions tiled into one tab's pane grid.
 
+RDP sessions in the folder are included in both, and each opens in a tab of its own (a remote
+desktop needs the whole tab).
+
+Dragging a session out of the sidebar onto a pane opens it as a split beside that pane; onto the
+tab strip's **+** it opens in a new tab. This works for SSH and RDP sessions and the Local
+Terminal button.
+
 ## Icons
 
 Every session and folder can carry an **icon**. The icon picker offers a built-in library of

@@ -54,6 +54,82 @@ SLF4J Simple  (org.slf4j:slf4j-simple) — 2.0.13
     https://www.slf4j.org/
     https://opensource.org/licenses/MIT
 
+JCL over SLF4J  (org.slf4j:jcl-over-slf4j) — 2.0.13
+    Routes Apache PDFBox's logging to SLF4J.
+    License: Apache License 2.0
+    https://www.slf4j.org/
+    https://www.apache.org/licenses/LICENSE-2.0
+
+Apache PDFBox  (org.apache.pdfbox:pdfbox, pdfbox-io, fontbox) — 3.0.8
+    Reads the PDF print jobs a remote desktop sends: preview and printing.
+    License: Apache License 2.0. Includes the Adobe Glyph List, Adobe Font
+    Metrics and CMaps (Adobe, BSD-style), parts of TwelveMonkeys ImageIO
+    (BSD-3-Clause), a CMYK ICC profile (CC0) and the Liberation, Lohit,
+    FoglihtenNo07 and Josefin Sans fonts (SIL Open Font License 1.1); full
+    terms in META-INF/LICENSE and META-INF/NOTICE of the jterm jar.
+    https://pdfbox.apache.org/
+    https://www.apache.org/licenses/LICENSE-2.0
+
+
+Bundled with the RDP helper (native code, in the rdp/ folder of an installed jterm;
+license texts in rdp/licenses/):
+
+FreeRDP  (libfreerdp, libfreerdp-client, WinPR) — 3.33.0
+    Remote Desktop Protocol implementation used by RDP sessions.
+    Modified by jterm: it does not read system-wide configuration files
+    (source: native/rdp-helper/patches in jterm's repository).
+    License: Apache License 2.0
+    https://www.freerdp.com/
+    https://www.apache.org/licenses/LICENSE-2.0
+
+OpenSSL — 3.6.5 (Windows), 3.5.9 (macOS); Linux uses the system OpenSSL
+    TLS for RDP connections.
+    License: Apache License 2.0
+    https://www.openssl.org/
+
+zlib — 1.3.2 (Windows; Linux and macOS use the system zlib)
+    Compression.
+    License: zlib License
+    https://zlib.net/
+
+cJSON — 1.7.19 (Windows, macOS; the distribution's package on Linux)
+    JSON parsing in FreeRDP.
+    License: MIT License
+    https://github.com/DaveGamble/cJSON
+
+pcsc-lite client library — 2.5.3 (Flatpak only; other packages use the system's PC/SC)
+    Smart cards in RDP sessions: talks to the host's pcscd.
+    License: BSD 3-Clause License
+    https://pcsclite.apdu.fr/
+
+OpenH264 (Linux, optional; downloaded on request, not bundled) — 2.7.0
+    H.264 video decoding in RDP sessions. OpenH264 Video Codec provided by Cisco Systems, Inc.
+    The Cisco-provided binary is licensed under the BSD license and under Cisco's AVC/H.264 Patent
+    Portfolio License from MPEG LA, at no cost to you, provided it is downloaded separately to your
+    device (as jterm does when you turn on "H.264 video for RDP" in Preferences) and you can control
+    its use. https://www.openh264.org/BINARY_LICENSE.txt
+    AVC/H.264 PATENT PORTFOLIO LICENSE NOTICE: THIS PRODUCT IS LICENSED UNDER THE AVC PATENT PORTFOLIO
+    LICENSE FOR THE PERSONAL USE OF A CONSUMER OR OTHER USES IN WHICH IT DOES NOT RECEIVE REMUNERATION
+    TO (i) ENCODE VIDEO IN COMPLIANCE WITH THE AVC STANDARD ("AVC VIDEO") AND/OR (ii) DECODE AVC VIDEO
+    THAT WAS ENCODED BY A CONSUMER ENGAGED IN A PERSONAL ACTIVITY AND/OR WAS OBTAINED FROM A VIDEO
+    PROVIDER LICENSED TO PROVIDE AVC VIDEO. NO LICENSE IS GRANTED OR SHALL BE IMPLIED FOR ANY OTHER USE.
+    ADDITIONAL INFORMATION MAY BE OBTAINED FROM MPEG LA, L.L.C. SEE HTTP://WWW.MPEGLA.COM
+
+AAC sound decoding (RDP; the system's decoder, not bundled)
+    Compressed sound in RDP sessions is decoded by your system: Media Foundation on Windows,
+    AudioToolbox on macOS, on Linux your distribution's libfaad (FAAD2, GPL-2.0-or-later) if you
+    have installed it, and in the Flatpak the runtime's FFmpeg (libavcodec, LGPL-2.1-or-later).
+    jterm includes and downloads no AAC codec; without a decoder, or with
+    "Compressed sound (AAC) for RDP" off in Preferences, sound is sent uncompressed.
+
+Apache Commons Compress 1.28.0 (with Commons IO 2.20.0)
+    bzip2 unpacking of the OpenH264 download.
+    License: Apache License 2.0
+    https://commons.apache.org/proper/commons-compress/
+
+Microsoft Visual C++ runtime (Windows)
+    Redistributed under Microsoft's Visual Studio license terms.
+
 
 Full license texts are available at the URLs listed above and from each
 project's source repository.

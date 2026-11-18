@@ -9,32 +9,35 @@ graph TB
   subgraph diagram ["jterm - Deployment - Windows"]
     style diagram fill:transparent,stroke:transparent
 
-    subgraph 115 [Windows workstation]
-      style 115 fill:transparent,stroke:#888888,color:#6b7280
+    subgraph 156 [Windows workstation]
+      style 156 fill:transparent,stroke:#888888,color:#6b7280
 
-      subgraph 116 [MSI-installed jterm]
-        style 116 fill:transparent,stroke:#888888,color:#6b7280
+      subgraph 157 [MSI-installed jterm]
+        style 157 fill:transparent,stroke:#888888,color:#6b7280
 
-        117("<div style='font-weight: bold'>jterm JVM process</div><div style='font-size: 70%; margin-top: 0px'>[Container: Java 21 / Swing]</div><div style='font-size: 80%; margin-top:10px'>Java 21 Swing app; single OS<br />process hosting every<br />component.</div>")
-        style 117 fill:#1e88e5,stroke:#155fa0,color:#ffffff
+        158("<div style='font-weight: bold'>jterm JVM process</div><div style='font-size: 70%; margin-top: 0px'>[Container: Java 21 / Swing]</div><div style='font-size: 80%; margin-top:10px'>Java 21 Swing app; single OS<br />process hosting every<br />component.</div>")
+        style 158 fill:#1e88e5,stroke:#155fa0,color:#ffffff
+        159("<div style='font-weight: bold'>jterm-rdp-helper</div><div style='font-size: 70%; margin-top: 0px'>[Container: C / FreeRDP 3]</div><div style='font-size: 80%; margin-top:10px'>Small C client embedding<br />FreeRDP 3, one process per<br />RDP connection. Speaks RDP<br />and decodes frames; holds no<br />secret beyond the one<br />password it is handed, so a<br />server-triggered FreeRDP bug<br />stays out of the JVM and away<br />from the vault.</div>")
+        style 159 fill:#5e35b1,stroke:#41257b,color:#ffffff
       end
 
-      subgraph 118 [Windows Credential Store]
-        style 118 fill:transparent,stroke:#888888,color:#6b7280
+      subgraph 161 [Windows Credential Store]
+        style 161 fill:transparent,stroke:#888888,color:#6b7280
 
-        119("<div style='font-weight: bold'>OS keyring</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>secret-tool (Linux), security<br />(macOS) or Windows Credential<br />Store.</div>")
-        style 119 fill:#6c757d,stroke:#4b5157,color:#ffffff
+        162("<div style='font-weight: bold'>OS keyring</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>secret-tool (Linux), security<br />(macOS) or Windows Credential<br />Store.</div>")
+        style 162 fill:#6c757d,stroke:#4b5157,color:#ffffff
       end
 
-      subgraph 121 [OpenSSH agent + Pageant]
-        style 121 fill:transparent,stroke:#888888,color:#6b7280
+      subgraph 164 [OpenSSH agent + Pageant]
+        style 164 fill:transparent,stroke:#888888,color:#6b7280
 
-        122("<div style='font-weight: bold'>SSH agent</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Unix-domain socket, OpenSSH<br />named pipe or PuTTY Pageant.</div>")
-        style 122 fill:#6c757d,stroke:#4b5157,color:#ffffff
+        165("<div style='font-weight: bold'>SSH agent</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Unix-domain socket, OpenSSH<br />named pipe or PuTTY Pageant.</div>")
+        style 165 fill:#6c757d,stroke:#4b5157,color:#ffffff
       end
 
     end
 
-    117-. "<div style='padding:4px 8px'><div>Reads and writes native OS<br />secret</div><div style='font-size: 70%'></div></div>" .->119
-    117-. "<div style='padding:4px 8px'><div>Named pipe / Pageant on<br />Windows</div><div style='font-size: 70%'></div></div>" .->122
+    158-. "<div style='padding:4px 8px'><div>Starts one per RDP<br />connection; binary protocol<br />over stdin/stdout</div><div style='font-size: 70%'></div></div>" .->159
+    158-. "<div style='padding:4px 8px'><div>Reads and writes native OS<br />secret</div><div style='font-size: 70%'></div></div>" .->162
+    158-. "<div style='padding:4px 8px'><div>Named pipe / Pageant on<br />Windows</div><div style='font-size: 70%'></div></div>" .->165
   end

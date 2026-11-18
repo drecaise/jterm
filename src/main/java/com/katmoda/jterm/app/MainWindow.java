@@ -35,12 +35,18 @@ import com.katmoda.jterm.security.VaultManager;
 import com.katmoda.jterm.session.FolderNode;
 import com.katmoda.jterm.session.SessionNode;
 import com.katmoda.jterm.session.SessionStore;
+import com.katmoda.jterm.session.RdpSessionConfig;
 import com.katmoda.jterm.session.SshSessionConfig;
 import com.katmoda.jterm.session.TunnelConfig;
 import com.katmoda.jterm.session.TunnelStore;
 import com.katmoda.jterm.terminal.ConnectionService;
 import com.katmoda.jterm.terminal.SessionFactory;
+import com.katmoda.jterm.terminal.rdp.OpenH264;
+import com.katmoda.jterm.terminal.rdp.RdpHelperLocator;
+import com.katmoda.jterm.terminal.rdp.RdpKeyMap;
+import com.katmoda.jterm.terminal.rdp.RdpKnownHosts;
 import com.katmoda.jterm.terminal.TerminalSession;
+import com.katmoda.jterm.terminal.ssh.LocalForward;
 import com.katmoda.jterm.terminal.ssh.SshConnect;
 import com.katmoda.jterm.terminal.ssh.SshSession;
 import com.katmoda.jterm.terminal.ssh.TunnelManager;
@@ -55,7 +61,9 @@ import com.katmoda.jterm.ui.pane.TerminalPane;
 import com.katmoda.jterm.ui.preferences.PreferencesDialog;
 import com.katmoda.jterm.ui.preferences.ShortcutsDialog;
 import com.katmoda.jterm.ui.security.MasterPasswordDialog;
+import com.katmoda.jterm.ui.rdp.RdpPane;
 import com.katmoda.jterm.ui.sftp.SftpLauncher;
+import com.katmoda.jterm.ui.sftp.SftpPane;
 import com.katmoda.jterm.ui.sidebar.FolderOpenMode;
 import com.katmoda.jterm.ui.sidebar.OpenMode;
 import com.katmoda.jterm.ui.sidebar.SessionSidebar;
@@ -130,6 +138,7 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
     private final Keymap keymap = Keymap.loadOrDefaults();
     private final CredentialResolver credentialResolver;
     private final ConnectionService connectionService;
+    private RdpPane.Services rdpServices;
     private final TabPane tabPane;
 
     /** While true, the global terminal-shortcut dispatcher stands down so the editor can capture keys. */
@@ -143,6 +152,10 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
     private Rectangle lastNormalBounds;
     /** Background GitHub release check; armed after the window is shown, null when opted out. */
     private UpdateScheduler updateScheduler;
+    /** Set by {@link #shutdown()} so the teardown runs once, whichever way out came first. */
+    private boolean shutDown;
+    /** The macOS quit handler, or {@code null} where the platform has none (Windows, Linux). */
+    private AppQuitHandler quitHandler;
 
     public MainWindow() {
         // Register before building the tab pane: the WindowManager is the shared registry every
@@ -196,7 +209,7 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
     public void show() {
         sidebar = new SessionSidebar(sessionStore, this::openSshSession,
                 this::openLocalInCurrent, this::openWslSession, this::openSftpForConfig,
-                this::openFolderSessions);
+                this::openFolderSessions, this::openRdpSession);
 
         split = new SidebarSplit(sidebar, tabPane, AppSettings.get().getSidebarWidth(),
                 AppSettings.get().isSidebarVisible());
@@ -212,16 +225,11 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         frame.setLayout(new BorderLayout());
         frame.add(split, BorderLayout.CENTER);
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        // Tear down any running tunnels cleanly before the process exits.
+        // Tear down sessions and tunnels cleanly before the process exits.
         frame.addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
-                saveWindowState();
-                shutdownSessions();
-                TunnelManager.get().stopAll();
-                if (updateScheduler != null) {
-                    updateScheduler.stop();
-                }
+                shutdown();
             }
         });
         restoreWindowBounds();
@@ -246,6 +254,7 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         applyAppIcon();
 
         installShortcutDispatcher();
+        installQuitHandler();
 
         // Refresh active-pane accent borders and re-decorate tabs (so the themed local-terminal
         // icon swaps) across every window's tabs when the theme switches.
@@ -279,6 +288,11 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         updateScheduler = new UpdateScheduler(AppInfo.version(),
                 release -> UpdateAvailableDialog.show(frame, AppInfo.version(), release));
         updateScheduler.start();
+
+        // A codec downloaded under an older pin is not loaded; fetch the current one now rather
+        // than at the first RDP connect, which would otherwise run without H.264.
+        OpenH264.updateInBackground(AppSettings.get().isOpenH264Enabled(), OpenH264.defaultDir(),
+                OpenH264.assetForThisMachine());
     }
 
     /**
@@ -330,8 +344,8 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
 
     /**
      * Persists the window's maximized state, restored-down bounds (so it reopens on the same
-     * monitor at the same size), and the sidebar's open/closed state plus its width. Called on
-     * close from both the window's X and the Quit menu item. The divider location is the sidebar's pixel width
+     * monitor at the same size), and the sidebar's open/closed state plus its width. Called from
+     * {@link #shutdown()}, i.e. on every way out. The divider location is the sidebar's pixel width
      * regardless of window size (a left-anchored horizontal split), so it's captured the same way
      * whether or not the window is maximized; the bounds come from the tracked restored-down
      * geometry so a maximized exit doesn't persist the maximized size.
@@ -349,6 +363,98 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         Rectangle b = (lastNormalBounds != null) ? lastNormalBounds : frame.getBounds();
         settings.setWindowBounds(b.x, b.y, b.width, b.height);
         settings.save();
+    }
+
+    /**
+     * The one teardown for every way out: the window's close button, File → Quit, and the macOS
+     * quit handler (Cmd+Q, the Dock, logging out; {@link AppQuitHandler}), which then exits with
+     * {@code System.exit} and so never reaches {@code windowClosing}. Runs once: a held Alt+F4 sends
+     * {@code windowClosing} repeatedly. EDT.
+     */
+    private void shutdown() {
+        if (shutDown) {
+            return;
+        }
+        shutDown = true;
+        saveWindowState();
+        shutdownSessions();
+        TunnelManager.get().stopAll();
+        if (updateScheduler != null) {
+            updateScheduler.stop();
+        }
+    }
+
+    /**
+     * What quitting would end, across every window, for the macOS quit confirmation. A terminal pane
+     * counts while its session is alive (not on its "session stopped" screen), an RDP pane while it is
+     * connected or connecting, and an SFTP browser while it is open.
+     */
+    private QuitSummary openSessions() {
+        int rdp = 0;
+        int ssh = 0;
+        int sftp = 0;
+        int local = 0;
+        for (TerminalWindow window : WindowManager.get().windows()) {
+            for (GridContent content : window.tabPane().allContents()) {
+                if (content instanceof RdpPane p) {
+                    rdp += p.isSessionOpen() ? 1 : 0;
+                } else if (content instanceof SftpPane) {
+                    sftp++;
+                } else if (content instanceof TerminalPane p && !p.isStopped()
+                        && p.session() != null && p.session().isAlive()) {
+                    if (p.session() instanceof SshSession) {
+                        ssh++;
+                    } else {
+                        local++;
+                    }
+                }
+            }
+        }
+        return new QuitSummary(rdp, ssh, sftp, TunnelManager.get().runningCount(), local);
+    }
+
+    /**
+     * Before the quit confirmation: no RDP desktop may stay full screen behind it (the rule of
+     * {@code RdpPane.dialogParent}). Returns the window to centre the question on: the one whose
+     * desktop was full screen, since that is where the user was looking, else the focused window.
+     */
+    private java.awt.Component prepareQuitDialog() {
+        java.awt.Component parent = null;
+        for (TerminalWindow window : WindowManager.get().windows()) {
+            for (GridContent content : window.tabPane().allContents()) {
+                if (content instanceof RdpPane p && p.isFullScreen()) {
+                    p.leaveFullScreen();
+                    parent = window.frame();
+                }
+            }
+        }
+        return parent != null ? parent : WindowManager.get().focusedWindow().frame();
+    }
+
+    /** Installs the macOS quit handler (a no-op where the platform has none). */
+    private void installQuitHandler() {
+        quitHandler = AppQuitHandler.install(new AppQuitHandler.Host() {
+            @Override
+            public java.awt.Component prepareForDialog() {
+                return prepareQuitDialog();
+            }
+
+            @Override
+            public QuitSummary openSessions() {
+                return MainWindow.this.openSessions();
+            }
+
+            @Override
+            public boolean confirm(java.awt.Component parent, QuitSummary summary) {
+                return AppQuitHandler.ask(parent, summary);
+            }
+
+            @Override
+            public void shutdown() {
+                MainWindow.this.shutdown();
+            }
+        });
+        LOG.debug("application quit handler {}", quitHandler != null ? "installed" : "not supported here");
     }
 
     /**
@@ -498,30 +604,47 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
     }
 
     /**
-     * Open every SSH session under {@code folder} (recursively). In {@code SEPARATE_TABS} each
-     * session gets its own tab; in {@code SPLIT_TABS} they are packed into split-pane grids of up
-     * to {@link PaneGrid#MAX}² panes, spilling into additional tabs. Connecting more than 9 hosts
-     * at once is confirmed first, since each may prompt for credentials.
+     * Open every SSH and RDP session under {@code folder} (recursively), in tree order. In
+     * {@code SEPARATE_TABS} each session gets its own tab; in {@code SPLIT_TABS} the SSH sessions
+     * are packed into split-pane grids of up to {@link PaneGrid#MAX}² panes, spilling into
+     * additional tabs, while each RDP session still gets a tab of its own: a remote desktop in one
+     * ninth of a tab is unusable, and RDP opens in a new tab by default anyway. Opening more than 9
+     * connections at once is confirmed first, since each may prompt for credentials.
      */
     private void openFolderSessions(FolderNode folder, FolderOpenMode mode) {
-        List<SshSessionConfig> sessions = SessionStore.collectSshSessions(folder);
-        if (sessions.isEmpty()) {
-            JOptionPane.showMessageDialog(frame, "This folder has no SSH connections.",
+        List<SessionNode> all = SessionStore.collectOpenableSessions(folder);
+        if (all.isEmpty()) {
+            JOptionPane.showMessageDialog(frame, "This folder has no SSH or RDP connections.",
                     "Open Folder", JOptionPane.INFORMATION_MESSAGE);
             return;
         }
-        if (sessions.size() > 9) {
+        if (all.size() > 9) {
             int ok = JOptionPane.showConfirmDialog(frame,
-                    "Open " + sessions.size() + " connections from \"" + folder.getName() + "\"?",
+                    "Open " + all.size() + " connections from \"" + folder.getName() + "\"?",
                     "Open Folder", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
             if (ok != JOptionPane.OK_OPTION) {
                 return;
             }
         }
         if (mode == FolderOpenMode.SEPARATE_TABS) {
-            for (SshSessionConfig cfg : sessions) {
-                tabPane.addSshTab(cfg);
+            for (SessionNode node : all) {
+                if (node instanceof SshSessionConfig ssh) {
+                    tabPane.addSshTab(ssh);
+                } else if (node instanceof RdpSessionConfig rdp) {
+                    openRdpSession(rdp, OpenMode.NEW_TAB);
+                }
             }
+            return;
+        }
+        List<SshSessionConfig> sessions = new ArrayList<>();
+        for (SessionNode node : all) {
+            if (node instanceof SshSessionConfig ssh) {
+                sessions.add(ssh);
+            } else if (node instanceof RdpSessionConfig rdp) {
+                openRdpSession(rdp, OpenMode.NEW_TAB);
+            }
+        }
+        if (sessions.isEmpty()) {
             return;
         }
         int perTab = PaneGrid.MAX * PaneGrid.MAX;
@@ -605,6 +728,105 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         fresh.initEmpty();
         fresh.placeContentInActive(content);
         host.decorateTab(fresh);
+    }
+
+    // ---- RDP ----
+
+    /**
+     * Opens a saved RDP session. The pane is placed at once (showing "Connecting…") and connects
+     * itself, so unlike SSH there is no async connect-then-place: a failure leaves the pane in place
+     * with Reconnect / Close rather than an error dialog over an empty tab. A new tab is the default,
+     * since a desktop wants the room; a split falls back to a new tab when the grid is full.
+     */
+    private void openRdpSession(RdpSessionConfig cfg, OpenMode mode) {
+        RdpPane pane = newRdpPane(cfg);
+        PaneGrid grid = tabPane.currentGrid();
+        switch (mode) {
+            case ACTIVE -> {
+                if (grid != null) {
+                    grid.placeContentInActive(pane);
+                    tabPane.decorateTab(grid);
+                } else {
+                    openContentInNewTab(pane);
+                }
+            }
+            case SPLIT_COLUMN, SPLIT_ROW -> {
+                if (grid != null && grid.openContentInBestSplit(pane)) {
+                    tabPane.decorateTab(grid);
+                } else {
+                    openContentInNewTab(pane);
+                }
+            }
+            default -> openContentInNewTab(pane);
+        }
+        pane.start();
+    }
+
+    private void openContentInNewTab(GridContent content) {
+        tabPane.openContentInNewTab(content);
+    }
+
+    @Override
+    public RdpPane newRdpPane(RdpSessionConfig cfg) {
+        return new RdpPane(cfg, rdpServices());
+    }
+
+    /** Created on first RDP use, so nothing RDP-related is read or located at startup. */
+    private RdpPane.Services rdpServices() {
+        if (rdpServices == null) {
+            rdpServices = new RdpPane.Services(credentialResolver, RdpKnownHosts.load(),
+                    RdpHelperLocator::locate, this::openRdpSshForward,
+                    () -> keymap.strokeFor(TermAction.TOGGLE_FULL_SCREEN));
+        }
+        return rdpServices;
+    }
+
+    /**
+     * RDP through a saved SSH session: connects that session (its jump hosts, keys, agent and saved
+     * password, exactly as a tunnel does; see {@link #startTunnel}) and opens a loopback forward to
+     * {@code destHost:destPort} as seen from the SSH server. Credentials on the EDT, the connect
+     * off it; one callback, on the EDT.
+     */
+    private void openRdpSshForward(String sshSessionId, String destHost, int destPort,
+                                   Consumer<LocalForward> onReady, Consumer<Throwable> onFailure) {
+        SshSessionConfig cfg = findSshSession(sshSessionId);
+        if (cfg == null) {
+            onFailure.accept(new IOException("The SSH session this RDP session connects through no "
+                    + "longer exists. Choose another one on the Gateway tab of the session's settings."));
+            return;
+        }
+        String password = credentialResolver.resolvePassword(cfg);
+        List<SshConnect.HostHop> jumpHosts = credentialResolver.resolveJumpHosts(cfg);
+        String effectiveUser = sessionStore.effectiveUser(cfg);
+        String effectiveKeyPath = sessionStore.effectiveKeyPath(cfg);
+        SshConnect.PassphraseProvider passphrases = credentialResolver.keyPassphraseProvider(cfg, effectiveKeyPath);
+        SshConnect.InteractiveAuth interactive = connectionService.interactiveAuth(cfg);
+        // The tunnel's only job is to stay up while a desktop may sit idle for a long time, so it
+        // always gets a heartbeat: the SSH session's own interval, or a minute when that is off.
+        int configured = sessionStore.effectiveKeepAliveSeconds(cfg);
+        int keepAlive = configured > 0 ? configured : 60;
+        new SwingWorker<LocalForward, Void>() {
+            @Override
+            protected LocalForward doInBackground() throws Exception {
+                SshConnect.Connected connected = SshConnect.open(jumpHosts,
+                        new SshConnect.HostHop(cfg.getHost(), cfg.getPort(), effectiveUser,
+                                password, effectiveKeyPath, cfg.getId()),
+                        passphrases, interactive, keepAlive);
+                return LocalForward.open(connected, destHost, destPort);
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    onReady.accept(get());
+                } catch (java.util.concurrent.ExecutionException e) {
+                    onFailure.accept(e.getCause() != null ? e.getCause() : e);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    onFailure.accept(e);
+                }
+            }
+        }.execute();
     }
 
     /** Opens a detected WSL2 distribution (synchronously — it's a local pty, no network connect). */
@@ -747,6 +969,19 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(e -> {
             if (e.getID() != KeyEvent.KEY_PRESSED || shortcutCaptureActive) {
                 return false; // let the shortcut editor capture keys while it's recording
+            }
+            // An RDP pane owns the keyboard: jterm claims only Ctrl+Shift+… strokes there, so
+            // Ctrl+T, Ctrl+W, Ctrl+C, the F-keys and macro hotkeys reach the remote desktop.
+            java.awt.Component focusOwner = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
+            if (RdpPane.forFocusOwner(focusOwner) != null && !RdpKeyMap.jtermMayClaim(e.getModifiersEx())) {
+                return false;
+            }
+            // Full screen there is no visible tab or grid: only leaving full screen and Send
+            // Ctrl+Alt+Del are claimed, and every other stroke (macro hotkeys too) goes to the remote
+            // desktop instead of acting on a window out of sight.
+            if (RdpPane.inFullScreen(focusOwner)) {
+                TermAction fsAction = keymap.actionFor(KeyStroke.getKeyStrokeForEvent(e));
+                return fsAction != null && fsAction.availableInRdpFullScreen() && handle(fsAction);
             }
             // A stopped pane claims bare Return / R / S so those actions work wherever focus sits in
             // the pane (e.g. on the dead terminal), not only on the small "Session stopped" strip.
@@ -895,9 +1130,9 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
                 }
             }
             case RENAME_PANE -> {
-                if (grid != null && grid.activeContent() instanceof TerminalPane pane) {
-                    pane.promptRename();
-                }
+                // A content that cannot be renamed (SFTP, an empty cell) lets the key through.
+                GridContent c = grid != null ? grid.activeContent() : null;
+                return c != null && c.canRename() && c.promptRename();
             }
             case MOVE_TAB_LEFT -> {
                 if (active != null) {
@@ -939,8 +1174,31 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
                     p.resetFontSize();
                 }
             }
+            case SEND_CTRL_ALT_DEL -> {
+                // Only a connected RDP pane takes it; anywhere else the stroke is let through.
+                RdpPane p = focusedRdpPane(grid);
+                return p != null && p.sendCtrlAltDel();
+            }
+            case TOGGLE_FULL_SCREEN -> {
+                // Likewise: only an RDP pane, connected (to enter) or full screen (to leave).
+                RdpPane p = focusedRdpPane(grid);
+                return p != null && p.toggleFullScreen();
+            }
         }
         return true;
+    }
+
+    /**
+     * The RDP pane an RDP action is for: the one holding keyboard focus (also when its desktop is in
+     * a full-screen window, where there is no focused tab pane), else the active cell of the focused
+     * grid (a menu click).
+     */
+    private static RdpPane focusedRdpPane(PaneGrid grid) {
+        RdpPane p = RdpPane.forFocusOwner(KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner());
+        if (p != null) {
+            return p;
+        }
+        return grid != null && grid.activeContent() instanceof RdpPane active ? active : null;
     }
 
     // ---- menu ----
@@ -978,9 +1236,11 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         file.addSeparator();
         JMenuItem quit = new JMenuItem("Quit");
         quit.addActionListener(e -> {
-            saveWindowState();
-            shutdownSessions();
-            TunnelManager.get().stopAll();
+            if (quitHandler != null) {
+                quitHandler.quitFromMenu(frame::dispose); // macOS: asks first, like Cmd+Q
+                return;
+            }
+            shutdown();
             frame.dispose();
         });
         file.add(quit);
@@ -995,6 +1255,8 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         terminal.add(menuItem("Duplicate Pane to Tab", TermAction.DUPLICATE_PANE_TAB));
         terminal.addSeparator();
         terminal.add(menuItem("Rename Connection…", TermAction.RENAME_PANE));
+        terminal.addSeparator();
+        terminal.add(menuItem("Send Ctrl+Alt+Del (RDP)", TermAction.SEND_CTRL_ALT_DEL));
 
         JMenu ssh = new JMenu("SSH");
         ssh.add(menuItem("Open SFTP Browser", TermAction.OPEN_SFTP));
@@ -1020,6 +1282,8 @@ public final class MainWindow implements TerminalWindow, TerminalServices {
         sidebarMenuItem = checkMenuItem("Sessions Sidebar", TermAction.TOGGLE_SIDEBAR,
                 split == null || split.isSidebarVisible());
         view.add(sidebarMenuItem);
+        view.addSeparator();
+        view.add(menuItem("Full Screen (RDP)", TermAction.TOGGLE_FULL_SCREEN));
 
         JMenu help = new JMenu("Help");
         JMenuItem manual = new JMenuItem("User Manual…");

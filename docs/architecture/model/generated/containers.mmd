@@ -19,17 +19,31 @@ graph LR
     style 5 fill:#6c757d,stroke:#4b5157,color:#ffffff
     6("<div style='font-weight: bold'>Local file system</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>OS config dir under<br />~/.config/jterm etc.; holds<br />sessions.json,<br />credentials.json, icons.json,<br />keymap.json.</div>")
     style 6 fill:#6c757d,stroke:#4b5157,color:#ffffff
+    7("<div style='font-weight: bold'>Remote desktop server</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>RDP server (Windows Remote<br />Desktop, GNOME Remote<br />Desktop) reached over TCP<br />with TLS and NLA.</div>")
+    style 7 fill:#6c757d,stroke:#4b5157,color:#ffffff
+    8("<div style='font-weight: bold'>RD Gateway</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Remote Desktop Gateway:<br />forwards an RDP connection<br />over HTTPS into a network the<br />client can't reach directly.</div>")
+    style 8 fill:#6c757d,stroke:#4b5157,color:#ffffff
+    9("<div style='font-weight: bold'>Cisco OpenH264 host</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>ciscobinary.openh264.org:<br />Cisco's OpenH264 decoder,<br />downloaded on the user's<br />opt-in (Linux only).</div>")
+    style 9 fill:#6c757d,stroke:#4b5157,color:#ffffff
 
-    subgraph 7 [jterm]
-      style 7 fill:transparent,stroke:#0b4884,color:#0b4884
+    subgraph 10 [jterm]
+      style 10 fill:transparent,stroke:#0b4884,color:#0b4884
 
-      8("<div style='font-weight: bold'>jterm JVM process</div><div style='font-size: 70%; margin-top: 0px'>[Container: Java 21 / Swing]</div><div style='font-size: 80%; margin-top:10px'>Java 21 Swing app; single OS<br />process hosting every<br />component.</div>")
-      style 8 fill:#1e88e5,stroke:#155fa0,color:#ffffff
+      11("<div style='font-weight: bold'>jterm JVM process</div><div style='font-size: 70%; margin-top: 0px'>[Container: Java 21 / Swing]</div><div style='font-size: 80%; margin-top:10px'>Java 21 Swing app; single OS<br />process hosting every<br />component.</div>")
+      style 11 fill:#1e88e5,stroke:#155fa0,color:#ffffff
+      115("<div style='font-weight: bold'>jterm-rdp-helper</div><div style='font-size: 70%; margin-top: 0px'>[Container: C / FreeRDP 3]</div><div style='font-size: 80%; margin-top:10px'>Small C client embedding<br />FreeRDP 3, one process per<br />RDP connection. Speaks RDP<br />and decodes frames; holds no<br />secret beyond the one<br />password it is handed, so a<br />server-triggered FreeRDP bug<br />stays out of the JVM and away<br />from the vault.</div>")
+      style 115 fill:#5e35b1,stroke:#41257b,color:#ffffff
     end
 
-    8-. "<div style='padding:4px 8px'><div>Spawns child process via<br />pty4j</div><div style='font-size: 70%'></div></div>" .->5
-    8-. "<div style='padding:4px 8px'><div>Atomic writes to the OS<br />config dir</div><div style='font-size: 70%'></div></div>" .->6
-    8-. "<div style='padding:4px 8px'><div>SSH channel over TCP</div><div style='font-size: 70%'></div></div>" .->2
-    8-. "<div style='padding:4px 8px'><div>Reads and writes native OS<br />secret</div><div style='font-size: 70%'></div></div>" .->3
-    8-. "<div style='padding:4px 8px'><div>Named pipe / Pageant on<br />Windows</div><div style='font-size: 70%'></div></div>" .->4
+    115-. "<div style='padding:4px 8px'><div>RDP over TCP with TLS<br />(FreeRDP)</div><div style='font-size: 70%'></div></div>" .->7
+    115-. "<div style='padding:4px 8px'><div>RD Gateway protocol over<br />HTTPS, when the session uses<br />one</div><div style='font-size: 70%'></div></div>" .->8
+    115-. "<div style='padding:4px 8px'><div>Loads the downloaded OpenH264<br />by full path (Linux)</div><div style='font-size: 70%'></div></div>" .->6
+    8-. "<div style='padding:4px 8px'><div>Forwards the RDP connection</div><div style='font-size: 70%'></div></div>" .->7
+    11-. "<div style='padding:4px 8px'><div>SSH channel over TCP</div><div style='font-size: 70%'></div></div>" .->2
+    11-. "<div style='padding:4px 8px'><div>Reads and writes native OS<br />secret</div><div style='font-size: 70%'></div></div>" .->3
+    11-. "<div style='padding:4px 8px'><div>Named pipe / Pageant on<br />Windows</div><div style='font-size: 70%'></div></div>" .->4
+    11-. "<div style='padding:4px 8px'><div>Spawns child process via<br />pty4j</div><div style='font-size: 70%'></div></div>" .->5
+    11-. "<div style='padding:4px 8px'><div>Atomic writes to the OS<br />config dir</div><div style='font-size: 70%'></div></div>" .->6
+    11-. "<div style='padding:4px 8px'><div>Starts one per RDP<br />connection; binary protocol<br />over stdin/stdout</div><div style='font-size: 70%'></div></div>" .->115
+    11-. "<div style='padding:4px 8px'><div>Downloads OpenH264 (HTTPS,<br />pinned SHA-256)</div><div style='font-size: 70%'></div></div>" .->9
   end

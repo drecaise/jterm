@@ -9,8 +9,10 @@ graph TB
   subgraph diagram ["jterm - System Context"]
     style diagram fill:transparent,stroke:transparent
 
-    1["<div style='font-weight: bold'>User</div><div style='font-size: 70%; margin-top: 0px'>[Person]</div><div style='font-size: 80%; margin-top:10px'>Runs local shells and<br />connects to remote hosts over<br />SSH.</div>"]
+    1["<div style='font-weight: bold'>User</div><div style='font-size: 70%; margin-top: 0px'>[Person]</div><div style='font-size: 80%; margin-top:10px'>Runs local shells and<br />connects to remote hosts over<br />SSH and RDP.</div>"]
     style 1 fill:#3949ab,stroke:#273377,color:#ffffff
+    10("<div style='font-weight: bold'>jterm</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Java 21 Swing terminal<br />emulator.</div>")
+    style 10 fill:#1168bd,stroke:#0b4884,color:#ffffff
     2("<div style='font-weight: bold'>Remote SSH daemon</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>sshd on the target host<br />reached via TCP.</div>")
     style 2 fill:#6c757d,stroke:#4b5157,color:#ffffff
     3("<div style='font-weight: bold'>OS keyring</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>secret-tool (Linux), security<br />(macOS) or Windows Credential<br />Store.</div>")
@@ -21,13 +23,21 @@ graph TB
     style 5 fill:#6c757d,stroke:#4b5157,color:#ffffff
     6("<div style='font-weight: bold'>Local file system</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>OS config dir under<br />~/.config/jterm etc.; holds<br />sessions.json,<br />credentials.json, icons.json,<br />keymap.json.</div>")
     style 6 fill:#6c757d,stroke:#4b5157,color:#ffffff
-    7("<div style='font-weight: bold'>jterm</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Java 21 Swing terminal<br />emulator.</div>")
-    style 7 fill:#1168bd,stroke:#0b4884,color:#ffffff
+    7("<div style='font-weight: bold'>Remote desktop server</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>RDP server (Windows Remote<br />Desktop, GNOME Remote<br />Desktop) reached over TCP<br />with TLS and NLA.</div>")
+    style 7 fill:#6c757d,stroke:#4b5157,color:#ffffff
+    8("<div style='font-weight: bold'>RD Gateway</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Remote Desktop Gateway:<br />forwards an RDP connection<br />over HTTPS into a network the<br />client can't reach directly.</div>")
+    style 8 fill:#6c757d,stroke:#4b5157,color:#ffffff
+    9("<div style='font-weight: bold'>Cisco OpenH264 host</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>ciscobinary.openh264.org:<br />Cisco's OpenH264 decoder,<br />downloaded on the user's<br />opt-in (Linux only).</div>")
+    style 9 fill:#6c757d,stroke:#4b5157,color:#ffffff
 
-    1-. "<div style='padding:4px 8px'><div>Opens tabs, splits panes,<br />launches sessions</div><div style='font-size: 70%'></div></div>" .->7
-    7-. "<div style='padding:4px 8px'><div>SSH shell + SFTP + tunnels</div><div style='font-size: 70%'></div></div>" .->2
-    7-. "<div style='padding:4px 8px'><div>Stores and retrieves master<br />password</div><div style='font-size: 70%'></div></div>" .->3
-    7-. "<div style='padding:4px 8px'><div>Public-key auth via agent<br />identities</div><div style='font-size: 70%'></div></div>" .->4
-    7-. "<div style='padding:4px 8px'><div>Runs interactive shells<br />locally / in WSL</div><div style='font-size: 70%'></div></div>" .->5
-    7-. "<div style='padding:4px 8px'><div>Reads and writes JSON config<br />files</div><div style='font-size: 70%'></div></div>" .->6
+    1-. "<div style='padding:4px 8px'><div>Opens tabs, splits panes,<br />launches sessions</div><div style='font-size: 70%'></div></div>" .->10
+    10-. "<div style='padding:4px 8px'><div>SSH shell + SFTP + tunnels</div><div style='font-size: 70%'></div></div>" .->2
+    10-. "<div style='padding:4px 8px'><div>Stores and retrieves master<br />password</div><div style='font-size: 70%'></div></div>" .->3
+    10-. "<div style='padding:4px 8px'><div>Public-key auth via agent<br />identities</div><div style='font-size: 70%'></div></div>" .->4
+    10-. "<div style='padding:4px 8px'><div>Runs interactive shells<br />locally / in WSL</div><div style='font-size: 70%'></div></div>" .->5
+    10-. "<div style='padding:4px 8px'><div>Reads and writes JSON config<br />files</div><div style='font-size: 70%'></div></div>" .->6
+    10-. "<div style='padding:4px 8px'><div>Remote desktop sessions (RDP)</div><div style='font-size: 70%'></div></div>" .->7
+    10-. "<div style='padding:4px 8px'><div>RDP through an RD Gateway<br />(HTTPS)</div><div style='font-size: 70%'></div></div>" .->8
+    8-. "<div style='padding:4px 8px'><div>Forwards the RDP connection</div><div style='font-size: 70%'></div></div>" .->7
+    10-. "<div style='padding:4px 8px'><div>Downloads the OpenH264 codec<br />(Linux, opt-in)</div><div style='font-size: 70%'></div></div>" .->9
   end

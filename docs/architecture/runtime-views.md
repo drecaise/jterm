@@ -70,6 +70,25 @@ asynchronously.
 - The connect itself follows the [SSH connect](#ssh-connect) view above; the
   connector is attached to the new pane on the EDT when the worker's `done()` fires.
 
+## RDP connect
+
+An RDP pane places itself before it connects, settles everything that involves trust or secrets in
+the JVM, and only then starts a helper process for this one connection.
+
+```mermaid
+--8<-- "architecture/model/generated/dynamic-rdp-connect.mmd"
+```
+
+**Points to notice:**
+
+- The pane is in its tab before any network activity, so a failure leaves Reconnect / Close in
+  place rather than an error dialog over nothing.
+- Password and certificate pins are resolved on the EDT and go to the helper in one `CONNECT`.
+  A certificate that is neither pinned nor CA-valid comes back as a prompt; one the user accepts is
+  pinned. The helper never writes FreeRDP's own certificate store.
+- A typed password is saved only after the server accepts it.
+- Each connect, including Reconnect, is a fresh helper process.
+
 ## See also
 
 - [Containers](containers.md) for the process-level threading model.

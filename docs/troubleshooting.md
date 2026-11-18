@@ -118,8 +118,73 @@ bare `.jar`.)
 
 ## macOS: "jterm can't be opened" on first launch
 
-The `.dmg` is currently unsigned, so Gatekeeper blocks the first launch. **Right-click** the app
-and choose **Open** to run it the first time; subsequent launches work normally.
+The `.dmg` is not notarized by Apple, so macOS refuses to open jterm when it was downloaded with a
+browser ("Apple could not verify jterm is free of malware"). Since macOS 15, right-clicking and
+choosing **Open** no longer gets past this. Either:
+
+- open **System Settings → Privacy & Security**, scroll to "jterm was blocked…" and click **Open
+  Anyway** (once), or
+- after dragging jterm into Applications, run this in Terminal:
+
+  ```bash
+  xattr -dr com.apple.quarantine /Applications/jterm.app
+  ```
+
+Start jterm from Applications, not from inside the mounted `.dmg`.
+
+## macOS: an RDP or SSH session "can't reach" a computer on your network
+
+macOS asks once whether jterm may find devices on your local network. If that was answered **Don't
+Allow**, connections to local addresses fail (RDP sessions say so). Turn jterm on in **System
+Settings → Privacy & Security → Local Network**, then reconnect.
+
+## RDP: no sound, or the remote desktop doesn't hear the microphone
+
+- Check that **Play sound on this computer** or **Use this computer's microphone** is on for the
+  session (**Local resources** tab), then reconnect: the settings take effect when connecting.
+- The **Sound** button says **No sound device** when jterm could not open your speakers. jterm
+  tries again every few seconds; check that a sound output is connected and enabled.
+- The **Mic** button reads **Mic blocked** or **Mic muted**: click it to allow or unmute. Its
+  tooltip says when the microphone could not be opened.
+- **macOS:** the remote desktop hears silence if jterm isn't allowed in **System Settings →
+  Privacy & Security → Microphone**.
+- **Windows:** the remote desktop hears silence if **Settings → Privacy & security → Microphone →
+  Let desktop apps access your microphone** is off. Windows doesn't ask, and jterm may not be able
+  to tell, so the button can still show **Mic on**.
+- **Flatpak:** sound and the microphone need the PulseAudio permission, which jterm's Flatpak has
+  unless it was removed (for example with Flatseal).
+- On the remote Windows desktop, the sound settings should show "Remote Audio" as the device.
+- **Sound is uncompressed (PCM) although you expected AAC:** on Linux, install your distribution's
+  `libfaad` (see [Compressed sound](rdp-sessions.md#sound-and-microphone)) and reconnect. jterm only
+  loads it from the system library folders, owned by root. The Flatpak needs nothing installed: it
+  uses the FFmpeg in its runtime.
+
+## RDP: the "jterm" printer is missing, or jobs don't arrive
+
+- Check that **Print through jterm** is on for the session (**Local resources** tab), then
+  reconnect. Windows may take a few seconds after signing in before the printer appears.
+- The printer uses Windows' **Microsoft Print To PDF** driver. Windows 10, 11 and Windows Server
+  2016 and later include it; on a server where that feature was removed, Windows can't create the
+  printer and jterm can't tell. Ask the server's administrator to keep "Microsoft Print to PDF".
+- A job larger than 256 MB, or one arriving while 8 jobs are already waiting, is refused: the
+  session's bar says so. Print, save or discard the waiting ones first.
+- **The print dialog shows no printers:** on Linux, jterm prints through CUPS (`libcups`). The RPM
+  and DEB install it; the Flatpak needs its CUPS permission, which it has unless it was removed
+  (for example with Flatseal).
+
+## RDP: the remote desktop sees no smart-card reader
+
+- Check that **Use smart cards** is on for the session and the reader is **ticked** under
+  **Readers** (**Local resources** tab), then reconnect. Only ticked readers are visible.
+- **The Readers list is empty although a reader is plugged in:** jterm can't reach your system's
+  smart-card service. On Linux that is `pcscd`: install `pcsc-lite` (Fedora, RHEL, Rocky) or `pcscd`
+  (Debian, Ubuntu) and check it runs (`systemctl status pcscd.socket`). The Flatpak needs its `pcsc`
+  permission, which it has unless it was removed (for example with Flatseal).
+- **Windows says the card can't be used, or asks for a PIN and fails:** if you chose **Don't allow**
+  when jterm asked, the card stays blocked for that connection; allow it with the session's **Smart
+  card** button, or reconnect to be asked again.
+- **Signing in to Windows with the card instead of a password** isn't supported; sign in with your
+  password and use the card in the session.
 
 ## Still stuck?
 

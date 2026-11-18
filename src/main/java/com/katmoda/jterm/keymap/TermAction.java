@@ -50,7 +50,29 @@ public enum TermAction {
     ATTACH_TAB("attach-tab", "Attach Tab to Main Window", "control shift I"),
     FONT_INCREASE("font-increase", "Increase Font Size", "control ADD"),
     FONT_DECREASE("font-decrease", "Decrease Font Size", "control SUBTRACT"),
-    FONT_RESET("font-reset", "Reset Font Size", "control NUMPAD0");
+    FONT_RESET("font-reset", "Reset Font Size", "control NUMPAD0"),
+    /**
+     * RDP panes only, where jterm may claim nothing but Ctrl+Shift strokes (everything else is the
+     * remote desktop's), hence not Ctrl+Alt+End as in mstsc. Elsewhere it is a no-op that lets the
+     * stroke through. New, so existing keymap.json files simply lack it and get this default.
+     */
+    SEND_CTRL_ALT_DEL("send-ctrl-alt-del", "Send Ctrl+Alt+Del (RDP)", "control shift DELETE"),
+    /**
+     * Shows the focused RDP pane's desktop full screen, or brings it back. Ctrl+Shift for the same
+     * reason as {@link #SEND_CTRL_ALT_DEL}; not Ctrl+Shift+Enter, which Windows' Start search uses
+     * for "run as administrator". Elsewhere a no-op that lets the stroke through. New, so existing
+     * keymap.json files lack it and get this default.
+     */
+    TOGGLE_FULL_SCREEN("toggle-full-screen", "Full Screen (RDP)", "control shift F11");
+
+    /**
+     * Whether this action is claimed while a full-screen RDP desktop has focus. Only these two:
+     * there is no visible tab or grid for anything else to act on, so every other stroke, macro
+     * hotkeys included, belongs to the remote desktop.
+     */
+    public boolean availableInRdpFullScreen() {
+        return this == TOGGLE_FULL_SCREEN || this == SEND_CTRL_ALT_DEL;
+    }
 
     private final String id;
     private final String label;

@@ -92,6 +92,14 @@ package that hosts the top-level window and the shortcut dispatcher.
   hands off session creation to `SessionFactory` (see the
   [drop-to-split runtime view](runtime-views.md#drop-to-split)).
 
+**RDP (`ui.rdp`).**
+
+- `RdpPane` is a `GridContent` like `SftpPane`, opened in a new tab by default. It paints what the
+  RDP helper process sends and owns all input; while it has focus, the global shortcut dispatcher
+  claims only Ctrl+Shift strokes, so Ctrl+T, Ctrl+W and Ctrl+C reach the remote desktop.
+- A sidebar drag of an RDP session goes through `RdpDropHandler`: a split of the pane it lands on,
+  or a new tab when that direction is full. See [Components — RDP](components-rdp.md).
+
 **SFTP (`ui.sftp`).**
 
 - `SftpPane` opens the SFTP subsystem on an existing `SshSession` rather than

@@ -101,6 +101,20 @@ public final class AppSettings {
     // hotkeys stay plaintext either way, so the Macros menu works with the vault locked.
     private boolean encryptMacros = false;
 
+    // Whether RDP sessions may use Cisco's OpenH264 decoder (Linux, downloaded on opt-in — see
+    // terminal.rdp.OpenH264 for why it cannot simply ship). Read when a session connects.
+    private boolean openH264Enabled = false;
+
+    // macOS: whether Cmd is sent to a remote desktop as Ctrl (so Cmd+C copies in a Windows
+    // session), rather than as the Windows key. Read on every key event, so it applies at once.
+    private boolean rdpCmdAsCtrl = true;
+    /** RDP sound may come compressed (AAC), decoded by the system's decoder; read at connect. */
+    private boolean rdpAacAudio = true;
+
+    // Whether the bar of a full-screen RDP desktop stays shown instead of appearing only when the
+    // pointer rests at the top edge. Remembered across sessions, toggled from the bar's pin.
+    private boolean rdpFullScreenBarPinned = false;
+
     // Whether the app asks GitHub once a day whether a newer release exists. Read live by
     // update.UpdateScheduler at each firing, so both directions of the toggle take effect without
     // a restart. Nothing about the user is transmitted — see update.UpdateChecker.
@@ -266,6 +280,46 @@ public final class AppSettings {
 
     public void setEncryptMacros(boolean encryptMacros) {
         this.encryptMacros = encryptMacros;
+    }
+
+    /** Whether RDP sessions may use the downloaded OpenH264 decoder. Read at each connect. */
+    public boolean isOpenH264Enabled() {
+        return openH264Enabled;
+    }
+
+    public void setOpenH264Enabled(boolean openH264Enabled) {
+        this.openH264Enabled = openH264Enabled;
+    }
+
+    /** macOS: whether Cmd goes to a remote desktop as Ctrl (else as the Windows key). */
+    public boolean isRdpCmdAsCtrl() {
+        return rdpCmdAsCtrl;
+    }
+
+    public void setRdpCmdAsCtrl(boolean rdpCmdAsCtrl) {
+        this.rdpCmdAsCtrl = rdpCmdAsCtrl;
+    }
+
+    /**
+     * Whether an RDP session that plays sound may receive it compressed with AAC, decoded in the
+     * helper by the operating system's (or, on Linux, the distribution's) decoder. On by default; a
+     * way out if a system decoder misbehaves, leaving uncompressed sound. Read at each connect.
+     */
+    public boolean isRdpAacAudio() {
+        return rdpAacAudio;
+    }
+
+    public void setRdpAacAudio(boolean rdpAacAudio) {
+        this.rdpAacAudio = rdpAacAudio;
+    }
+
+    /** Whether a full-screen RDP desktop's bar stays shown (the bar's pin). */
+    public boolean isRdpFullScreenBarPinned() {
+        return rdpFullScreenBarPinned;
+    }
+
+    public void setRdpFullScreenBarPinned(boolean rdpFullScreenBarPinned) {
+        this.rdpFullScreenBarPinned = rdpFullScreenBarPinned;
     }
 
     /**
@@ -539,7 +593,7 @@ public final class AppSettings {
                 uiScalePercent, uiFontFamily, uiFontSize, promptPasswordOnAuthFailure,
                 sidebarVisible, blinkCursor, defaultKeepAliveSeconds, showWorkingDirectory,
                 updateCheckEnabled, lastUpdateCheckEpochSeconds, skippedUpdateVersion,
-                encryptMacros));
+                encryptMacros, openH264Enabled, rdpCmdAsCtrl, rdpFullScreenBarPinned, rdpAacAudio));
     }
 
     private static AppSettings load() {
@@ -570,8 +624,20 @@ public final class AppSettings {
             if (p.skippedUpdateVersion != null) {
                 settings.setSkippedUpdateVersion(p.skippedUpdateVersion);
             }
+            if (p.openH264Enabled != null) {
+                settings.openH264Enabled = p.openH264Enabled;
+            }
             if (p.encryptMacros != null) {
                 settings.encryptMacros = p.encryptMacros;
+            }
+            if (p.rdpCmdAsCtrl != null) {
+                settings.rdpCmdAsCtrl = p.rdpCmdAsCtrl;
+            }
+            if (p.rdpFullScreenBarPinned != null) {
+                settings.rdpFullScreenBarPinned = p.rdpFullScreenBarPinned;
+            }
+            if (p.rdpAacAudio != null) {
+                settings.rdpAacAudio = p.rdpAacAudio;
             }
             if (!isBlank(p.defaultTerminalType)) {
                 settings.defaultTerminalType = p.defaultTerminalType;
@@ -662,6 +728,8 @@ public final class AppSettings {
                              Boolean blinkCursor, Integer defaultKeepAliveSeconds,
                              Boolean showWorkingDirectory, Boolean updateCheckEnabled,
                              Long lastUpdateCheckEpochSeconds, String skippedUpdateVersion,
-                             Boolean encryptMacros) {
+                             Boolean encryptMacros, Boolean openH264Enabled,
+                             Boolean rdpCmdAsCtrl, Boolean rdpFullScreenBarPinned,
+                             Boolean rdpAacAudio) {
     }
 }

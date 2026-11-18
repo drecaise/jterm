@@ -9,32 +9,35 @@ graph TB
   subgraph diagram ["jterm - Deployment - macOS"]
     style diagram fill:transparent,stroke:transparent
 
-    subgraph 124 [macOS workstation]
-      style 124 fill:transparent,stroke:#888888,color:#6b7280
+    subgraph 167 [macOS workstation]
+      style 167 fill:transparent,stroke:#888888,color:#6b7280
 
-      subgraph 125 [DMG-installed jterm]
-        style 125 fill:transparent,stroke:#888888,color:#6b7280
+      subgraph 168 [DMG-installed jterm]
+        style 168 fill:transparent,stroke:#888888,color:#6b7280
 
-        126("<div style='font-weight: bold'>jterm JVM process</div><div style='font-size: 70%; margin-top: 0px'>[Container: Java 21 / Swing]</div><div style='font-size: 80%; margin-top:10px'>Java 21 Swing app; single OS<br />process hosting every<br />component.</div>")
-        style 126 fill:#1e88e5,stroke:#155fa0,color:#ffffff
+        169("<div style='font-weight: bold'>jterm JVM process</div><div style='font-size: 70%; margin-top: 0px'>[Container: Java 21 / Swing]</div><div style='font-size: 80%; margin-top:10px'>Java 21 Swing app; single OS<br />process hosting every<br />component.</div>")
+        style 169 fill:#1e88e5,stroke:#155fa0,color:#ffffff
+        170("<div style='font-weight: bold'>jterm-rdp-helper</div><div style='font-size: 70%; margin-top: 0px'>[Container: C / FreeRDP 3]</div><div style='font-size: 80%; margin-top:10px'>Small C client embedding<br />FreeRDP 3, one process per<br />RDP connection. Speaks RDP<br />and decodes frames; holds no<br />secret beyond the one<br />password it is handed, so a<br />server-triggered FreeRDP bug<br />stays out of the JVM and away<br />from the vault.</div>")
+        style 170 fill:#5e35b1,stroke:#41257b,color:#ffffff
       end
 
-      subgraph 127 [security CLI]
-        style 127 fill:transparent,stroke:#888888,color:#6b7280
+      subgraph 172 [security CLI]
+        style 172 fill:transparent,stroke:#888888,color:#6b7280
 
-        128("<div style='font-weight: bold'>OS keyring</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>secret-tool (Linux), security<br />(macOS) or Windows Credential<br />Store.</div>")
-        style 128 fill:#6c757d,stroke:#4b5157,color:#ffffff
+        173("<div style='font-weight: bold'>OS keyring</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>secret-tool (Linux), security<br />(macOS) or Windows Credential<br />Store.</div>")
+        style 173 fill:#6c757d,stroke:#4b5157,color:#ffffff
       end
 
-      subgraph 130 [ssh-agent]
-        style 130 fill:transparent,stroke:#888888,color:#6b7280
+      subgraph 175 [ssh-agent]
+        style 175 fill:transparent,stroke:#888888,color:#6b7280
 
-        131("<div style='font-weight: bold'>SSH agent</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Unix-domain socket, OpenSSH<br />named pipe or PuTTY Pageant.</div>")
-        style 131 fill:#6c757d,stroke:#4b5157,color:#ffffff
+        176("<div style='font-weight: bold'>SSH agent</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Unix-domain socket, OpenSSH<br />named pipe or PuTTY Pageant.</div>")
+        style 176 fill:#6c757d,stroke:#4b5157,color:#ffffff
       end
 
     end
 
-    126-. "<div style='padding:4px 8px'><div>Reads and writes native OS<br />secret</div><div style='font-size: 70%'></div></div>" .->128
-    126-. "<div style='padding:4px 8px'><div>Named pipe / Pageant on<br />Windows</div><div style='font-size: 70%'></div></div>" .->131
+    169-. "<div style='padding:4px 8px'><div>Starts one per RDP<br />connection; binary protocol<br />over stdin/stdout</div><div style='font-size: 70%'></div></div>" .->170
+    169-. "<div style='padding:4px 8px'><div>Reads and writes native OS<br />secret</div><div style='font-size: 70%'></div></div>" .->173
+    169-. "<div style='padding:4px 8px'><div>Named pipe / Pageant on<br />Windows</div><div style='font-size: 70%'></div></div>" .->176
   end

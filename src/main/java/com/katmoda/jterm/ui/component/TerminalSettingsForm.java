@@ -23,11 +23,7 @@ import com.katmoda.jterm.ui.theme.JTermSettingsProvider;
 
 import javax.swing.DefaultComboBoxModel;
 import javax.swing.JComboBox;
-import javax.swing.JComponent;
-import javax.swing.JLabel;
-import javax.swing.JPanel;
 import java.awt.GraphicsEnvironment;
-import java.awt.GridLayout;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
@@ -74,7 +70,7 @@ public final class TerminalSettingsForm {
     private final JComboBox<String> fontSize;
     private final int initialFontSize;
     private final JComboBox<String> charset;
-    private final JPanel panel;
+    private final FormGrid panel;
 
     /**
      * @param allowDefault whether to offer a "(Default)" / inherit option for Type, Font and Charset
@@ -114,15 +110,15 @@ public final class TerminalSettingsForm {
         this.charset = editableCombo(supportedCharsets());
         this.charset.setSelectedItem(isBlank(charsetName) ? defaultText("UTF-8") : charsetName);
 
-        this.panel = new JPanel(new GridLayout(0, 2, 6, 6));
-        row("Terminal Type:", terminalType);
-        row("Font:", font);
-        row("Font Size:", fontSize);
-        row("Terminal Charset:", charset);
+        this.panel = new FormGrid();
+        panel.row("Terminal Type:", terminalType);
+        panel.row("Font:", font);
+        panel.row("Font Size:", fontSize);
+        panel.row("Terminal Charset:", charset);
     }
 
-    /** The Swing component to drop into a dialog. */
-    public JComponent component() {
+    /** The Swing component to drop into a dialog; callers may add rows of their own to it. */
+    public FormGrid component() {
         return panel;
     }
 
@@ -177,11 +173,6 @@ public final class TerminalSettingsForm {
     /** Maps the "(Default)" sentinel back to an empty (inherit) value. */
     private String resolved(String text) {
         return (allowDefault && DEFAULT_LABEL.equals(text)) ? "" : text;
-    }
-
-    private void row(String label, JComponent field) {
-        panel.add(new JLabel(label));
-        panel.add(field);
     }
 
     private JComboBox<String> editableCombo(String[] items) {

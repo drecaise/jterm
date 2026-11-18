@@ -19,22 +19,37 @@
  */
 package com.katmoda.jterm.session;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 
 /**
  * A node in the saved-sessions tree: a {@link FolderNode} (recursive container), an
- * {@link SshSessionConfig} (a saved SSH connection), or a {@link WslDistroNode} (a WSL2
- * distribution discovered at runtime). Folders and SSH sessions are persisted polymorphically
+ * {@link SshSessionConfig} (a saved SSH connection), an {@link RdpSessionConfig} (a saved RDP
+ * connection), a {@link WslDistroNode} (a WSL2
+ * distribution discovered at runtime), or an {@link UnknownSessionNode} (a node type from a newer
+ * jterm). Folders, SSH and RDP sessions are persisted polymorphically
  * via a {@code "type"} discriminator; {@code WslDistroNode}s live only in memory and so have no
  * {@code @JsonSubTypes} entry — they are never written to {@code sessions.json}.
+ *
+ * <p>A node whose {@code type} this build doesn't know loads as an {@link UnknownSessionNode}
+ * ({@code defaultImpl}) and is written back unchanged. That needs the type id {@code visible} to
+ * the placeholder's deserializer, but a visible id is also passed to every known subtype as an
+ * ordinary {@code "type"} property, which they would reject as unknown (measured, Jackson 2.21) —
+ * hence the {@code @JsonIgnoreProperties}, which they inherit. The placeholder's own deserializer
+ * reads the raw object and is unaffected by it. A root read as {@code FolderNode.class} ignores the
+ * {@code defaultImpl} (not a {@code FolderNode}), so a broken root still fails as before.</p>
  */
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type",
+        visible = true, defaultImpl = UnknownSessionNode.class)
+@JsonIgnoreProperties("type")
 @JsonSubTypes({
         @JsonSubTypes.Type(value = FolderNode.class, name = "folder"),
-        @JsonSubTypes.Type(value = SshSessionConfig.class, name = "ssh")
+        @JsonSubTypes.Type(value = SshSessionConfig.class, name = "ssh"),
+        @JsonSubTypes.Type(value = RdpSessionConfig.class, name = "rdp")
 })
-public sealed interface SessionNode permits FolderNode, SshSessionConfig, WslDistroNode {
+public sealed interface SessionNode
+        permits FolderNode, SshSessionConfig, RdpSessionConfig, WslDistroNode, UnknownSessionNode {
 
     String getName();
 

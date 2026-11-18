@@ -31,6 +31,8 @@ focus. The menus show the same accelerators for discoverability.
 | Increase pane font size | ++ctrl+num-plus++ |
 | Decrease pane font size | ++ctrl+num-minus++ |
 | Reset pane font size | ++ctrl+num0++ |
+| Send Ctrl+Alt+Del to a remote desktop (RDP panes) | ++ctrl+shift+del++ |
+| Full screen for a remote desktop, and back (RDP panes) | ++ctrl+shift+f11++ |
 
 !!! note "Font-size keys"
     The increase/decrease/reset bindings shown above are the **numeric keypad** keys (these are
@@ -55,6 +57,11 @@ focus. The menus show the same accelerators for discoverability.
     On macOS, ++ctrl++ in the table corresponds to the platform's primary modifier as bound in
     the keymap. Check **Settings → Keyboard Shortcuts…** for the exact bindings on your
     system.
+
+    **Cmd+Q** (and **Quit** in the Dock) quits jterm. If remote desktops, SSH sessions, SFTP
+    browsers or tunnels are open, it asks first and lists what would be disconnected; local
+    terminals alone don't make it ask. Quitting this way saves the window layout and closes every
+    session cleanly, as closing the main window does.
 
 ## Customising shortcuts
 

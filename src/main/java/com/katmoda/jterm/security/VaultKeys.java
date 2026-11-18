@@ -48,6 +48,11 @@ public final class VaultKeys {
         return "keypass:" + sessionId;
     }
 
+    /** An RDP session's separate RD Gateway password. */
+    public static String rdpGatewayPassword(String sessionId) {
+        return "rdpgw:" + sessionId;
+    }
+
     /** Folder-level default SSH password. */
     public static String folderPassword(String folderId) {
         return "folderpw:" + folderId;

@@ -20,8 +20,10 @@
 package com.katmoda.jterm.ui.windowing;
 
 import com.katmoda.jterm.keymap.Keymap;
+import com.katmoda.jterm.session.RdpSessionConfig;
 import com.katmoda.jterm.session.SshSessionConfig;
 import com.katmoda.jterm.terminal.ssh.SshSession;
+import com.katmoda.jterm.ui.rdp.RdpPane;
 
 import javax.swing.Icon;
 import java.util.function.Consumer;
@@ -54,4 +56,10 @@ public interface TerminalServices {
 
     /** The shared, user-configurable keymap (for shortcut accelerators / tooltips). */
     Keymap keymap();
+
+    /**
+     * A new RDP pane for {@code cfg}, neither placed nor started: the caller places it, then calls
+     * {@link RdpPane#start()} (an RDP pane places itself first and connects second).
+     */
+    RdpPane newRdpPane(RdpSessionConfig cfg);
 }

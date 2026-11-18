@@ -105,6 +105,27 @@ public final class AppPaths {
         return dir;
     }
 
+    /**
+     * A per-user folder for transient files that must never travel with a roaming profile or a
+     * config backup: {@code %LOCALAPPDATA%\jterm} on Windows ({@code %APPDATA%}, where the config
+     * lives, roams), {@code ~/Library/Caches/jterm} on macOS, {@code $XDG_CACHE_HOME/jterm} or
+     * {@code ~/.cache/jterm} elsewhere. Not created here.
+     */
+    public static Path localDataDir() {
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        String home = System.getProperty("user.home", ".");
+        if (os.contains("win")) {
+            String local = System.getenv("LOCALAPPDATA");
+            return (local != null && !local.isBlank() ? Path.of(local) : Path.of(home, "AppData", "Local"))
+                    .resolve("jterm");
+        }
+        if (os.contains("mac") || os.contains("darwin")) {
+            return Path.of(home, "Library", "Caches", "jterm");
+        }
+        String xdg = System.getenv("XDG_CACHE_HOME");
+        return (xdg != null && !xdg.isBlank() ? Path.of(xdg) : Path.of(home, ".cache")).resolve("jterm");
+    }
+
     private static Path resolveConfigDir() {
         String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
         String home = System.getProperty("user.home", ".");

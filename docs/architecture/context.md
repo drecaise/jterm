@@ -25,6 +25,10 @@ between one user and their tools.
   [ADR 0005](adr/0005-per-os-keyring-clis.md) for the reasoning.
 - **Local shell** — spawned by pty4j as a child process for local terminal sessions
   (`bash -l`, `powershell`, or `wsl.exe -d <distro>` on Windows).
+- **Remote desktop server** — the target of an RDP session: Windows Remote Desktop or GNOME
+  Remote Desktop, for example. Reached only from the RDP helper process, never from the JVM.
+- **Cisco OpenH264 host** — on Linux, where the packages ship no H.264 codec, jterm downloads
+  Cisco's decoder from `ciscobinary.openh264.org` when the user turns H.264 on.
 - **Local file system** — the OS config directory (see
   [Configuration files](../config-files.md)) holds every JSON persisted by the app.
   jterm never writes outside this directory.
@@ -39,6 +43,13 @@ Two boundaries matter for reasoning about security:
 - Between jterm and the **network** (remote sshd) — untrusted by default. Host keys are
   pinned on first use in `~/.ssh/known_hosts` and a warning is shown on change; see
   [ADR 0004](adr/0004-tofu-host-key-verification.md).
+- Between jterm and a **remote desktop server** — untrusted, and kept further away: its
+  certificate is pinned by SHA-256 in jterm's own store, and its protocol is parsed by FreeRDP in a
+  separate helper process that knows one password, not in the JVM beside the vault
+  ([ADR 0012](adr/0012-rdp-via-out-of-process-freerdp.md)). Its clipboard reaches the local one only
+  when the session enables sharing.
+- The **OpenH264 download** is checked against a SHA-256 pinned in the source before it is
+  unpacked or loaded.
 
 The SSH agent, OS keyring, and local file system live on the same trust side as jterm
 itself (they are all on the local machine, under the same user account).

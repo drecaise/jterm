@@ -229,6 +229,16 @@ public final class PaneTitle {
     }
 
     /**
+     * Cleans a user-typed name for display (see {@link #clean}), for content that is not a terminal
+     * pane — e.g. a renamed RDP tab — so it passes the same filter as every other label.
+     *
+     * @return the cleaned name, or null if nothing usable is left (meaning "no custom name")
+     */
+    public static String sanitizeName(String raw) {
+        return clean(raw, null);
+    }
+
+    /**
      * The single sanitisation choke point. Every string that reaches a pane label or a tab title
      * passes through here, because a working directory is <em>attacker-controlled data</em>: it
      * arrives as an escape sequence from whatever host the user connected to. A rename goes through

@@ -9,13 +9,14 @@ The docs follow the [**C4 model**](https://c4model.com/): four static levels
 
 - [System context](context.md) — jterm's place in the world; users, remote hosts,
   the ssh-agent, the OS keyring, and the local file system.
-- [Containers](containers.md) — the single JVM process and its OS-native peers.
+- [Containers](containers.md) — the JVM process, the RDP helper process and their OS-native peers.
 - Components — grouped for readability:
     - [UI](components-ui.md) — window, tabs, pane grid, sidebar, SFTP, theming.
     - [Terminal](components-terminal.md) — session abstraction, local and SSH backends, ssh-agent stack.
     - [Security](components-security.md) — credential vault, keyring integration, trust boundaries.
+    - [RDP](components-rdp.md) — remote desktop panes, the out-of-process FreeRDP helper, clipboard and codec.
 - [Runtime views](runtime-views.md) — sequence diagrams for SSH connect, broadcast
-  fan-out, and drop-to-split.
+  fan-out, drop-to-split, and RDP connect.
 - [Deployment](deployment.md) — per-OS packaging and OS integration (Flatpak, RPM, MSI, DMG).
 - [Decision records](adr/index.md) — short, dated ADRs for the sharp-edge choices.
 
@@ -27,11 +28,12 @@ Every static diagram uses colour to signal the C4 layer:
 | --- | --- |
 | Indigo person | Human user |
 | Blue | The `jterm` JVM container |
+| Purple | The `jterm-rdp-helper` container (FreeRDP, one process per RDP connection) |
 | Sky blue | UI components inside the JVM |
 | Teal | Terminal / session components |
 | Red | Security components |
 | Brown | Persistence components |
-| Grey | External systems (SSH daemon, ssh-agent, OS keyring, file system) |
+| Grey | External systems (SSH daemon, RDP server, ssh-agent, OS keyring, file system, Cisco's OpenH264 host) |
 
 Sequence diagrams call out **which thread** each participant runs on
 (Swing EDT vs. `SwingWorker` vs. JediTerm's reader thread), because that separation is
@@ -60,5 +62,5 @@ overwrite your change. Always start at the DSL.
   diagrams name the important classes; the code is the source of truth beyond that.
 - **A change log for the architecture.** That's what the [ADR log](adr/index.md) is for
   — each significant decision gets its own dated file.
-- **Vendor internals.** JediTerm, MINA SSHD, pty4j, and FlatLaf are treated as opaque
+- **Vendor internals.** JediTerm, MINA SSHD, pty4j, FlatLaf and FreeRDP are treated as opaque
   external components; only the integration seam is described.

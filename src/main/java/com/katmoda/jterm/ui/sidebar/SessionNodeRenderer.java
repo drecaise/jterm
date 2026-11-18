@@ -22,8 +22,10 @@ package com.katmoda.jterm.ui.sidebar;
 import com.formdev.flatlaf.extras.FlatSVGIcon;
 import com.katmoda.jterm.icon.IconLibrary;
 import com.katmoda.jterm.session.FolderNode;
+import com.katmoda.jterm.session.RdpSessionConfig;
 import com.katmoda.jterm.session.SessionNode;
 import com.katmoda.jterm.session.SshSessionConfig;
+import com.katmoda.jterm.session.UnknownSessionNode;
 import com.katmoda.jterm.session.WslDistroNode;
 
 import javax.swing.Icon;
@@ -65,6 +67,18 @@ final class SessionNodeRenderer extends DefaultTreeCellRenderer {
         if (value instanceof DefaultMutableTreeNode tn
                 && tn.getUserObject() instanceof SessionNode node) {
             setText(node.getName());
+            if (node instanceof UnknownSessionNode unknown) {
+                // A node type from a newer jterm: kept, movable and deletable, nothing else. Greyed
+                // like a disabled row so it doesn't read as a session that can be opened.
+                String label = unknown.savedName() != null && !unknown.savedName().isBlank()
+                        ? unknown.savedName() : "\"" + unknown.typeId() + "\" node";
+                setText(label + " (needs a newer jterm)");
+                setIcon(UIManager.getIcon("Tree.leafIcon"));
+                if (!selected) {
+                    setForeground(UIManager.getColor("Label.disabledForeground"));
+                }
+                return this;
+            }
             if (node instanceof WslDistroNode) {
                 setIcon(new BorderedIcon(IconLibrary.get().icon("builtin/wsl", 12)));
                 return this;
@@ -81,6 +95,8 @@ final class SessionNodeRenderer extends DefaultTreeCellRenderer {
                         : UIManager.getIcon("Tree.closedIcon"));
             } else if (node instanceof SshSessionConfig) {
                 setIcon(UIManager.getIcon("Tree.leafIcon"));
+            } else if (node instanceof RdpSessionConfig) {
+                setIcon(IconLibrary.get().icon("builtin/rdp", 16));
             }
         }
         return this;

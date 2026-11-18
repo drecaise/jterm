@@ -1,0 +1,152 @@
+jterm: never read FreeRDP's system-wide certificates.json.
+
+Its "ignore" switch makes FreeRDP accept any server certificate, before the pinned
+fingerprints or the helper's callback are consulted. On Windows the file is looked up under
+%ProgramData%\<vendor>\<product>\, where every local user may create folders, so one user
+of a shared PC could switch off certificate checking for everyone else's jterm. jterm's pin
+store is its only certificate policy, so the lookup and its helpers are removed outright.
+
+Applies to the FreeRDP version in ../FREERDP_VERSION; a version bump that moves this code
+fails the build at the apply step, and the build scripts then check the result (the string
+"deny-userconfig" must be gone from the built library).
+
+--- a/libfreerdp/crypto/tls.c
++++ b/libfreerdp/crypto/tls.c
+@@ -1644,131 +1644,17 @@
+ }
+ 
+ WINPR_ATTR_NODISCARD
+-static int tls_config_parse_bool(WINPR_JSON* json, const char* opt)
+-{
+-	WINPR_JSON* val = WINPR_JSON_GetObjectItemCaseSensitive(json, opt);
+-	if (!val || !WINPR_JSON_IsBool(val))
+-		return -1;
+-
+-	if (WINPR_JSON_IsTrue(val))
+-		return 1;
+-	return 0;
+-}
+-
+-WINPR_ATTR_NODISCARD
+-static int tls_config_check_allowed_hashed(const char* configfile, const rdpCertificate* cert,
+-                                           WINPR_JSON* json)
+-{
+-	WINPR_ASSERT(configfile);
+-	WINPR_ASSERT(cert);
+-	WINPR_ASSERT(json);
+-
+-	WINPR_JSON* db = WINPR_JSON_GetObjectItemCaseSensitive(json, "certificate-db");
+-	if (!db || !WINPR_JSON_IsArray(db))
+-		return 0;
+-
+-	for (size_t x = 0; x < WINPR_JSON_GetArraySize(db); x++)
+-	{
+-		WINPR_JSON* cur = WINPR_JSON_GetArrayItem(db, x);
+-		if (!cur || !WINPR_JSON_IsObject(cur))
+-		{
+-			WLog_WARN(TAG,
+-			          "[%s] invalid certificate-db entry at position %" PRIuz ": not a JSON object",
+-			          configfile, x);
+-			continue;
+-		}
+-
+-		WINPR_JSON* key = WINPR_JSON_GetObjectItemCaseSensitive(cur, "type");
+-		if (!key || !WINPR_JSON_IsString(key))
+-		{
+-			WLog_WARN(TAG,
+-			          "[%s] invalid certificate-db entry at position %" PRIuz
+-			          ": invalid 'type' element, expected type string",
+-			          configfile, x);
+-			continue;
+-		}
+-		WINPR_JSON* val = WINPR_JSON_GetObjectItemCaseSensitive(cur, "hash");
+-		if (!val || !WINPR_JSON_IsString(val))
+-		{
+-			WLog_WARN(TAG,
+-			          "[%s] invalid certificate-db entry at position %" PRIuz
+-			          ": invalid 'hash' element, expected type string",
+-			          configfile, x);
+-			continue;
+-		}
+-
+-		const char* skey = WINPR_JSON_GetStringValue(key);
+-		const char* sval = WINPR_JSON_GetStringValue(val);
+-
+-		char* hash = freerdp_certificate_get_fingerprint_by_hash_ex(cert, skey, FALSE);
+-		if (!hash)
+-		{
+-			WLog_WARN(TAG,
+-			          "[%s] invalid certificate-db entry at position %" PRIuz
+-			          ": hash type '%s' not supported by certificate",
+-			          configfile, x, skey);
+-			continue;
+-		}
+-
+-		const int cmp = _stricmp(hash, sval);
+-		free(hash);
+-
+-		if (cmp == 0)
+-			return 1;
+-	}
+-
+-	return 0;
+-}
+-
+-WINPR_ATTR_NODISCARD
+ static int tls_config_check_certificate(const rdpCertificate* cert, BOOL* pAllowUserconfig)
+ {
+ 	WINPR_ASSERT(cert);
+ 	WINPR_ASSERT(pAllowUserconfig);
+ 
+-	int rc = 0;
+-	const char configfile[] = "certificates.json";
+-	WINPR_JSON* json = freerdp_GetJSONConfigFile(TRUE, configfile);
+-
+-	if (!json)
+-	{
+-		WLog_DBG(TAG, "No or no valid configuration file for certificate handling, asking user");
+-		goto fail;
+-	}
+-
+-	if (tls_config_parse_bool(json, "deny") > 0)
+-	{
+-		WLog_WARN(TAG, "[%s] certificate denied by configuration", configfile);
+-		rc = -1;
+-		goto fail;
+-	}
+-
+-	if (tls_config_parse_bool(json, "ignore") > 0)
+-	{
+-		WLog_WARN(TAG, "[%s] certificate ignored by configuration", configfile);
+-		rc = 1;
+-		goto fail;
+-	}
+-
+-	if (tls_config_check_allowed_hashed(configfile, cert, json) > 0)
+-	{
+-		WLog_WARN(TAG, "[%s] certificate manually accepted by configuration", configfile);
+-		rc = 1;
+-		goto fail;
+-	}
+-
+-	if (tls_config_parse_bool(json, "deny-userconfig") > 0)
+-	{
+-		WLog_WARN(TAG, "[%s] configuration denies user to accept certificates", configfile);
+-		rc = -1;
+-		goto fail;
+-	}
+-
+-fail:
+-
+-	*pAllowUserconfig = (rc == 0);
+-	WINPR_JSON_Delete(json);
+-	return rc;
++	/* jterm: the system-wide certificates.json is never read. Its "ignore" switch accepts any
++	 * certificate, and on Windows the file lives under %ProgramData%, where every local user may
++	 * create it: one user could switch off certificate checking for all the others. jterm's own
++	 * pin store is the only certificate policy. */
++	*pAllowUserconfig = TRUE;
++	return 0;
+ }
+ 
+ int tls_verify_certificate(rdpTls* tls, const rdpCertificate* cert, const char* hostname,

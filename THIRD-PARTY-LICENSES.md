@@ -16,7 +16,61 @@ set declared in `pom.xml` and must be updated when dependencies change.
 | EdDSA-Java (ed25519) | `net.i2p.crypto:eddsa` | 0.3.0 | CC0-1.0 (public domain) | https://creativecommons.org/publicdomain/zero/1.0/legalcode |
 | Jackson Databind | `com.fasterxml.jackson.core:jackson-databind` | 2.19.0 | Apache-2.0 | https://www.apache.org/licenses/LICENSE-2.0 |
 | java-keyring | `com.github.javakeyring:java-keyring` | 1.0.4 | ISC (see note) | https://opensource.org/licenses/ISC |
+| Apache Commons Compress | `org.apache.commons:commons-compress` | 1.28.0 | Apache-2.0 | https://www.apache.org/licenses/LICENSE-2.0 |
+| Apache Commons IO | `commons-io:commons-io` (via Commons Compress) | 2.20.0 | Apache-2.0 | https://www.apache.org/licenses/LICENSE-2.0 |
 | SLF4J Simple | `org.slf4j:slf4j-simple` | 2.0.13 | MIT | https://opensource.org/licenses/MIT |
+| JCL over SLF4J | `org.slf4j:jcl-over-slf4j` | 2.0.13 | Apache-2.0 | https://www.apache.org/licenses/LICENSE-2.0 |
+| Apache PDFBox | `org.apache.pdfbox:pdfbox` | 3.0.8 | Apache-2.0 (see note) | https://www.apache.org/licenses/LICENSE-2.0 |
+| Apache PDFBox IO | `org.apache.pdfbox:pdfbox-io` | 3.0.8 | Apache-2.0 | https://www.apache.org/licenses/LICENSE-2.0 |
+| Apache FontBox | `org.apache.pdfbox:fontbox` | 3.0.8 | Apache-2.0 (see note) | https://www.apache.org/licenses/LICENSE-2.0 |
+
+## Native components (RDP helper)
+
+The RDP helper (`native/rdp-helper`, installed under `rdp/`) bundles the following native
+libraries. Their license texts ship beside the binaries in `rdp/licenses/`. Versions are pinned
+by `native/rdp-helper/FREERDP_VERSION`, on Windows by the `vcpkg.json` baseline, and on macOS in
+`native/rdp-helper/build-freerdp-macos.sh`.
+
+| Library | Version | Bundled on | License | License text |
+|---|---|---|---|---|
+| FreeRDP (libfreerdp, libfreerdp-client, WinPR) | 3.33.0 | all targets | Apache-2.0 | https://github.com/FreeRDP/FreeRDP/blob/master/LICENSE |
+| OpenSSL | 3.6.5 (Windows), 3.5.9 (macOS) | Windows, macOS (Linux uses the system OpenSSL 3) | Apache-2.0 | https://www.openssl.org/source/license.html |
+| zlib | 1.3.2 | Windows (Linux and macOS use the system zlib) | Zlib | https://zlib.net/zlib_license.html |
+| cJSON | 1.7.19 (Windows, macOS), distribution package (Linux) | all targets | MIT | https://github.com/DaveGamble/cJSON/blob/master/LICENSE |
+| pcsc-lite client library (libpcsclite) | 2.5.3 | Flatpak only (other packages use the system's PC/SC); loaded by jterm itself for RDP smart cards, not by the helper | BSD-3-Clause | https://github.com/LudovicRousseau/PCSC/blob/master/COPYING |
+| Microsoft Visual C++ runtime | 14.x | Windows | Microsoft redistributable | https://visualstudio.microsoft.com/license-terms/ |
+
+On Windows, H.264 decoding uses the operating system's Media Foundation decoder; no H.264 codec is
+bundled. On macOS it will use Apple's VideoToolbox.
+
+**AAC sound (RDP, not bundled).** Compressed sound in RDP sessions is decoded by the system's own AAC
+decoder: Media Foundation on Windows, AudioToolbox on macOS, and on Linux the distribution's
+`libfaad.so.2` (FAAD2, GPL-2.0-or-later) when the user has installed it; jterm loads it from the
+system library folders and never ships or downloads it. The Flatpak, whose runtime has no libfaad,
+uses the runtime's own FFmpeg (`libavcodec`, LGPL-2.1-or-later, built and updated by Flathub's
+freedesktop runtime), opened from the runtime's library folder. No AAC codec is included in any jterm
+package.
+Without a decoder, sound is sent uncompressed.
+
+**OpenH264 (Linux, optional, not bundled).** On Linux the helper can load Cisco's OpenH264 decoder.
+jterm does not ship it: when the user turns on Preferences → General → "H.264 video for RDP", jterm
+downloads Cisco's own binary from `ciscobinary.openh264.org` (checked against a pinned SHA-256) into
+the user's settings folder (in every Linux package, the Flatpak included). FreeRDP is built against OpenH264's BSD-licensed headers only.
+
+> About the Cisco-provided binary of OpenH264: it is provided under the BSD license, and is licensed
+> under Cisco's AVC/H.264 Patent Portfolio License from MPEG LA, at no cost to the user, provided that
+> the conditions in https://www.openh264.org/BINARY_LICENSE.txt are met. This product's use of the
+> binary is as follows: the Cisco-provided binary is separately downloaded to the end user's device and
+> is not integrated into or combined with third party software prior to being downloaded; the end user
+> can control (enable, disable or re-enable) its use; and the text "OpenH264 Video Codec provided by
+> Cisco Systems, Inc." is displayed where the user controls it.
+>
+> AVC/H.264 PATENT PORTFOLIO LICENSE NOTICE: THIS PRODUCT IS LICENSED UNDER THE AVC PATENT PORTFOLIO
+> LICENSE FOR THE PERSONAL USE OF A CONSUMER OR OTHER USES IN WHICH IT DOES NOT RECEIVE REMUNERATION TO
+> (i) ENCODE VIDEO IN COMPLIANCE WITH THE AVC STANDARD ("AVC VIDEO") AND/OR (ii) DECODE AVC VIDEO THAT
+> WAS ENCODED BY A CONSUMER ENGAGED IN A PERSONAL ACTIVITY AND/OR WAS OBTAINED FROM A VIDEO PROVIDER
+> LICENSED TO PROVIDE AVC VIDEO. NO LICENSE IS GRANTED OR SHALL BE IMPLIED FOR ANY OTHER USE.
+> ADDITIONAL INFORMATION MAY BE OBTAINED FROM MPEG LA, L.L.C. SEE HTTP://WWW.MPEGLA.COM
 
 ## Notices and obligations
 
@@ -37,6 +91,15 @@ patent-retaliation clause.
 These components are licensed under the Apache License 2.0. Their `NOTICE` files (where
 provided) are preserved in the distributed artifact under `META-INF`.
 
+### Apache-2.0 — Apache PDFBox, FontBox (RDP print jobs)
+PDFBox reads the PDF print jobs a remote desktop sends, for the preview and for printing. It
+bundles components under their own permissive terms, listed in full in its `META-INF/LICENSE`
+and `META-INF/NOTICE`: the Adobe Glyph List, Zapf Dingbats Glyph List, Adobe Font Metrics for the
+14 core fonts and CMaps (Adobe, BSD-style), the Unicode Bidi Mirroring data, parts of TwelveMonkeys
+ImageIO (BSD-3-Clause), a CMYK ICC profile (CC0) and the Liberation, Lohit, FoglihtenNo07 and
+Josefin Sans fonts (SIL Open Font License 1.1). The fat jar keeps every dependency's `LICENSE` and
+`NOTICE`, concatenated, in its own `META-INF/`.
+
 ### CC0-1.0 — EdDSA-Java
 Dedicated to the public domain; no attribution required (provided here as a courtesy).
 
@@ -47,3 +110,18 @@ should be confirmed against the upstream `LICENSE` file before a commercial rele
 
 ### MIT — SLF4J Simple
 Licensed under the MIT License.
+
+### Apache-2.0 — FreeRDP, OpenSSL (RDP helper)
+FreeRDP and unmodified OpenSSL libraries, run in a separate helper process. FreeRDP is built with
+the changes in `native/rdp-helper/patches/` (it no longer reads system-wide configuration files);
+each changed file says so in a comment. The Apache-2.0 texts ship in `rdp/licenses/`. Source: https://github.com/FreeRDP/FreeRDP (tag in `FREERDP_VERSION`) and
+https://github.com/openssl/openssl. Apache-2.0 is compatible with jterm's GPL-3.0-or-later.
+
+### Zlib, MIT — zlib, cJSON (RDP helper)
+Permissive licenses; their texts ship in `rdp/licenses/`.
+
+### BSD-3-Clause — pcsc-lite client library (Flatpak)
+The Flatpak builds pcsc-lite's client library (`libpcsclite`, unmodified, from the signed release
+tarball pinned in `packaging/flatpak/com.katmoda.jterm.yml`) because its runtime has none; the daemon is
+not shipped. flatpak-builder installs its `COPYING` under `/app/share/licenses/com.katmoda.jterm/pcsc-lite/`.
+Source: https://pcsclite.apdu.fr/

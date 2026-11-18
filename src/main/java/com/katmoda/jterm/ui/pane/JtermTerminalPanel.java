@@ -67,6 +67,12 @@ final class JtermTerminalPanel extends TerminalPanel {
 
     private final String pasteActionName;
     private final IntConsumer onCtrlWheelZoom;
+
+    /** Inside a macOS Ctrl+click that opened the context menu, from its press to its release. */
+    private boolean ctrlClickMenu;
+
+    /** The {@code MOUSE_CLICKED} that follows that release is the menu's too. */
+    private boolean swallowNextLeftClick;
     private final TerminalTextBuffer textBuffer;
     /** Last-seen alternate-screen state, to detect editor enter/leave transitions. Accessed off the EDT. */
     private volatile boolean usingAlternateBuffer;
@@ -464,6 +470,11 @@ final class JtermTerminalPanel extends TerminalPanel {
      */
     @Override
     protected void processMouseMotionEvent(MouseEvent e) {
+        if (e.getID() == MouseEvent.MOUSE_DRAGGED && ctrlClickMenu) {
+            // The press never reached JediTerm, so a drag would extend a selection from a stale
+            // anchor.
+            return;
+        }
         if (e.getID() == MouseEvent.MOUSE_DRAGGED
                 && !SwingUtilities.isLeftMouseButton(e)
                 && !isRemoteMouseAction(e)) {
@@ -484,7 +495,65 @@ final class JtermTerminalPanel extends TerminalPanel {
             // reaching a mouse-aware program that had enabled mouse reporting.
             return;
         }
+        if (handleContextMenu(e)) {
+            return;
+        }
         super.processMouseEvent(e);
+    }
+
+    /**
+     * Opens the context menu on the platform's popup trigger instead of JediTerm's own rule, and
+     * answers whether the event is now spent.
+     *
+     * <p>JediTerm opens the menu only from {@code mouseClicked} with {@code BUTTON3}. On macOS that
+     * misses twice: Ctrl+click (the Mac right-click) arrives as {@code BUTTON1}, and a trackpad
+     * secondary click usually moves a pixel between press and release, which makes AWT drop the
+     * {@code MOUSE_CLICKED} altogether. The popup trigger covers both: it is set on the press on
+     * macOS and Linux, on the release on Windows.</p>
+     *
+     * <p>A right-button press or release still goes on to JediTerm afterwards, so a mouse-aware
+     * program keeps getting its button reports exactly as before; only the right button's
+     * {@code MOUSE_CLICKED} is swallowed, or JediTerm would open a second menu. A Ctrl+click is
+     * swallowed whole, press to click: passed on, JediTerm would treat it as a left click and clear
+     * the selection the menu's Copy is for.</p>
+     */
+    private boolean handleContextMenu(MouseEvent e) {
+        int id = e.getID();
+        boolean left = SwingUtilities.isLeftMouseButton(e);
+        if (id == MouseEvent.MOUSE_PRESSED) {
+            swallowNextLeftClick = false;
+            if (left && e.isPopupTrigger()) {
+                ctrlClickMenu = true;
+                showContextMenu(e);
+                return true;
+            }
+        }
+        if (ctrlClickMenu && left) {
+            if (id == MouseEvent.MOUSE_RELEASED) {
+                ctrlClickMenu = false;
+                swallowNextLeftClick = true;
+            }
+            return true;
+        }
+        if (swallowNextLeftClick && left && id == MouseEvent.MOUSE_CLICKED) {
+            swallowNextLeftClick = false;
+            return true;
+        }
+        if (e.getButton() == MouseEvent.BUTTON3) {
+            if (id == MouseEvent.MOUSE_CLICKED) {
+                return true;
+            }
+            if (e.isPopupTrigger()) {
+                showContextMenu(e);
+            }
+        }
+        return false;
+    }
+
+    /** JediTerm's own menu, built the way its click handler builds it for a non-link click. */
+    private void showContextMenu(MouseEvent e) {
+        requestFocusInWindow();
+        createPopupMenu(this).show(this, e.getX(), e.getY());
     }
 
     /**

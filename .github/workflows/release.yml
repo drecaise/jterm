@@ -10,7 +10,8 @@ name: Release
 # Artifacts produced:
 #   - jterm-<version>.jar       cross-platform fat jar (needs a JRE 21)
 #   - jterm-<version>.msi       Windows installer (bundles a JRE, via jpackage)
-#   - jterm-<version>.dmg       macOS installer (bundles a JRE, via jpackage)
+#   - jterm-<version>-arm64.dmg macOS installer, Apple Silicon (bundles a JRE, via jpackage)
+#   - jterm-<version>-x64.dmg   macOS installer, Intel / x86_64 VMs (bundles a JRE, via jpackage)
 #   - jterm-<version>.flatpak   Linux single-file bundle (bundles a JRE)
 #   - jterm-<version>.snap      Linux snap, classic confinement (bundles a JRE)
 #   - jterm-<version>-1.el10.x86_64.rpm  Rocky Linux 10 RPM (bundles a JRE, via jpackage)
@@ -97,11 +98,16 @@ jobs:
           for sz in 128 256; do
             java -cp ".:target/jterm.jar" -Djava.awt.headless=true RenderIcon "out/com.katmoda.jterm-$sz.png" "$sz"
           done
+      # Every artifact is kept 3 days (retention-days below): enough to download and test a manual
+      # run, while a tag build attaches its files to the GitHub Release anyway. At the 90-day
+      # default, test runs filled the free account's artifact storage (8.8 GB, 2026-11-14) and
+      # every upload failed.
       - uses: actions/upload-artifact@v7
         with:
           name: jterm-jar
           path: out          # jterm.jar + the square icon PNGs, at the artifact root
           if-no-files-found: error
+          retention-days: 3
 
   build-msi:
     needs: version
@@ -119,40 +125,94 @@ jobs:
       - name: Build fat jar
         shell: bash
         run: mvn -B -q package -DskipTests
-      # Best-effort .ico from the app SVG (rendered via the project's own classpath, then
-      # assembled with ImageMagick). If anything here fails the MSI still builds with
-      # jpackage's default icon.
+      # RDP: FreeRDP (version pinned in native/rdp-helper/FREERDP_VERSION, dependencies pinned by
+      # vcpkg.json's baseline) is built once per pin and cached; the helper itself is always rebuilt.
+      # VCPKG_ROOT points at our own clone, not the runner's, so the baseline commit is guaranteed
+      # to be in its history.
+      - name: Cache FreeRDP
+        id: freerdp-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            frdp/dist
+            frdp/vcpkg_installed
+          key: freerdp-win-x64-${{ hashFiles('native/rdp-helper/FREERDP_VERSION', 'native/rdp-helper/vcpkg.json', 'native/rdp-helper/build-freerdp-windows.cmd', 'native/rdp-helper/patches/**') }}
+      - name: Build FreeRDP
+        if: steps.freerdp-cache.outputs.cache-hit != 'true'
+        shell: cmd
+        env:
+          VCPKG_ROOT: ${{ github.workspace }}\frdp\vcpkg
+        run: native\rdp-helper\build-freerdp-windows.cmd "%GITHUB_WORKSPACE%\frdp"
+      - name: Build RDP helper
+        shell: cmd
+        run: native\rdp-helper\build-windows.cmd "%GITHUB_WORKSPACE%\frdp\dist" "%GITHUB_WORKSPACE%\frdp\vcpkg_installed\x64-windows"
+      # Exploit mitigations (CFG, CET, ASLR, DEP) on the helper and the FreeRDP DLLs; fails when a
+      # toolchain or build-script change drops one (sandbox design, layer 1).
+      - name: Check RDP helper hardening
+        shell: bash
+        run: python native/rdp-helper/check-hardening.py native/rdp-helper/build/stage
+      # Starts the helper headlessly: it loads its DLLs, speaks the protocol, probes the decoders.
+      # The runner has Media Foundation, so H.264 and AAC are required: under the restricted token
+      # (step W2) Media Foundation once failed silently here, which only this check catches.
+      # Also its sandbox (W1: low integrity, job object, mitigation policies; W2: restricted token),
+      # with the self-test's attempts all refused.
+      - name: Smoke-test RDP helper
+        shell: bash
+        run: python native/rdp-helper/smoke-test.py --expect-sandbox partial --expect-h264 --expect-aac native/rdp-helper/build/stage/jterm-rdp-helper.exe
+      # The .ico from the app SVG, rendered via the project's own classpath and written by the
+      # same program: an ICO may hold PNG images (Vista and later), so no ImageMagick download.
+      # Required, not best-effort: a failure here used to ship an MSI with jpackage's Java icon.
       - name: Render Windows icon
         shell: bash
-        continue-on-error: true
         run: |
           mkdir -p icontmp
-          cat > icontmp/RenderIcon.java <<'JAVA'
+          cat > icontmp/RenderIco.java <<'JAVA'
           import com.formdev.flatlaf.extras.FlatSVGIcon;
           import java.awt.image.BufferedImage;
+          import java.io.ByteArrayOutputStream;
+          import java.io.DataOutputStream;
+          import java.io.FileOutputStream;
           import javax.imageio.ImageIO;
-          import java.io.File;
-          public class RenderIcon {
+          public class RenderIco {
             public static void main(String[] a) throws Exception {
-              int size = Integer.parseInt(a[1]);
-              FlatSVGIcon ic = new FlatSVGIcon("icons/app.svg", size, size);
-              BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
-              var g = img.createGraphics(); ic.paintIcon(null, g, 0, 0); g.dispose();
-              ImageIO.write(img, "png", new File(a[0]));
+              int[] sizes = {256, 128, 64, 48, 32, 16};
+              byte[][] pngs = new byte[sizes.length][];
+              for (int i = 0; i < sizes.length; i++) {
+                int s = sizes[i];
+                FlatSVGIcon ic = new FlatSVGIcon("icons/app.svg", s, s);
+                BufferedImage img = new BufferedImage(s, s, BufferedImage.TYPE_INT_ARGB);
+                var g = img.createGraphics(); ic.paintIcon(null, g, 0, 0); g.dispose();
+                ByteArrayOutputStream b = new ByteArrayOutputStream();
+                ImageIO.write(img, "png", b);
+                pngs[i] = b.toByteArray();
+              }
+              try (DataOutputStream o = new DataOutputStream(new FileOutputStream(a[0]))) {
+                le16(o, 0); le16(o, 1); le16(o, sizes.length);       // ICONDIR, type 1 = icon
+                int offset = 6 + 16 * sizes.length;
+                for (int i = 0; i < sizes.length; i++) {              // one ICONDIRENTRY per image
+                  o.write(sizes[i] % 256); o.write(sizes[i] % 256);   // 0 means 256
+                  o.write(0); o.write(0); le16(o, 1); le16(o, 32);    // no palette, 1 plane, 32 bpp
+                  le32(o, pngs[i].length); le32(o, offset);
+                  offset += pngs[i].length;
+                }
+                for (byte[] p : pngs) o.write(p);
+              }
             }
+            static void le16(DataOutputStream o, int v) throws Exception { o.write(v & 0xFF); o.write(v >>> 8 & 0xFF); }
+            static void le32(DataOutputStream o, int v) throws Exception { le16(o, v & 0xFFFF); le16(o, v >>> 16); }
           }
           JAVA
-          javac -cp target/jterm.jar -d icontmp icontmp/RenderIcon.java
-          java -cp "icontmp;target/jterm.jar" -Djava.awt.headless=true RenderIcon icontmp/app-256.png 256
-          choco install imagemagick -y --no-progress
-          magick icontmp/app-256.png -define icon:auto-resize=256,128,64,48,32,16 app.ico
+          javac -cp target/jterm.jar -d icontmp icontmp/RenderIco.java
+          java -cp "icontmp;target/jterm.jar" -Djava.awt.headless=true RenderIco app.ico
       - name: Build MSI
         shell: bash
         run: |
-          mkdir -p staging dist
+          mkdir -p staging/rdp dist
           cp target/jterm.jar staging/
-          ICON_ARG=""
-          [ -f app.ico ] && ICON_ARG="--icon app.ico"
+          # --input lands in the install's app\ dir: the helper (and its DLLs, which Windows loads
+          # from the exe's own directory first) ends up in app\rdp\, where RdpHelperLocator looks.
+          # No jars there, so jpackage's classpath stays jterm.jar alone.
+          cp -a native/rdp-helper/build/stage/. staging/rdp/
           jpackage \
             --type msi \
             --name jterm \
@@ -165,7 +225,7 @@ jobs:
             --win-menu --win-menu-group jterm \
             --win-shortcut --win-dir-chooser --win-per-user-install \
             --dest dist \
-            $ICON_ARG
+            --icon app.ico
           # jpackage names the file jterm-<app_version>.msi; give it the display version.
           src="dist/jterm-${{ needs.version.outputs.app_version }}.msi"
           dst="dist/jterm-${{ needs.version.outputs.version }}.msi"
@@ -176,6 +236,7 @@ jobs:
           name: jterm-msi
           path: dist/*.msi
           if-no-files-found: error
+          retention-days: 3
 
   build-flatpak:
     needs: [version, build-jar]
@@ -194,20 +255,41 @@ jobs:
           cp dist-jar/jterm.jar packaging/flatpak/jterm.jar
           cp dist-jar/com.katmoda.jterm-128.png packaging/flatpak/
           cp dist-jar/com.katmoda.jterm-256.png packaging/flatpak/
+      # The image ships the runtime and SDK preinstalled in a lower image layer. When Flathub has
+      # published a newer build, flatpak-builder updates them first, and that renames directories
+      # in the lower layer, which overlayfs refuses: "Invalid cross-device link", then a crash
+      # (exit 139). Copying the installation into the container's writable layer first makes the
+      # update work (measured with this image: 3.1 GB, seconds).
+      - name: Move the preinstalled runtimes into the writable layer
+        run: |
+          cp -a /var/lib/flatpak /var/lib/flatpak.upper
+          rm -rf /var/lib/flatpak
+          mv /var/lib/flatpak.upper /var/lib/flatpak
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           bundle: jterm-${{ needs.version.outputs.version }}.flatpak
           manifest-path: packaging/flatpak/com.katmoda.jterm.yml
           cache-key: flatpak-builder-${{ github.sha }}
+          upload-artifact: false   # the next step uploads it; the action's copy doubled the storage
       - uses: actions/upload-artifact@v7
         with:
           name: jterm-flatpak
           path: jterm-*.flatpak
           if-no-files-found: error
+          retention-days: 3
 
+  # A jpackage image is native to the runner's CPU, so one runner yields one architecture.
+  # macos-latest is Apple Silicon: its DMG will not open on an Intel Mac (or an x86_64 macOS VM).
   build-dmg:
     needs: version
-    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-latest
+          - arch: x64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v5
@@ -219,10 +301,30 @@ jobs:
         run: mvn -B -q versions:set -DnewVersion=${{ needs.version.outputs.version }} -DgenerateBackupPoms=false
       - name: Build fat jar
         run: mvn -B -q package -DskipTests
-      # Best-effort .icns from the app SVG (rendered via the project's own classpath, then
-      # assembled with the macOS iconutil). If anything here fails the DMG still builds.
+      # The RDP helper, native to this runner's CPU like the rest of the image. Pinned CMake and
+      # Ninja rather than whatever the runner image carries, so a cached FreeRDP and a fresh helper
+      # build come from the same tools.
+      - name: Install CMake and Ninja
+        run: |
+          native/rdp-helper/install-build-deps-macos.sh "$RUNNER_TEMP/tools"
+          echo "$RUNNER_TEMP/tools/bin" >> "$GITHUB_PATH"
+      - name: Cache FreeRDP
+        id: freerdp-cache
+        uses: actions/cache@v4
+        with:
+          path: frdp/dist
+          key: freerdp-macos-${{ matrix.arch }}-${{ hashFiles('native/rdp-helper/FREERDP_VERSION', 'native/rdp-helper/build-freerdp-macos.sh', 'native/rdp-helper/patches/**') }}
+      - name: Build FreeRDP
+        if: steps.freerdp-cache.outputs.cache-hit != 'true'
+        run: native/rdp-helper/build-freerdp-macos.sh "$GITHUB_WORKSPACE/frdp"
+      - name: Build RDP helper
+        run: |
+          native/rdp-helper/build-macos.sh "$GITHUB_WORKSPACE/frdp/dist"
+          python3 native/rdp-helper/smoke-test.py --expect-sandbox full --expect-h264 --expect-aac native/rdp-helper/build/stage/jterm-rdp-helper
+      # The .icns from the app SVG (rendered via the project's own classpath, then assembled with
+      # the macOS iconutil). Required, not best-effort: a failure here used to ship a DMG with
+      # jpackage's Java icon.
       - name: Render macOS icon
-        continue-on-error: true
         run: |
           mkdir -p icontmp jterm.iconset
           cat > icontmp/RenderIcon.java <<'JAVA'
@@ -255,31 +357,75 @@ jobs:
           iconutil -c icns jterm.iconset -o app.icns
       - name: Build DMG
         run: |
-          mkdir -p staging dist
+          mkdir -p staging/rdp appimage dist
           cp target/jterm.jar staging/
-          ICON_ARG=""
-          [ -f app.icns ] && ICON_ARG="--icon app.icns"
+          # --input lands in jterm.app/Contents/app/: the helper and its dylibs (found through
+          # @loader_path) end up in Contents/app/rdp/, where RdpHelperLocator looks.
+          cp -a native/rdp-helper/build/stage/. staging/rdp/
+          # Two steps, app image then DMG, to add a key jpackage has no option for: the text macOS
+          # shows when jterm first connects to the local network (SSH or RDP). Editing Info.plist
+          # breaks the bundle's ad-hoc signature, so the bundle is re-signed (its nested code keeps
+          # the signatures jpackage gave it).
+          # --add-exports: native full screen for RDP desktops goes through com.apple.eawt
+          # (FullScreenWindow). The launcher runs in classpath mode and ignores the jar manifest's
+          # Add-Exports, so without this the DMG silently falls back to the JDK's full-screen mode,
+          # which blocks Cmd+Tab.
           jpackage \
-            --type dmg \
+            --type app-image \
             --name jterm \
             --app-version "${{ needs.version.outputs.app_version }}" \
             --input staging \
             --main-jar jterm.jar \
             --main-class com.katmoda.jterm.app.Main \
+            --java-options "--add-exports=java.desktop/com.apple.eawt=ALL-UNNAMED" \
             --vendor "Mark Moses" \
             --description "Tabbed, splittable terminal emulator with SSH sessions" \
-            --dest dist \
-            $ICON_ARG
+            --dest appimage \
+            --icon app.icns
+          /usr/libexec/PlistBuddy -c "Add :NSLocalNetworkUsageDescription string jterm connects to SSH and remote desktop servers on your local network." \
+            appimage/jterm.app/Contents/Info.plist
+          # The text macOS shows when an RDP session first opens the microphone. jpackage's template
+          # already has this key with a generic text (so Add fails), hence Set, with Add as the
+          # fallback should a jpackage version drop it.
+          mic="jterm sends your microphone to a remote desktop only when you allow it for that connection."
+          /usr/libexec/PlistBuddy -c "Set :NSMicrophoneUsageDescription $mic" appimage/jterm.app/Contents/Info.plist \
+            || /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string $mic" appimage/jterm.app/Contents/Info.plist
+          codesign --force --sign - appimage/jterm.app
+          codesign --verify --deep --strict appimage/jterm.app
+          jpackage \
+            --type dmg \
+            --name jterm \
+            --app-version "${{ needs.version.outputs.app_version }}" \
+            --app-image appimage/jterm.app \
+            --vendor "Mark Moses" \
+            --description "Tabbed, splittable terminal emulator with SSH sessions" \
+            --dest dist
           # jpackage names the file jterm-<app_version>.dmg; give it the display version.
           src="dist/jterm-${{ needs.version.outputs.app_version }}.dmg"
-          dst="dist/jterm-${{ needs.version.outputs.version }}.dmg"
+          dst="dist/jterm-${{ needs.version.outputs.version }}-${{ matrix.arch }}.dmg"
           [ "$src" != "$dst" ] && mv "$src" "$dst" || true
           ls -la dist
+      # jpackage signs the app bundle itself; check the helper as shipped still has valid
+      # signatures and runs from inside the mounted image, not just from the build stage.
+      - name: Check the app in the DMG
+        run: |
+          mnt=$(mktemp -d)
+          hdiutil attach -nobrowse -readonly -mountpoint "$mnt" dist/*.dmg
+          trap 'hdiutil detach "$mnt"' EXIT
+          rdp="$mnt/jterm.app/Contents/app/rdp"
+          for f in "$rdp"/jterm-rdp-helper "$rdp"/*.dylib; do
+            [ -L "$f" ] || codesign --verify --strict "$f"
+          done
+          python3 native/rdp-helper/smoke-test.py --expect-sandbox full --expect-h264 --expect-aac "$rdp/jterm-rdp-helper"
+          codesign --verify --deep --strict "$mnt/jterm.app"
+          /usr/libexec/PlistBuddy -c "Print :NSLocalNetworkUsageDescription" "$mnt/jterm.app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :NSMicrophoneUsageDescription" "$mnt/jterm.app/Contents/Info.plist"
       - uses: actions/upload-artifact@v7
         with:
-          name: jterm-dmg
+          name: jterm-dmg-${{ matrix.arch }}
           path: dist/*.dmg
           if-no-files-found: error
+          retention-days: 3
 
   build-snap:
     needs: [version, build-jar]
@@ -294,6 +440,9 @@ jobs:
         run: |
           cp dist-jar/jterm.jar packaging/snap/jterm.jar
           cp dist-jar/com.katmoda.jterm-256.png packaging/snap/
+          # The rdp-helper part builds from here: snapcraft only sees packaging/snap.
+          mkdir -p packaging/snap/rdp-helper-src
+          tar -C native/rdp-helper --exclude=./build --exclude=./spike -cf - . | tar -C packaging/snap/rdp-helper-src -xf -
       # Snap accepts the full version string (incl. -SNAPSHOT) -- no numeric
       # flooring needed, unlike jpackage.
       - name: Set snap version
@@ -315,6 +464,7 @@ jobs:
           name: jterm-snap
           path: jterm-*.snap
           if-no-files-found: error
+          retention-days: 3
 
   build-rpm:
     needs: [version, build-jar]
@@ -359,10 +509,39 @@ jobs:
         with:
           name: jterm-jar
           path: dist-jar
+      # RDP helper: built in this job's own container so it links this distribution's OpenSSL.
+      # FreeRDP is built once per (distribution, pin) and cached; the helper is always rebuilt.
+      - name: Install RDP helper build dependencies
+        run: sh native/rdp-helper/install-build-deps-linux.sh
+      - name: Cache FreeRDP
+        id: freerdp-cache
+        uses: actions/cache@v4
+        with:
+          path: native/rdp-helper/build/freerdp/dist
+          key: freerdp-${{ matrix.el }}-${{ hashFiles('native/rdp-helper/FREERDP_VERSION', 'native/rdp-helper/build-freerdp-linux.sh', 'native/rdp-helper/patches/**') }}
+      - name: Build FreeRDP
+        if: steps.freerdp-cache.outputs.cache-hit != 'true'
+        run: sh native/rdp-helper/build-freerdp-linux.sh native/rdp-helper/build/freerdp
+      - name: Build RDP helper
+        run: sh native/rdp-helper/build-linux.sh
+      # PIE, full RELRO, stack protector, FORTIFY, CET on the helper and FreeRDP; fails when a
+      # toolchain or build-script change drops one (sandbox design, layer 1).
+      - name: Check RDP helper hardening
+        run: python3 native/rdp-helper/check-hardening.py native/rdp-helper/build/stage
+      # The helper starts, speaks the protocol, and locks itself down completely on this kernel:
+      # Landlock with the port rule, seccomp, no writable files; every forbidden action of its
+      # self-test refused (sandbox design, layer 2; CI is strict where users can't be, D1).
+      - name: Smoke-test RDP helper and its sandbox
+        run: python3 native/rdp-helper/smoke-test.py --expect-sandbox full native/rdp-helper/build/stage/jterm-rdp-helper
       - name: Build RPM
         run: |
-          mkdir -p staging dist
+          mkdir -p staging/rdp dist
           cp dist-jar/jterm.jar staging/
+          # --input lands in /opt/jterm/lib/app: the helper and its libraries (RPATH $ORIGIN) end
+          # up in lib/app/rdp/, where RdpHelperLocator looks. No jars there, so the classpath is
+          # still jterm.jar alone; jpackage's ldd scan adds only system libraries (OpenSSL, zlib)
+          # to Requires, since the bundled ones resolve inside the image.
+          cp -a native/rdp-helper/build/stage/. staging/rdp/
           ICON_ARG=""
           [ -f dist-jar/com.katmoda.jterm-256.png ] && ICON_ARG="--icon dist-jar/com.katmoda.jterm-256.png"
           # jpackage takes a single --resource-dir, so assemble one holding both
@@ -379,6 +558,12 @@ jobs:
           # jpackage launcher starts the app in classpath mode (app.classpath +
           # app.mainclass in jterm.cfg), so the jar manifest's Add-Opens attribute
           # is never honored.
+          #
+          # --linux-package-deps: Java Sound (RDP sound) needs ALSA's libasound.so.2, which the
+          # bundled runtime's libjsound.so links but jpackage's own dependency scan left out of
+          # the RPM (checked with rpm -qR). The DEB job names the same library by package.
+          # libcups.so.2 likewise: Java's printing (RDP print jobs) opens it at run time, so no scan
+          # sees it, and without it the print dialog lists no printers.
           jpackage \
             --type rpm \
             --name jterm \
@@ -390,6 +575,7 @@ jobs:
             --vendor "Mark Moses" \
             --description "Tabbed, splittable terminal emulator with SSH sessions" \
             --linux-shortcut --linux-menu-group "System;TerminalEmulator;" \
+            --linux-package-deps 'libasound.so.2()(64bit), libcups.so.2()(64bit)' \
             --resource-dir rpmres \
             --dest dist \
             $ICON_ARG
@@ -405,6 +591,7 @@ jobs:
           name: jterm-rpm-${{ matrix.el }}
           path: dist/*.rpm
           if-no-files-found: error
+          retention-days: 3
 
   build-deb:
     needs: [version, build-jar]
@@ -432,10 +619,34 @@ jobs:
         with:
           name: jterm-jar
           path: dist-jar
+      # RDP helper: same as build-rpm (see there), built against Ubuntu 26.04's OpenSSL.
+      - name: Install RDP helper build dependencies
+        run: sh native/rdp-helper/install-build-deps-linux.sh
+      - name: Cache FreeRDP
+        id: freerdp-cache
+        uses: actions/cache@v4
+        with:
+          path: native/rdp-helper/build/freerdp/dist
+          key: freerdp-ubuntu2604-${{ hashFiles('native/rdp-helper/FREERDP_VERSION', 'native/rdp-helper/build-freerdp-linux.sh', 'native/rdp-helper/patches/**') }}
+      - name: Build FreeRDP
+        if: steps.freerdp-cache.outputs.cache-hit != 'true'
+        run: sh native/rdp-helper/build-freerdp-linux.sh native/rdp-helper/build/freerdp
+      - name: Build RDP helper
+        run: sh native/rdp-helper/build-linux.sh
+      # PIE, full RELRO, stack protector, FORTIFY, CET on the helper and FreeRDP; fails when a
+      # toolchain or build-script change drops one (sandbox design, layer 1).
+      - name: Check RDP helper hardening
+        run: python3 native/rdp-helper/check-hardening.py native/rdp-helper/build/stage
+      # The helper starts, speaks the protocol, and locks itself down completely on this kernel:
+      # Landlock with the port rule, seccomp, no writable files; every forbidden action of its
+      # self-test refused (sandbox design, layer 2; CI is strict where users can't be, D1).
+      - name: Smoke-test RDP helper and its sandbox
+        run: python3 native/rdp-helper/smoke-test.py --expect-sandbox full native/rdp-helper/build/stage/jterm-rdp-helper
       - name: Build DEB
         run: |
-          mkdir -p staging dist
+          mkdir -p staging/rdp dist
           cp dist-jar/jterm.jar staging/
+          cp -a native/rdp-helper/build/stage/. staging/rdp/
           ICON_ARG=""
           [ -f dist-jar/com.katmoda.jterm-256.png ] && ICON_ARG="--icon dist-jar/com.katmoda.jterm-256.png"
           # rpm/deb versions may not contain dashes, so use the floored numeric
@@ -459,6 +670,7 @@ jobs:
             --description "Tabbed, splittable terminal emulator with SSH sessions" \
             --linux-shortcut --linux-menu-group "System;TerminalEmulator;" \
             --linux-deb-maintainer "mark@katmoda.com" \
+            --linux-package-deps 'libasound2t64 | libasound2, libcups2t64 | libcups2' \
             --resource-dir packaging/linux \
             --dest dist \
             $ICON_ARG
@@ -474,6 +686,7 @@ jobs:
           name: jterm-deb
           path: dist/*.deb
           if-no-files-found: error
+          retention-days: 3
 
   # Only on a tag: gather every artifact and publish them on the Release.
   release:
@@ -495,7 +708,7 @@ jobs:
           cp artifacts/jterm-jar/jterm.jar "release/jterm-${{ needs.version.outputs.version }}.jar"
           cp artifacts/jterm-msi/*.msi release/
           cp artifacts/jterm-flatpak/*.flatpak release/
-          cp artifacts/jterm-dmg/*.dmg release/
+          cp artifacts/jterm-dmg-*/*.dmg release/
           cp artifacts/jterm-snap/*.snap release/
           cp artifacts/jterm-rpm-*/*.rpm release/
           cp artifacts/jterm-deb/*.deb release/

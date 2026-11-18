@@ -28,9 +28,12 @@ import com.katmoda.jterm.dnd.DetachedPane;
 import com.katmoda.jterm.dnd.LocalTransferable;
 import com.katmoda.jterm.dnd.PaneMoveCoordinator;
 import com.katmoda.jterm.dnd.PaneTransferable;
+import com.katmoda.jterm.dnd.RdpDropHandler;
+import com.katmoda.jterm.dnd.RdpTransferable;
 import com.katmoda.jterm.dnd.SessionDropHandler;
 import com.katmoda.jterm.dnd.SessionTransferable;
 import com.katmoda.jterm.dnd.WslTransferable;
+import com.katmoda.jterm.session.RdpSessionConfig;
 import com.katmoda.jterm.session.SshSessionConfig;
 import com.katmoda.jterm.terminal.SessionFactory;
 import com.katmoda.jterm.terminal.TerminalSession;
@@ -113,6 +116,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
     /** True while this grid's tab is the selected (front) one; suppresses activity flagging. */
     private boolean foreground = false;
     private SessionDropHandler dropHandler;
+    private RdpDropHandler rdpDropHandler;
     private PaneMoveCoordinator moveCoordinator;
     private Runnable onActiveChanged;
     private Runnable onActivity;
@@ -129,6 +133,10 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
 
     public void setDropHandler(SessionDropHandler dropHandler) {
         this.dropHandler = dropHandler;
+    }
+
+    public void setRdpDropHandler(RdpDropHandler rdpDropHandler) {
+        this.rdpDropHandler = rdpDropHandler;
     }
 
     /** Provides cross-tab pane detachment so this grid can adopt a pane dropped from another tab. */
@@ -521,6 +529,19 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         return n;
     }
 
+    /** Every live cell's content, row by row (a snapshot; for counting what a quit would close). */
+    public java.util.List<GridContent> contents() {
+        java.util.List<GridContent> out = new java.util.ArrayList<>();
+        for (int r = 0; r < rows; r++) {
+            for (int c = 0; c < cols; c++) {
+                if (panes[r][c] != null) {
+                    out.add(panes[r][c]);
+                }
+            }
+        }
+        return out;
+    }
+
     /** This grid's only cell if it holds exactly one pane (any kind), else {@code null}. Used to let
      *  a single-pane tab — terminal or SFTP — be dragged by its header into another grid. */
     public GridContent solePane() {
@@ -624,6 +645,49 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
         }
         relayout();
         focusActive();
+    }
+
+    /**
+     * Place new content (a dropped RDP session) as a split of {@code target}: a new column for
+     * {@link DropRegion#COLUMN}, a new row for {@link DropRegion#ROW}. Answers {@code false}, changing
+     * nothing, when that dimension is already full, so the caller can open a new tab. Deliberately
+     * not {@link #adoptAsSplit}, whose full-grid fallback replaces (and closes) the target pane.
+     */
+    public boolean placeContentAsSplit(GridContent target, DropRegion region, GridContent content) {
+        int[] pos = locate(target);
+        if (pos == null) {
+            return false;
+        }
+        if (region == DropRegion.COLUMN && cols < MAX) {
+            growWeight(colWeights, cols);
+            int newCol = cols;
+            cols++;
+            placeExistingPaneAt(pos[0], newCol, content, null);
+        } else if (region == DropRegion.ROW && rows < MAX) {
+            growWeight(rowWeights, rows);
+            int newRow = rows;
+            rows++;
+            placeExistingPaneAt(newRow, pos[1], content, null);
+        } else {
+            return false;
+        }
+        relayout();
+        focusActive();
+        return true;
+    }
+
+    /**
+     * Place new content in an empty cell it was dropped on. {@code false}, changing nothing, when the
+     * cell is no longer an empty in-bounds cell.
+     */
+    public boolean placeContentInCell(int row, int col, GridContent content) {
+        if (row < 0 || row >= rows || col < 0 || col >= cols || panes[row][col] != null) {
+            return false;
+        }
+        placeExistingPaneAt(row, col, content, null);
+        relayout();
+        focusActive();
+        return true;
     }
 
     /** Re-apply theme-derived chrome (accent border, gutter hover tint) after a theme switch. */
@@ -929,11 +993,11 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
      */
     private void registerPane(GridContent content) {
         content.setOnFocus(() -> setActiveByContent(content));
+        content.setOnTitleChanged(() -> notifyTitleChanged(content));
         if (content instanceof TerminalPane pane) {
             pane.setOnContentEnded(() -> handleSessionEnd(pane));
             pane.setOnBroadcastToggle(this::updateBorders);
             pane.setDuplicateHandler(toNewTab -> duplicatePane(pane, toNewTab));
-            pane.setOnTitleChanged(() -> notifyTitleChanged(pane));
             // A freshly placed/adopted pane has no unseen output yet.
             pane.setActivity(PaneActivity.NONE);
             broadcastBus.register(pane);
@@ -972,6 +1036,9 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
 
         /** Where a freshly opened session (SSH/local/WSL) should land for this target. */
         BiConsumer<TerminalSession, SessionFactory> placer(DropRegion region);
+
+        /** Place new content (an RDP pane) for this target; {@code false} when there is no room. */
+        boolean placeContent(GridContent content, DropRegion region);
     }
 
     private void installDnd(GridContent content) {
@@ -1001,11 +1068,16 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
             public BiConsumer<TerminalSession, SessionFactory> placer(DropRegion region) {
                 return (session, factory) -> splitFromPaneAndOpen(content, region, session, factory);
             }
+
+            @Override
+            public boolean placeContent(GridContent added, DropRegion region) {
+                return placeContentAsSplit(content, region, added);
+            }
         });
     }
 
     /**
-     * Wire {@code comp} as a grid drop target handling all four flavors — PANE (move), SESSION,
+     * Wire {@code comp} as a grid drop target handling all five flavors — PANE (move), SESSION, RDP,
      * LOCAL and WSL (copy) — with the accept/reject bookkeeping and error tail in one place. What a
      * drop actually does is supplied by {@code behavior}.
      */
@@ -1048,6 +1120,14 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
                             dropHandler.connect(cfg, behavior.placer(region));
                         }
                         dtde.dropComplete(true);
+                    } else if (dtde.isDataFlavorSupported(RdpTransferable.RDP_FLAVOR)) {
+                        dtde.acceptDrop(DnDConstants.ACTION_COPY);
+                        RdpSessionConfig cfg = (RdpSessionConfig) dtde.getTransferable()
+                                .getTransferData(RdpTransferable.RDP_FLAVOR);
+                        if (rdpDropHandler != null) {
+                            rdpDropHandler.open(cfg, added -> behavior.placeContent(added, region));
+                        }
+                        dtde.dropComplete(true);
                     } else if (dtde.isDataFlavorSupported(LocalTransferable.LOCAL_FLAVOR)) {
                         dtde.acceptDrop(DnDConstants.ACTION_COPY);
                         openLocal(behavior.placer(region));
@@ -1071,6 +1151,7 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
 
     private static boolean isSessionDrag(DropTargetDragEvent dtde) {
         return dtde.isDataFlavorSupported(SessionTransferable.SESSION_FLAVOR)
+                || dtde.isDataFlavorSupported(RdpTransferable.RDP_FLAVOR)
                 || dtde.isDataFlavorSupported(LocalTransferable.LOCAL_FLAVOR)
                 || dtde.isDataFlavorSupported(WslTransferable.WSL_FLAVOR);
     }
@@ -1522,6 +1603,11 @@ public final class PaneGrid extends JPanel implements BroadcastBus {
             @Override
             public BiConsumer<TerminalSession, SessionFactory> placer(DropRegion region) {
                 return (session, factory) -> placeSessionInCell(r, c, session, factory);
+            }
+
+            @Override
+            public boolean placeContent(GridContent added, DropRegion region) {
+                return placeContentInCell(r, c, added);
             }
         });
     }

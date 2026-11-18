@@ -36,7 +36,6 @@ import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
-import java.awt.GridLayout;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -84,7 +83,6 @@ public final class JumpHostsForm {
         scroll.setPreferredSize(UIScale.scale(new Dimension(420, 280)));
 
         this.panel = new JPanel(new BorderLayout(0, 6));
-        panel.setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
         JPanel north = new JPanel(new BorderLayout());
         north.add(bar, BorderLayout.WEST);
         north.add(hint, BorderLayout.SOUTH);
@@ -182,30 +180,31 @@ public final class JumpHostsForm {
             passwordAuth.addActionListener(a -> syncEnabled.run());
             syncEnabled.run();
 
-            JPanel form = new JPanel(new GridLayout(0, 2, 6, 6));
-            row(form, "Host:", host);
-            row(form, "Port:", port);
-            row(form, "User:", user);
-            row(form, "Key file:", keyFile.component());
-            row(form, "Password auth:", passwordAuth);
-            row(form, "Password:", password);
+            FormGrid form = new FormGrid()
+                    .row("Host:", host)
+                    .row("Port:", port)
+                    .row("User:", user)
+                    .row("Key file:", keyFile.component())
+                    .row("Password auth:", passwordAuth)
+                    .row("Password:", password);
 
             JButton remove = new JButton("Remove");
             remove.addActionListener(a -> removeRow(this));
             JPanel removeBar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
             removeBar.add(remove);
 
-            this.panel = new JPanel(new BorderLayout(0, 4));
+            // Keep each hop block at its natural height inside the vertical stack. Computed on each
+            // call, not fixed once: refresh() adds the titled border later, which makes the block
+            // taller, and a cap taken before that squeezed the form until rows were clipped.
+            this.panel = new JPanel(new BorderLayout(0, 4)) {
+                @Override
+                public Dimension getMaximumSize() {
+                    return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+                }
+            };
             panel.setAlignmentX(Component.LEFT_ALIGNMENT);
             panel.add(form, BorderLayout.CENTER);
             panel.add(removeBar, BorderLayout.SOUTH);
-            // Keep each hop block at its natural height inside the vertical stack.
-            panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, panel.getPreferredSize().height));
-        }
-
-        private void row(JPanel form, String label, JComponent field) {
-            form.add(new JLabel(label));
-            form.add(field);
         }
     }
 }

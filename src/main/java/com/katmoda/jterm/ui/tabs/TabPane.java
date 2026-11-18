@@ -22,10 +22,14 @@ package com.katmoda.jterm.ui.tabs;
 import com.katmoda.jterm.config.AppSettings;
 import com.katmoda.jterm.dnd.DetachedPane;
 import com.katmoda.jterm.dnd.PaneMoveCoordinator;
+import com.katmoda.jterm.dnd.LocalTransferable;
 import com.katmoda.jterm.dnd.PaneTransferable;
+import com.katmoda.jterm.dnd.RdpTransferable;
+import com.katmoda.jterm.dnd.SessionTransferable;
 import com.katmoda.jterm.dnd.TabTransferable;
 import com.katmoda.jterm.icon.IconLibrary;
 import com.katmoda.jterm.keymap.TermAction;
+import com.katmoda.jterm.session.RdpSessionConfig;
 import com.katmoda.jterm.session.SshSessionConfig;
 import com.katmoda.jterm.terminal.SessionFactory;
 import com.katmoda.jterm.terminal.TerminalSession;
@@ -35,6 +39,7 @@ import com.katmoda.jterm.ui.grid.PaneGrid;
 import com.katmoda.jterm.ui.grid.TabActivityIcon;
 import com.katmoda.jterm.ui.pane.PaneActivity;
 import com.katmoda.jterm.ui.pane.TerminalPane;
+import com.katmoda.jterm.ui.rdp.RdpPane;
 import com.katmoda.jterm.ui.theme.ThemeColors;
 import com.katmoda.jterm.ui.windowing.TerminalServices;
 import com.katmoda.jterm.ui.windowing.TerminalWindow;
@@ -147,13 +152,21 @@ public final class TabPane extends JPanel {
         installNewTabDropTarget(plusButton);
     }
 
-    /** Dropping a dragged pane on "+" pulls it out of its split into a brand-new tab here. */
+    /**
+     * Drops on "+": a dragged pane leaves its split for a brand-new tab here, and a session dragged
+     * from the sidebar (SSH, RDP or the local terminal) opens in a new tab. The target takes both
+     * actions because the sidebar drags as COPY and a pane as MOVE.
+     */
     private void installNewTabDropTarget(JButton button) {
-        new DropTarget(button, DnDConstants.ACTION_MOVE, new DropTargetAdapter() {
+        new DropTarget(button, DnDConstants.ACTION_COPY_OR_MOVE, new DropTargetAdapter() {
             @Override
             public void dragOver(DropTargetDragEvent dtde) {
                 if (dtde.isDataFlavorSupported(PaneTransferable.PANE_FLAVOR)) {
                     dtde.acceptDrag(DnDConstants.ACTION_MOVE);
+                } else if (dtde.isDataFlavorSupported(SessionTransferable.SESSION_FLAVOR)
+                        || dtde.isDataFlavorSupported(RdpTransferable.RDP_FLAVOR)
+                        || dtde.isDataFlavorSupported(LocalTransferable.LOCAL_FLAVOR)) {
+                    dtde.acceptDrag(DnDConstants.ACTION_COPY);
                 } else {
                     dtde.rejectDrag();
                 }
@@ -162,17 +175,29 @@ public final class TabPane extends JPanel {
             @Override
             public void drop(DropTargetDropEvent dtde) {
                 try {
-                    if (!dtde.isDataFlavorSupported(PaneTransferable.PANE_FLAVOR)) {
+                    if (dtde.isDataFlavorSupported(PaneTransferable.PANE_FLAVOR)) {
+                        dtde.acceptDrop(DnDConstants.ACTION_MOVE);
+                        GridContent pane = (GridContent) dtde.getTransferable()
+                                .getTransferData(PaneTransferable.PANE_FLAVOR);
+                        movePaneToNewTab(pane);
+                    } else if (dtde.isDataFlavorSupported(SessionTransferable.SESSION_FLAVOR)) {
+                        dtde.acceptDrop(DnDConstants.ACTION_COPY);
+                        addSshTab((SshSessionConfig) dtde.getTransferable()
+                                .getTransferData(SessionTransferable.SESSION_FLAVOR));
+                    } else if (dtde.isDataFlavorSupported(RdpTransferable.RDP_FLAVOR)) {
+                        dtde.acceptDrop(DnDConstants.ACTION_COPY);
+                        openRdp((RdpSessionConfig) dtde.getTransferable()
+                                .getTransferData(RdpTransferable.RDP_FLAVOR), null, null);
+                    } else if (dtde.isDataFlavorSupported(LocalTransferable.LOCAL_FLAVOR)) {
+                        dtde.acceptDrop(DnDConstants.ACTION_COPY);
+                        addTab();
+                    } else {
                         dtde.rejectDrop();
                         return;
                     }
-                    dtde.acceptDrop(DnDConstants.ACTION_MOVE);
-                    GridContent pane = (GridContent) dtde.getTransferable()
-                            .getTransferData(PaneTransferable.PANE_FLAVOR);
-                    movePaneToNewTab(pane);
                     dtde.dropComplete(true);
                 } catch (Exception e) {
-                    LOG.warn("pane drop onto tab strip failed", e);
+                    LOG.warn("drop onto the new-tab button failed", e);
                     dtde.dropComplete(false);
                 }
             }
@@ -247,6 +272,30 @@ public final class TabPane extends JPanel {
         focusCurrentPane();
     }
 
+    /** Opens pre-built content (an RDP pane, the SFTP browser) in a fresh tab. */
+    public void openContentInNewTab(GridContent content) {
+        PaneGrid fresh = newGrid();
+        insertGrid(fresh);
+        fresh.initEmpty();
+        fresh.placeContentInActive(content);
+        decorateTab(fresh);
+    }
+
+    /**
+     * Opens an RDP session dropped onto {@code grid}: {@code placer} puts it where it was dropped,
+     * and when there is no room there (or nothing to place into: {@code placer} null) it gets a new
+     * tab, which is also where RDP opens by default. Never replaces a pane.
+     */
+    private void openRdp(RdpSessionConfig cfg, java.util.function.Predicate<GridContent> placer, PaneGrid grid) {
+        RdpPane pane = services.newRdpPane(cfg);
+        if (placer != null && placer.test(pane)) {
+            decorateTab(grid);
+        } else {
+            openContentInNewTab(pane);
+        }
+        pane.start();
+    }
+
     /** Opens an already-built session in a fresh tab (used when duplicating a pane to a new tab). */
     public void openSessionInNewTab(TerminalSession session, SessionFactory factory) {
         PaneGrid grid = newGrid();
@@ -276,6 +325,7 @@ public final class TabPane extends JPanel {
         grid.setDropHandler((cfg, placer) -> grid.openAsync(
                 (ready, failed) -> services.connectAsync(cfg, ready::accept, failed),
                 session -> placer.accept(session, sshFactory(cfg))));
+        grid.setRdpDropHandler((cfg, placer) -> openRdp(cfg, placer, grid));
         grid.setOnActiveChanged(() -> decorateTab(grid));
         grid.setOnActivity(() -> decorateTab(grid));
         grid.setOnEmpty(() -> closeTabForGrid(grid));
@@ -342,6 +392,15 @@ public final class TabPane extends JPanel {
         if (grid != null) {
             grid.focusActivePane();
         }
+    }
+
+    /** The content of every cell in every tab of this strip (a snapshot). */
+    public List<GridContent> allContents() {
+        List<GridContent> out = new ArrayList<>();
+        for (PaneGrid grid : realGrids()) {
+            out.addAll(grid.contents());
+        }
+        return out;
     }
 
     /** Terminates every session in this strip (called when a detached window is closed). */
@@ -511,7 +570,8 @@ public final class TabPane extends JPanel {
             return; // leave the current label (e.g. an SSH tab that's still connecting)
         }
         if (!(content instanceof TerminalPane pane)) {
-            tabs.setIconAt(idx, IconLibrary.get().icon("builtin/folder", 16));
+            String iconId = content.tabIconId();
+            tabs.setIconAt(idx, IconLibrary.get().icon(iconId != null ? iconId : "builtin/folder", 16));
             tabs.setTitleAt(idx, content.displayTitle());
             setTabColor(idx, null);
             applyActivityIndicator(idx, grid, content);
@@ -801,9 +861,10 @@ public final class TabPane extends JPanel {
         // connection — the same action as its ⋮ menu and the keyboard shortcut. Offered only when
         // there is one to rename: an SFTP tab has no connection name, and an SSH tab that is still
         // connecting has no active pane yet.
-        if (grid.activeContent() instanceof TerminalPane pane) {
+        GridContent renamable = grid.activeContent();
+        if (renamable != null && renamable.canRename()) {
             JMenuItem rename = new JMenuItem("Rename Connection…");
-            rename.addActionListener(a -> pane.promptRename());
+            rename.addActionListener(a -> renamable.promptRename());
             menu.add(rename);
             menu.addSeparator();
         }

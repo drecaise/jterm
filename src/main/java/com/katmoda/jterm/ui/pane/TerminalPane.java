@@ -315,7 +315,13 @@ public final class TerminalPane extends JPanel implements GridContent, Broadcast
      * because the point of the dialog is its text field, which {@code JOptionPane} would leave
      * unfocused behind the OK button.
      */
-    public void promptRename() {
+    @Override
+    public boolean canRename() {
+        return true;
+    }
+
+    @Override
+    public boolean promptRename() {
         JTextField field = new JTextField(customName == null ? "" : customName, 24);
         JPanel panel = new JPanel(new BorderLayout(0, 6));
         panel.add(new JLabel("Name for this connection:"), BorderLayout.NORTH);
@@ -327,6 +333,7 @@ public final class TerminalPane extends JPanel implements GridContent, Broadcast
         if (choice == JOptionPane.OK_OPTION) {
             setCustomName(field.getText());
         }
+        return true;
     }
 
     public void setOnFocus(Runnable onFocus) {
@@ -343,6 +350,7 @@ public final class TerminalPane extends JPanel implements GridContent, Broadcast
     }
 
     /** Fired when this pane's rendered name changes (a rename, or a new working directory). */
+    @Override
     public void setOnTitleChanged(Runnable onTitleChanged) {
         this.onTitleChanged = onTitleChanged;
     }

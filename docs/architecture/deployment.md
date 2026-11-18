@@ -46,6 +46,11 @@ distros; the RPM bundles a Temurin JRE, so neither needs a system Java.
     `xdg-desktop-menu` scriptlets that copied `jterm-jterm.desktop` untracked into
     `/usr/local/share/applications`.
 
+- **RDP helper** — `jterm-rdp-helper` and its FreeRDP libraries are bundled in every Linux
+  package (`rdp/` in the install dir; a FreeRDP module in the Flatpak manifest), linked against the
+  system's OpenSSL 3 and zlib. No H.264 codec is bundled: every Linux package (RPM, DEB, snap,
+  Flatpak, jar) downloads Cisco's OpenH264 on opt-in.
+
 ## Windows
 
 Distributed as an MSI built by `jpackage` (`.github/workflows/release.yml`).
@@ -62,10 +67,13 @@ Distributed as an MSI built by `jpackage` (`.github/workflows/release.yml`).
   `PageantAgentProxy` (Pageant listens on a hidden window; the proxy talks to it via
   `WM_COPYDATA`). When both are live, `CompositeSshAgent` fronts them so identities
   from both sources are offered to MINA.
+- **RDP helper** — bundled with FreeRDP, OpenSSL and the MSVC runtime. It is a GUI-subsystem
+  program (no console window), so jterm pipes and drains its stderr. H.264 uses Windows' own Media
+  Foundation decoder.
 
 ## macOS
 
-Distributed as a DMG built by `jpackage`.
+Distributed as two DMGs built by `jpackage` — `-arm64` (Apple Silicon) and `-x64` (Intel, including x86_64 macOS VMs). Each is native to its build runner, so neither runs on the other architecture.
 
 ```mermaid
 --8<-- "architecture/model/generated/deployment-macos.mmd"
@@ -77,6 +85,13 @@ Distributed as a DMG built by `jpackage`.
   (`/private/tmp/com.apple.launchd.*/Listeners`). Same `JdkAgentProxy` code as Linux.
 - Notarisation is not currently automated — the DMG is unsigned and users see the
   Gatekeeper prompt on first launch.
+- **RDP helper** — `jterm.app/Contents/app/rdp/`, built on each DMG's own runner (so arm64 or
+  x86_64, macOS 11+) by `build-freerdp-macos.sh` and `build-macos.sh`. It bundles FreeRDP, OpenSSL
+  and cJSON, built from pinned sources rather than Homebrew (whose libraries only load on the macOS
+  version they were built on), and takes only libc, zlib and Apple's frameworks from the system.
+  The libraries find each other through `@loader_path` and are re-signed ad hoc after their paths
+  are rewritten, which Apple Silicon requires. H.264 comes from VideoToolbox, part of macOS. The
+  release job runs the helper from the finished DMG before uploading it.
 
 ## Anti-patterns explicitly rejected
 

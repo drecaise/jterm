@@ -1,0 +1,73 @@
+---
+config:
+  flowchart:
+    padding: 16
+---
+%%{init: {'theme':'base','themeVariables':{'edgeLabelBackground':'transparent','lineColor':'#8b95a1','fontFamily':'-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','useMaxWidth':true}}}%%
+graph TB
+
+  subgraph diagram ["jterm - jterm JVM process - Components"]
+    style diagram fill:transparent,stroke:transparent
+
+    6("<div style='font-weight: bold'>Local file system</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>OS config dir under<br />~/.config/jterm etc.; holds<br />sessions.json,<br />credentials.json, icons.json,<br />keymap.json.</div>")
+    style 6 fill:#6c757d,stroke:#4b5157,color:#ffffff
+    7("<div style='font-weight: bold'>Remote desktop server</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>RDP server (Windows Remote<br />Desktop, GNOME Remote<br />Desktop) reached over TCP<br />with TLS and NLA.</div>")
+    style 7 fill:#6c757d,stroke:#4b5157,color:#ffffff
+    8("<div style='font-weight: bold'>RD Gateway</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Remote Desktop Gateway:<br />forwards an RDP connection<br />over HTTPS into a network the<br />client can't reach directly.</div>")
+    style 8 fill:#6c757d,stroke:#4b5157,color:#ffffff
+    9("<div style='font-weight: bold'>Cisco OpenH264 host</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>ciscobinary.openh264.org:<br />Cisco's OpenH264 decoder,<br />downloaded on the user's<br />opt-in (Linux only).</div>")
+    style 9 fill:#6c757d,stroke:#4b5157,color:#ffffff
+    115("<div style='font-weight: bold'>jterm-rdp-helper</div><div style='font-size: 70%; margin-top: 0px'>[Container: C / FreeRDP 3]</div><div style='font-size: 80%; margin-top:10px'>Small C client embedding<br />FreeRDP 3, one process per<br />RDP connection. Speaks RDP<br />and decodes frames; holds no<br />secret beyond the one<br />password it is handed, so a<br />server-triggered FreeRDP bug<br />stays out of the JVM and away<br />from the vault.</div>")
+    style 115 fill:#5e35b1,stroke:#41257b,color:#ffffff
+
+    subgraph 11 [jterm JVM process]
+      style 11 fill:transparent,stroke:#155fa0,color:#155fa0
+
+      12("<div style='font-weight: bold'>MainWindow</div><div style='font-size: 70%; margin-top: 0px'>[Component: Swing]</div><div style='font-size: 80%; margin-top:10px'>Top-level JFrame; installs<br />the global KeyEventDispatcher<br />for keymap shortcuts.</div>")
+      style 12 fill:#42a5f5,stroke:#2e73ab,color:#ffffff
+      15("<div style='font-weight: bold'>PaneGrid</div><div style='font-size: 70%; margin-top: 0px'>[Component: Swing]</div><div style='font-size: 80%; margin-top:10px'>Uniform 3x3 R x C grid;<br />weight-sized rows/cols with<br />draggable gutter dividers<br />(WeightedGridLayout).</div>")
+      style 15 fill:#42a5f5,stroke:#2e73ab,color:#ffffff
+      17("<div style='font-weight: bold'>SessionSidebar</div><div style='font-size: 70%; margin-top: 0px'>[Component: Swing]</div><div style='font-size: 80%; margin-top:10px'>Tree of folders and SSH<br />sessions; drag source for DnD<br />launches.</div>")
+      style 17 fill:#42a5f5,stroke:#2e73ab,color:#ffffff
+      21("<div style='font-weight: bold'>RdpPane</div><div style='font-size: 70%; margin-top: 0px'>[Component: Swing]</div><div style='font-size: 80%; margin-top:10px'>GridContent that paints the<br />remote desktop and turns<br />Swing input into RDP input;<br />places itself, then connects<br />(directly or through an SSH<br />forward).</div>")
+      style 21 fill:#42a5f5,stroke:#2e73ab,color:#ffffff
+      22("<div style='font-weight: bold'>RdpDropHandler</div><div style='font-size: 70%; margin-top: 0px'>[Component: Swing DnD]</div><div style='font-size: 80%; margin-top:10px'>PaneGrid hook for an RDP<br />drop; TabPane builds the<br />pane, places it as a split (a<br />new tab when full) and starts<br />it.</div>")
+      style 22 fill:#42a5f5,stroke:#2e73ab,color:#ffffff
+      23("<div style='font-weight: bold'>RdpClipboardBridge</div><div style='font-size: 70%; margin-top: 0px'>[Component: AWT datatransfer]</div><div style='font-size: 80%; margin-top:10px'>Joins the system clipboard to<br />one session's clipboard<br />channel: delayed rendering,<br />ownership-aware, opt-in per<br />session.</div>")
+      style 23 fill:#42a5f5,stroke:#2e73ab,color:#ffffff
+      33("<div style='font-weight: bold'>SshConnect</div><div style='font-size: 70%; margin-top: 0px'>[Component: Apache MINA SSHD]</div><div style='font-size: 80%; margin-top:10px'>Connect + auth for every hop<br />(shell, SFTP, tunnels); owns<br />the jump-host chain.</div>")
+      style 33 fill:#26a69a,stroke:#1a746b,color:#ffffff
+      35("<div style='font-weight: bold'>RdpConnection</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>Starts the helper (install<br />dir only, never PATH) and<br />speaks the versioned binary<br />protocol (RdpProtocol) over<br />its stdin/stdout.</div>")
+      style 35 fill:#26a69a,stroke:#1a746b,color:#ffffff
+      36("<div style='font-weight: bold'>OpenH264</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>Linux: downloads Cisco's<br />OpenH264 on opt-in, checks<br />the pinned SHA-256, stamps<br />the install with that pin and<br />refreshes it when the pin<br />moves.</div>")
+      style 36 fill:#26a69a,stroke:#1a746b,color:#ffffff
+      39("<div style='font-weight: bold'>CredentialResolver</div><div style='font-size: 70%; margin-top: 0px'>[Component: Java]</div><div style='font-size: 80%; margin-top:10px'>Resolves SSH, jump-host and<br />RDP credentials from vault or<br />prompt.</div>")
+      style 39 fill:#ef5350,stroke:#a73a38,color:#ffffff
+      41("<div style='font-weight: bold'>RdpKnownHosts</div><div style='font-size: 70%; margin-top: 0px'>[Component: Jackson]</div><div style='font-size: 80%; margin-top:10px'>TOFU store of pinned RDP<br />certificate fingerprints<br />(SHA-256), handed to the<br />helper on connect.</div>")
+      style 41 fill:#ef5350,stroke:#a73a38,color:#ffffff
+      43("<div style='font-weight: bold'>JsonStore</div><div style='font-size: 70%; margin-top: 0px'>[Component: Jackson]</div><div style='font-size: 80%; margin-top:10px'>Atomic Jackson-based<br />persistence with corrupt-file<br />preservation.</div>")
+      style 43 fill:#8d6e63,stroke:#624d45,color:#ffffff
+    end
+
+    43-. "<div style='padding:4px 8px'><div>Atomic writes to the OS<br />config dir</div><div style='font-size: 70%'></div></div>" .->6
+    35-. "<div style='padding:4px 8px'><div>Versioned binary protocol<br />over stdin/stdout</div><div style='font-size: 70%'></div></div>" .->115
+    115-. "<div style='padding:4px 8px'><div>RDP over TCP with TLS<br />(FreeRDP)</div><div style='font-size: 70%'></div></div>" .->7
+    115-. "<div style='padding:4px 8px'><div>RD Gateway protocol over<br />HTTPS, when the session uses<br />one</div><div style='font-size: 70%'></div></div>" .->8
+    115-. "<div style='padding:4px 8px'><div>Loads the downloaded OpenH264<br />by full path (Linux)</div><div style='font-size: 70%'></div></div>" .->6
+    8-. "<div style='padding:4px 8px'><div>Forwards the RDP connection</div><div style='font-size: 70%'></div></div>" .->7
+    12-. "<div style='padding:4px 8px'><div>Opens RDP sessions from the<br />sidebar (a new tab by<br />default)</div><div style='font-size: 70%'></div></div>" .->21
+    15-. "<div style='padding:4px 8px'><div>Owns RDP cells (GridContent)</div><div style='font-size: 70%'></div></div>" .->21
+    17-. "<div style='padding:4px 8px'><div>Drags an RDP session onto a<br />pane or the new-tab button</div><div style='font-size: 70%'></div></div>" .->22
+    22-. "<div style='padding:4px 8px'><div>Places the pane as a split,<br />or opens a new tab when there<br />is no room</div><div style='font-size: 70%'></div></div>" .->15
+    22-. "<div style='padding:4px 8px'><div>Creates and starts the pane</div><div style='font-size: 70%'></div></div>" .->21
+    21-. "<div style='padding:4px 8px'><div>Resolves the password (vault<br />or prompt); saves a typed one<br />once connected</div><div style='font-size: 70%'></div></div>" .->39
+    21-. "<div style='padding:4px 8px'><div>Passes pinned fingerprints;<br />pins a certificate the user<br />accepted</div><div style='font-size: 70%'></div></div>" .->41
+    21-. "<div style='padding:4px 8px'><div>Gets the current codec's<br />path; starts an update when<br />it is outdated</div><div style='font-size: 70%'></div></div>" .->36
+    21-. "<div style='padding:4px 8px'><div>Starts one helper per<br />connect; sends input,<br />receives frames</div><div style='font-size: 70%'></div></div>" .->35
+    21-. "<div style='padding:4px 8px'><div>Owns the session's clipboard<br />sharing, when enabled</div><div style='font-size: 70%'></div></div>" .->23
+    21-. "<div style='padding:4px 8px'><div>Through a saved SSH session:<br />opens a loopback forward<br />(LocalForward) per connect</div><div style='font-size: 70%'></div></div>" .->33
+    23-. "<div style='padding:4px 8px'><div>Announces, fetches and<br />answers clipboard requests</div><div style='font-size: 70%'></div></div>" .->35
+    41-. "<div style='padding:4px 8px'><div>Persists rdp_known_hosts.json</div><div style='font-size: 70%'></div></div>" .->43
+    36-. "<div style='padding:4px 8px'><div>Downloads Cisco's build<br />(HTTPS, pinned SHA-256)</div><div style='font-size: 70%'></div></div>" .->9
+    36-. "<div style='padding:4px 8px'><div>Stores the codec and its pin<br />stamp under the config dir</div><div style='font-size: 70%'></div></div>" .->6
+  end

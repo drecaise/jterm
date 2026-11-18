@@ -14,6 +14,9 @@ finish-args:
   - --socket=wayland
   - --socket=ssh-auth          # forwards SSH_AUTH_SOCK so ssh-agent auth works
   - --device=dri
+  - --socket=cups              # RDP print jobs: Java's print dialog talks to CUPS (lists and prints to local printers)
+  - --socket=pcsc              # RDP smart cards: jterm talks to the host's pcscd (sets PCSCLITE_CSOCK_NAME)
+  - --socket=pulseaudio        # RDP sound through Java Sound (playback and, later, the microphone: Flatpak has no playback-only permission)
   - --filesystem=home          # ~/.ssh keys + known_hosts, app config, SFTP transfers
   - --talk-name=org.freedesktop.secrets   # libsecret-backed keyring (see note below)
   - --talk-name=org.freedesktop.Flatpak   # flatpak-spawn --host: run the local terminal's shell on the host, not in the sandbox
@@ -23,6 +26,150 @@ modules:
     buildsystem: simple
     build-commands:
       - /usr/lib/sdk/openjdk21/install.sh
+
+  # ---- RDP helper (native/rdp-helper) and the FreeRDP it runs ----
+  # Built against the runtime's OpenSSL and zlib. FreeRDP's version must match
+  # native/rdp-helper/FREERDP_VERSION (every target bundles the same one); tarballs are pinned by
+  # sha256. Libraries go to /app/lib (on the sandbox's default library path), the helper to
+  # /app/lib/jterm/rdp, where RdpHelperLocator looks when FLATPAK_ID is set.
+  - name: cjson
+    buildsystem: cmake-ninja
+    builddir: true
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DENABLE_CJSON_TEST=OFF
+      - -DENABLE_CJSON_UTILS=OFF
+      - -DBUILD_SHARED_AND_STATIC_LIBS=OFF
+      # cJSON 1.7.19 still declares cmake_minimum_required < 3.5, which the SDK's CMake 4 refuses.
+      - -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+    # flatpak-builder records each module's LICENSE under /app/share/licenses/<app-id>/<module>/.
+    cleanup:
+      - /include
+      - /lib/cmake
+      - /lib/pkgconfig
+    sources:
+      - type: archive
+        url: https://github.com/DaveGamble/cJSON/archive/refs/tags/v1.7.19.tar.gz
+        sha256: 7fa616e3046edfa7a28a32d5f9eacfd23f92900fe1f8ccd988c1662f30454562
+
+  - name: freerdp
+    buildsystem: cmake-ninja
+    builddir: true                 # FreeRDP refuses in-source builds
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DCMAKE_INSTALL_LIBDIR=lib
+      - -DBUILD_SHARED_LIBS=ON
+      - -DWITH_CLIENT_COMMON=ON
+      - -DWITH_CLIENT=OFF
+      - -DWITH_CLIENT_SDL=OFF
+      - -DWITH_X11=OFF
+      - -DWITH_WAYLAND=OFF
+      - -DWITH_SERVER=OFF
+      - -DWITH_SHADOW=OFF
+      - -DWITH_PROXY=OFF
+      - -DWITH_SAMPLE=OFF
+      # H.264: OpenH264 is loaded at run time and never bundled (Cisco's patent license covers only
+      # the binary Cisco delivers to the user: jterm downloads it on opt-in, as in the other Linux
+      # packages, since the 25.08 runtime has no OpenH264 extension). The build needs only its
+      # headers, plus a placeholder file for configure's library check; neither lands in the app.
+      # See native/rdp-helper/build-freerdp-linux.sh.
+      - -DWITH_OPENH264=ON
+      - -DWITH_OPENH264_LOADING=ON
+      - -DOPENH264_INCLUDE_DIR=/run/build/freerdp/openh264-src/codec/api
+      - -DOPENH264_LIBRARY=/run/build/freerdp/openh264-src/libopenh264.so
+      - -DWITH_FFMPEG=OFF
+      - -DWITH_SWSCALE=OFF
+      - -DWITH_WEBVIEW=OFF
+      - -DWITH_MANPAGES=OFF
+      - -DWITH_PULSE=OFF
+      - -DWITH_ALSA=OFF
+      - -DWITH_OSS=OFF
+      - -DWITH_CUPS=OFF
+      - -DWITH_PCSC=OFF
+      - -DWITH_FUSE=OFF
+      - -DWITH_KRB5=OFF
+      - -DWITH_PKCS11=OFF
+      - -DWITH_URIPARSER=OFF
+      - -DCHANNEL_URBDRC=OFF
+      - -DWITH_CJSON_REQUIRED=ON
+      - -DWITH_UNICODE_BUILTIN=ON
+      - -DWITH_SYSTEMD=OFF
+      - -DWITH_WINPR_TOOLS=OFF
+      - -DWITH_VERBOSE_WINPR_ASSERT=OFF
+      - -DBUILD_TESTING=OFF
+      - -DWITH_INTERNAL_RC4=ON
+      - -DWITH_INTERNAL_MD4=ON
+      - -DWITH_INTERNAL_MD5=ON
+    cleanup:
+      - /bin
+      - /include
+      - /lib/cmake
+      - /lib/pkgconfig
+    sources:
+      - type: archive
+        url: https://github.com/FreeRDP/FreeRDP/archive/refs/tags/3.33.0.tar.gz
+        sha256: 3b5e7733e667ad66f54e0db51d952268c9d08b2e71a4fade44c716ab29dd5657
+      # jterm's own changes to FreeRDP, the same ones build-freerdp-*.sh apply (each patch says why).
+      # A new file in native/rdp-helper/patches needs a line here too.
+      - type: patch
+        path: ../../native/rdp-helper/patches/0001-no-system-certificate-config.patch
+      - type: patch
+        path: ../../native/rdp-helper/patches/0002-no-system-config-files.patch
+      # OpenH264 headers (BSD) — keep the version in step with OH264_VERSION in build-freerdp-linux.sh.
+      - type: archive
+        url: https://github.com/cisco/openh264/archive/refs/tags/v2.7.0.tar.gz
+        sha256: 5178775c8b440073e70920e97d195efff721c0e56d0a78cc82c919e95d54924d
+        strip-components: 1
+        dest: openh264-src
+      - type: inline
+        contents: placeholder
+        dest: openh264-src
+        dest-filename: libopenh264.so
+
+  - name: jterm-rdp-helper
+    buildsystem: simple
+    build-commands:
+      # JTERM_AAC_FFMPEG: the runtime has no libfaad, so AAC sound is decoded by the runtime's own
+      # FFmpeg (src/aac_ffmpeg.c), opened at run time by absolute path, never bundled.
+      - cmake -S . -B _build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/app -DJTERM_AAC_FFMPEG=ON
+      - cmake --build _build
+      - install -Dm755 _build/jterm-rdp-helper /app/lib/jterm/rdp/jterm-rdp-helper
+    sources:
+      - type: dir
+        path: ../../native/rdp-helper
+        skip:
+          - build
+          - spike
+
+  # ---- RDP smart cards: pcsc-lite's client library ----
+  # The runtime has no libpcsclite, so the Flatpak carries the client half of pcsc-lite; it talks to
+  # the host's pcscd over the socket --socket=pcsc mounts (PCSCLITE_CSOCK_NAME). JnaPcsc loads
+  # /app/lib/libpcsclite.so.1 (it searches /app/lib only inside the Flatpak). The daemon, spy tool
+  # and headers are built but removed. Client/daemon protocol: 2.5.x speaks 4:6 and falls back to
+  # the 4:4 of an older pcscd (pcsc-lite 1.8.24-2.4, e.g. RHEL 10's 2.2.3) when that one refuses 4:6.
+  # Release tarballs are signed by Ludovic Rousseau (key F5E1 1B9F FE91 1146 F41D 953D 78A1 B4DF E8F9 C57E).
+  - name: pcsc-lite
+    buildsystem: meson
+    config-opts:
+      - -Dlibsystemd=false
+      - -Dlibudev=false
+      - -Dpolkit=false
+      - -Dusb=false
+      - -Dserial=false
+    cleanup:
+      - /bin
+      - /sbin
+      - /etc
+      - /include
+      - /lib/pkgconfig
+      - /lib/libpcscspy.*
+      - /share/doc
+      - /share/man
+      - /share/metainfo
+    sources:
+      - type: archive
+        url: https://pcsclite.apdu.fr/files/pcsc-lite-2.5.3.tar.xz
+        sha256: fe2bb733ecf95e52768907eb00da9f9f3daf180960283e514a05dcc090afa3bd
 
   - name: jterm
     buildsystem: simple

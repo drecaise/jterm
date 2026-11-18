@@ -39,6 +39,28 @@ Concretely:
   (see [ADR 0005](adr/0005-per-os-keyring-clis.md)). Never touches the vault
   contents, only the master password.
 
+## RDP
+
+- **Passwords** for RDP sessions live in the same vault under the session's id, resolved by
+  `CredentialResolver` (vault first, else a prompt). A typed password marked "remember" is saved
+  only after the server accepts it, and a rejected one re-prompts.
+- **Certificates** are pinned by SHA-256 in `rdp_known_hosts.json` (`RdpKnownHosts`); there is
+  no switch to ignore certificate errors. The helper refuses the legacy standard RDP security
+  layer, which has no certificate and would let a man-in-the-middle bypass the pin.
+- **RD Gateway** — a separate gateway password is kept under its own vault key
+  (`VaultKeys.rdpGatewayPassword`), saved only after a successful connect and removed with the
+  session; the gateway's certificate is pinned like the desktop's.
+- **NLA by default.** A session requires Network Level Authentication unless it allows TLS without
+  NLA (per session, for xrdp and the like). Under NLA the server proves it knows the password's
+  hash before the password is sent, so accepting a wrong certificate on first use does not give the
+  password away.
+- **The helper boundary** — the password reaches the helper process in one message over a pipe;
+  the vault, the master password and every other secret stay in the JVM. That is the point of the
+  out-of-process design ([ADR 0012](adr/0012-rdp-via-out-of-process-freerdp.md)), and why the
+  helper is never looked up on `PATH`.
+
+See [Components — RDP](components-rdp.md) for the clipboard and codec rules.
+
 ## Where the EDT matters
 
 Every unlock step is intentionally synchronous on the EDT because it may need to raise

@@ -23,7 +23,9 @@ import com.formdev.flatlaf.extras.FlatSVGIcon;
 import com.formdev.flatlaf.util.UIScale;
 import com.katmoda.jterm.dnd.FolderTransferable;
 import com.katmoda.jterm.dnd.LocalTransferable;
+import com.katmoda.jterm.dnd.RdpTransferable;
 import com.katmoda.jterm.dnd.SessionTransferable;
+import com.katmoda.jterm.dnd.UnknownNodeTransferable;
 import com.katmoda.jterm.dnd.WslTransferable;
 import com.katmoda.jterm.icon.IconLibrary;
 import com.katmoda.jterm.highlight.HighlightLibrary;
@@ -32,12 +34,14 @@ import com.katmoda.jterm.macro.MacroLibrary;
 import com.katmoda.jterm.session.EncryptedSessionExport;
 import com.katmoda.jterm.session.FolderNode;
 import com.katmoda.jterm.session.JumpHostConfig;
+import com.katmoda.jterm.session.RdpSessionConfig;
 import com.katmoda.jterm.session.SessionExport;
 import com.katmoda.jterm.session.SessionExportService;
 import com.katmoda.jterm.session.SessionNode;
 import com.katmoda.jterm.session.SessionStore;
 import com.katmoda.jterm.session.SshSessionConfig;
 import com.katmoda.jterm.session.SshTarget;
+import com.katmoda.jterm.session.UnknownSessionNode;
 import com.katmoda.jterm.session.WslDistroNode;
 import com.katmoda.jterm.terminal.wsl.WslDistributions;
 import com.katmoda.jterm.security.CredentialVault;
@@ -47,6 +51,7 @@ import com.katmoda.jterm.security.VaultManager;
 import com.katmoda.jterm.ui.ErrorDialog;
 import com.katmoda.jterm.ui.security.MasterPasswordDialog;
 import com.katmoda.jterm.ui.component.DialogFocus;
+import com.katmoda.jterm.ui.component.FormGrid;
 import com.katmoda.jterm.ui.component.FileNames;
 import com.katmoda.jterm.ui.component.FooterFileChooser;
 import com.katmoda.jterm.ui.component.HighlightListCombo;
@@ -66,6 +71,8 @@ import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
+import javax.swing.ButtonGroup;
+import javax.swing.JRadioButton;
 import javax.swing.JMenu;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
@@ -139,6 +146,7 @@ public final class SessionSidebar extends JPanel {
     private final BiConsumer<String, OpenMode> onOpenWsl;
     private final Consumer<SshSessionConfig> onOpenSftp;
     private final BiConsumer<FolderNode, FolderOpenMode> onOpenFolder;
+    private final BiConsumer<RdpSessionConfig, OpenMode> onOpenRdp;
 
     /**
      * The pinned, non-editable "WSL" folder of runtime-detected WSL2 distributions, or
@@ -158,7 +166,8 @@ public final class SessionSidebar extends JPanel {
                           Consumer<OpenMode> onOpenLocal,
                           BiConsumer<String, OpenMode> onOpenWsl,
                           Consumer<SshSessionConfig> onOpenSftp,
-                          BiConsumer<FolderNode, FolderOpenMode> onOpenFolder) {
+                          BiConsumer<FolderNode, FolderOpenMode> onOpenFolder,
+                          BiConsumer<RdpSessionConfig, OpenMode> onOpenRdp) {
         super(new BorderLayout());
         this.store = store;
         this.onOpenSsh = onOpenSsh;
@@ -166,6 +175,7 @@ public final class SessionSidebar extends JPanel {
         this.onOpenWsl = onOpenWsl;
         this.onOpenSftp = onOpenSftp;
         this.onOpenFolder = onOpenFolder;
+        this.onOpenRdp = onOpenRdp;
         this.wslFolder = isWindows() ? new FolderNode("WSL") : null;
 
         this.model = new DefaultTreeModel(buildRoot());
@@ -190,12 +200,18 @@ public final class SessionSidebar extends JPanel {
                 if (node instanceof SshSessionConfig ssh) {
                     return new SessionTransferable(ssh);
                 }
+                if (node instanceof RdpSessionConfig rdp) {
+                    return new RdpTransferable(rdp); // folder moves, and opening onto a pane or "+"
+                }
                 if (node instanceof FolderNode folder
                         && folder != store.root() && folder != wslFolder) {
                     return new FolderTransferable(folder); // root / WSL folder stay put
                 }
                 if (node instanceof WslDistroNode wsl) {
                     return new WslTransferable(wsl.distro());
+                }
+                if (node instanceof UnknownSessionNode unknown) {
+                    return new UnknownNodeTransferable(unknown); // moves only: nothing to launch
                 }
                 return null;
             }
@@ -209,7 +225,9 @@ public final class SessionSidebar extends JPanel {
                 if (target == null) {
                     return false;
                 }
-                if (support.isDataFlavorSupported(SessionTransferable.SESSION_FLAVOR)) {
+                if (support.isDataFlavorSupported(SessionTransferable.SESSION_FLAVOR)
+                        || support.isDataFlavorSupported(RdpTransferable.RDP_FLAVOR)
+                        || support.isDataFlavorSupported(UnknownNodeTransferable.UNKNOWN_NODE_FLAVOR)) {
                     return true;
                 }
                 if (support.isDataFlavorSupported(FolderTransferable.FOLDER_FLAVOR)) {
@@ -236,6 +254,14 @@ public final class SessionSidebar extends JPanel {
                         FolderNode dragged = (FolderNode) support.getTransferable()
                                 .getTransferData(FolderTransferable.FOLDER_FLAVOR);
                         return moveFolder(dragged, target);
+                    }
+                    if (support.isDataFlavorSupported(RdpTransferable.RDP_FLAVOR)) {
+                        return moveSession((SessionNode) support.getTransferable()
+                                .getTransferData(RdpTransferable.RDP_FLAVOR), target);
+                    }
+                    if (support.isDataFlavorSupported(UnknownNodeTransferable.UNKNOWN_NODE_FLAVOR)) {
+                        return moveSession((SessionNode) support.getTransferable()
+                                .getTransferData(UnknownNodeTransferable.UNKNOWN_NODE_FLAVOR), target);
                     }
                     SshSessionConfig dragged = (SshSessionConfig) support.getTransferable()
                             .getTransferData(SessionTransferable.SESSION_FLAVOR);
@@ -394,6 +420,7 @@ public final class SessionSidebar extends JPanel {
         bar.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
         bar.add(iconButton("icons/folder-plus.svg", "New folder", e -> newFolder()));
         bar.add(iconButton("icons/terminal-plus.svg", "New SSH session", e -> newSsh()));
+        bar.add(iconButton("icons/rdp-plus.svg", "New RDP session", e -> newRdp()));
         return bar;
     }
 
@@ -595,14 +622,14 @@ public final class SessionSidebar extends JPanel {
         if (uo instanceof FolderNode folder) {
             return folder == wslFolder ? null : folder; // can't drop into the runtime WSL folder
         }
-        if (uo instanceof SshSessionConfig ssh) {
-            return parentFolderOf(ssh); // dropping onto a session targets its containing folder
+        if (uo instanceof SshSessionConfig || uo instanceof RdpSessionConfig || uo instanceof UnknownSessionNode) {
+            return parentFolderOf((SessionNode) uo); // dropping onto a session targets its folder
         }
         return null;
     }
 
     /** Reparents {@code session} into {@code target}. Returns whether anything changed. */
-    private boolean moveSession(SshSessionConfig session, FolderNode target) {
+    private boolean moveSession(SessionNode session, FolderNode target) {
         FolderNode current = parentFolderOf(session);
         if (current == null || target == null || target == current) {
             return false;
@@ -897,6 +924,8 @@ public final class SessionSidebar extends JPanel {
         SessionNode node = selectedNode();
         if (node instanceof SshSessionConfig ssh) {
             onOpenSsh.accept(ssh, OpenMode.NEW_TAB);
+        } else if (node instanceof RdpSessionConfig rdp) {
+            onOpenRdp.accept(rdp, OpenMode.NEW_TAB);
         } else if (node instanceof WslDistroNode wsl) {
             onOpenWsl.accept(wsl.distro(), OpenMode.NEW_TAB);
         }
@@ -909,6 +938,8 @@ public final class SessionSidebar extends JPanel {
     public void duplicateSelected() {
         if (selectedNode() instanceof SshSessionConfig ssh) {
             duplicateSession(ssh);
+        } else if (selectedNode() instanceof RdpSessionConfig rdp) {
+            duplicateRdp(rdp);
         }
     }
 
@@ -1067,15 +1098,51 @@ public final class SessionSidebar extends JPanel {
             menu.add(duplicate);
             menu.add(delete);
             addMoveItems(menu, ssh);
+        } else if (node instanceof RdpSessionConfig rdp) {
+            JMenuItem open = new JMenuItem("Open");
+            open.addActionListener(a -> onOpenRdp.accept(rdp, OpenMode.NEW_TAB));
+            JMenuItem openActive = new JMenuItem("Open in Active Pane");
+            openActive.addActionListener(a -> onOpenRdp.accept(rdp, OpenMode.ACTIVE));
+            JMenu split = new JMenu("Open in Split Pane");
+            JMenuItem right = new JMenuItem("Split Right (new column)");
+            right.addActionListener(a -> onOpenRdp.accept(rdp, OpenMode.SPLIT_COLUMN));
+            JMenuItem below = new JMenuItem("Split Below (new row)");
+            below.addActionListener(a -> onOpenRdp.accept(rdp, OpenMode.SPLIT_ROW));
+            split.add(right);
+            split.add(below);
+            JMenuItem edit = new JMenuItem("Edit…");
+            edit.addActionListener(a -> editRdp(rdp));
+            JMenuItem duplicate = new JMenuItem("Duplicate");
+            duplicate.addActionListener(a -> duplicateRdp(rdp));
+            JMenuItem delete = new JMenuItem("Delete");
+            delete.addActionListener(a -> deleteSelected());
+            menu.add(open);
+            menu.add(openActive);
+            menu.add(split);
+            menu.addSeparator();
+            menu.add(edit);
+            menu.add(duplicate);
+            menu.add(delete);
+            addMoveItems(menu, rdp);
+        } else if (node instanceof UnknownSessionNode unknown) {
+            // Saved by a newer jterm: this build can't open, edit or copy it, only keep it where the
+            // user wants it or remove it.
+            JMenuItem delete = new JMenuItem("Delete");
+            delete.addActionListener(a -> deleteSelected());
+            menu.add(delete);
+            addMoveItems(menu, unknown);
         } else {
             JMenuItem newFolder = new JMenuItem("New Folder…");
             newFolder.addActionListener(a -> newFolder());
             JMenuItem newSsh = new JMenuItem("New SSH Session…");
             newSsh.addActionListener(a -> newSsh());
+            JMenuItem newRdp = new JMenuItem("New RDP Session…");
+            newRdp.addActionListener(a -> newRdp());
             menu.add(newFolder);
             menu.add(newSsh);
+            menu.add(newRdp);
             if (node instanceof FolderNode folder) {
-                if (!SessionStore.collectSshSessions(folder).isEmpty()) {
+                if (!SessionStore.collectOpenableSessions(folder).isEmpty()) {
                     JMenuItem openSplit = new JMenuItem("Open All in Split Panes");
                     openSplit.addActionListener(a -> onOpenFolder.accept(folder, FolderOpenMode.SPLIT_TABS));
                     JMenuItem openTabs = new JMenuItem("Open All in Separate Tabs");
@@ -1234,6 +1301,435 @@ public final class SessionSidebar extends JPanel {
         if (showFolderDialog(folder, "Edit Folder")) {
             rebuild();
         }
+    }
+
+    // ---- RDP sessions ----
+
+    private void newRdp() {
+        RdpSessionConfig cfg = new RdpSessionConfig();
+        FolderNode dest = showRdpDialog(cfg, "New RDP Session", targetFolder());
+        if (dest != null) {
+            dest.getChildren().add(cfg);
+            rebuild();
+        }
+    }
+
+    private void editRdp(RdpSessionConfig rdp) {
+        FolderNode current = parentFolderOf(rdp);
+        FolderNode dest = showRdpDialog(rdp, "Edit RDP Session", current);
+        if (dest == null) {
+            return;
+        }
+        if (current != null && dest != current) {
+            current.getChildren().remove(rdp);
+            dest.getChildren().add(rdp);
+        }
+        rebuild();
+    }
+
+    /** Like {@link #duplicateSession}: a prefilled dialog for a copy with a fresh id and no password. */
+    private void duplicateRdp(RdpSessionConfig original) {
+        RdpSessionConfig copy = original.copyWithNewId();
+        copy.setName(uniqueDuplicateName(original.getName()));
+        FolderNode parent = parentFolderOf(original);
+        FolderNode dest = showRdpDialog(copy, "Duplicate RDP Session",
+                parent != null ? parent : store.root());
+        if (dest != null) {
+            dest.getChildren().add(copy);
+            rebuild();
+        }
+    }
+
+    /**
+     * Tabbed form dialog ("Basic settings", "Display", "Local resources"); mutates {@code cfg} on OK. Returns the
+     * folder chosen for the session, or {@code null} if cancelled.
+     */
+    private FolderNode showRdpDialog(RdpSessionConfig cfg, String title, FolderNode initialFolder) {
+        JTextField name = new JTextField(cfg.getName());
+        JTextField host = new JTextField(cfg.getHost());
+        JTextField port = new JTextField(String.valueOf(cfg.getPort()));
+        JTextField user = new JTextField(cfg.getUser());
+        JTextField domain = new JTextField(cfg.getDomain());
+        domain.putClientProperty("JTextField.placeholderText", "(none)");
+
+        boolean hasSaved = cfg.isSavePassword()
+                && VaultManager.get().vault().hasPassword(VaultKeys.sessionPassword(cfg.getId()));
+        ToggleSwitch savePassword = new ToggleSwitch(cfg.isSavePassword());
+        JPasswordField password = new JPasswordField();
+        password.putClientProperty("JTextField.placeholderText",
+                hasSaved ? "(leave blank to keep saved)" : "(prompt on connect)");
+        Runnable syncPassword = () -> password.setEnabled(savePassword.isSelected());
+        savePassword.addActionListener(a -> syncPassword.run());
+        syncPassword.run();
+
+        String[] iconId = {cfg.getIconId()};
+        Icon fallback = IconLibrary.get().icon("builtin/rdp", 16);
+        JButton iconBtn = new JButton();
+        updateIconButton(iconBtn, iconId[0], fallback);
+        iconBtn.addActionListener(a -> {
+            String picked = IconPickerDialog.pick(this, deletedId -> {
+                revertDeletedIcon(deletedId);
+                if (deletedId.equals(iconId[0])) {
+                    iconId[0] = null;
+                    updateIconButton(iconBtn, iconId[0], fallback);
+                }
+            });
+            if (picked != null) {
+                iconId[0] = picked.isEmpty() ? null : picked;
+                updateIconButton(iconBtn, iconId[0], fallback);
+            }
+        });
+
+        List<FolderOption> folders = folderOptions();
+        JComboBox<FolderOption> folderCombo = new JComboBox<>(folders.toArray(new FolderOption[0]));
+        for (FolderOption option : folders) {
+            if (option.folder() == initialFolder) {
+                folderCombo.setSelectedItem(option);
+                break;
+            }
+        }
+
+        FormGrid basic = new FormGrid();
+        basic.row("Name:", name);
+        basic.row("Folder:", folderCombo);
+        basic.row("Host:", host);
+        basic.row("Port:", port);
+        basic.row("User:", user);
+        basic.row("Domain:", domain);
+        basic.row("Icon:", iconBtn);
+        basic.row("Save password:", savePassword);
+        basic.row("Password:", password);
+
+        JComboBox<String> sizing = new JComboBox<>(new String[]{"Fit to pane", "Fixed resolution"});
+        sizing.setSelectedIndex(cfg.getWidthMode() == RdpSessionConfig.WidthMode.FIXED ? 1 : 0);
+        JTextField width = new JTextField(String.valueOf(cfg.getWidth()));
+        JTextField height = new JTextField(String.valueOf(cfg.getHeight()));
+        Runnable syncSizing = () -> {
+            boolean fixed = sizing.getSelectedIndex() == 1;
+            width.setEnabled(fixed);
+            height.setEnabled(fixed);
+        };
+        sizing.addActionListener(a -> syncSizing.run());
+        syncSizing.run();
+        sizing.setToolTipText("Fit to pane asks the server to resize its desktop whenever the pane "
+                + "changes size; a fixed resolution is scaled to fit the pane.");
+
+        FormGrid display = new FormGrid();
+        display.row("Desktop size:", sizing);
+        display.row("Width (pixels):", width);
+        display.row("Height (pixels):", height);
+
+        ToggleSwitch shareClipboard = new ToggleSwitch(cfg.isRedirectClipboard());
+        ToggleSwitch clipboardToRemote = new ToggleSwitch(cfg.isClipboardToRemote());
+        ToggleSwitch filesToRemote = new ToggleSwitch(cfg.isClipboardFilesToRemote());
+        ToggleSwitch filesToLocal = new ToggleSwitch(cfg.isClipboardFilesToLocal());
+        Runnable syncClipboard = () -> {
+            clipboardToRemote.setEnabled(shareClipboard.isSelected());
+            filesToLocal.setEnabled(shareClipboard.isSelected());
+            filesToRemote.setEnabled(shareClipboard.isSelected() && clipboardToRemote.isSelected());
+        };
+        shareClipboard.addActionListener(a -> syncClipboard.run());
+        clipboardToRemote.addActionListener(a -> syncClipboard.run());
+        syncClipboard.run();
+        shareClipboard.setToolTipText("Text and images the remote desktop copies are placed on this "
+                + "computer's clipboard, without asking.");
+        clipboardToRemote.setToolTipText("Lets the remote desktop paste what is on this computer's "
+                + "clipboard. Nothing is sent until an application there pastes. Off: sharing runs one "
+                + "way, remote to local.");
+        filesToLocal.setToolTipText("Files and folders copied on the remote desktop can be saved on this "
+                + "computer with \"Save files...\" in the session's bar. Nothing is written until you "
+                + "pick a folder.");
+        filesToRemote.setToolTipText("Lets the remote desktop paste files and folders copied on this "
+                + "computer. Each copy asks before anything is sent; links are never followed, and "
+                + "jterm's own settings and your SSH keys are never included.");
+
+        ToggleSwitch playSound = new ToggleSwitch(cfg.isPlaySound());
+        playSound.setToolTipText("Plays the remote desktop's sound through this computer's speakers. "
+                + "Off: the remote desktop is told there is no sound device here.");
+        ToggleSwitch useMicrophone = new ToggleSwitch(cfg.isUseMicrophone());
+        useMicrophone.setToolTipText("Lets the remote desktop ask for this computer's microphone. Until you "
+                + "allow it, the remote desktop hears silence. Off: it is told there is no microphone here.");
+        JLabel microphoneHint = new JLabel("jterm asks before the remote computer can listen, once per connection.");
+        microphoneHint.setEnabled(false);
+
+        ToggleSwitch printToJterm = new ToggleSwitch(cfg.isPrintToJterm());
+        printToJterm.setToolTipText("Gives the remote desktop a printer called \"jterm\". What is printed to it "
+                + "arrives here as a PDF and waits in the session's bar. Off: the remote desktop sees no printer.");
+        ToggleSwitch printerIsDefault = new ToggleSwitch(cfg.isPrinterIsDefault());
+        printerIsDefault.setToolTipText("Makes \"jterm\" the default printer in the remote session.");
+        String askEachTime = "Ask each time";
+        javax.swing.JComboBox<String> autoPrint = new javax.swing.JComboBox<>();
+        autoPrint.addItem(askEachTime);
+        for (javax.print.PrintService ps : javax.print.PrintServiceLookup.lookupPrintServices(null, null)) {
+            autoPrint.addItem(ps.getName());
+        }
+        if (!cfg.getAutoPrintPrinter().isBlank()) {
+            boolean present = false;
+            for (int i = 0; i < autoPrint.getItemCount(); i++) {
+                present |= autoPrint.getItemAt(i).equals(cfg.getAutoPrintPrinter());
+            }
+            if (!present) {
+                autoPrint.addItem(cfg.getAutoPrintPrinter()); // not connected now: keep the choice
+            }
+            autoPrint.setSelectedItem(cfg.getAutoPrintPrinter());
+        }
+        autoPrint.setToolTipText("<html>\"Ask each time\": every job waits until you print, save or discard it.<br>"
+                + "A printer: jobs print there straight away, up to "
+                + com.katmoda.jterm.terminal.rdp.print.AutoPrintLimiter.MAX_PAGES + " pages a job and "
+                + com.katmoda.jterm.terminal.rdp.print.AutoPrintLimiter.MAX_JOBS
+                + " jobs in 10 minutes;<br>anything more waits for you. Only for servers you trust.</html>");
+        Runnable syncPrinter = () -> {
+            printerIsDefault.setEnabled(printToJterm.isSelected());
+            autoPrint.setEnabled(printToJterm.isSelected());
+        };
+        printToJterm.addActionListener(a -> syncPrinter.run());
+        syncPrinter.run();
+        JLabel printerHint = new JLabel("Print jobs wait in the session's bar until you print or save them.");
+        printerHint.setEnabled(false);
+
+        ToggleSwitch useSmartCards = new ToggleSwitch(cfg.isUseSmartCards());
+        useSmartCards.setToolTipText("Lets the remote desktop use smart cards in the readers ticked below. "
+                + "Off: the remote desktop sees no smart-card reader.");
+        com.katmoda.jterm.ui.rdp.SmartCardReadersEditor smartCardReaders =
+                new com.katmoda.jterm.ui.rdp.SmartCardReadersEditor(cfg.getSmartCardReaders());
+        Runnable syncSmartCards = () -> smartCardReaders.setEnabled(useSmartCards.isSelected());
+        useSmartCards.addActionListener(a -> syncSmartCards.run());
+        syncSmartCards.run();
+        JLabel smartCardHint = new JLabel("<html><body style='width: " + UIScale.scale(340) + "px'>jterm asks "
+                + "before the remote computer can use a card, once per connection. A PIN you type in the remote "
+                + "desktop is visible to that computer.</body></html>");
+        smartCardHint.setEnabled(false);
+
+        FormGrid resourcesForm = new FormGrid();
+        resourcesForm.row("Share clipboard:", shareClipboard);
+        resourcesForm.row("Copy files to this computer:", filesToLocal);
+        resourcesForm.row("Remote can paste mine:", clipboardToRemote);
+        resourcesForm.row("Remote can paste my files:", filesToRemote);
+        resourcesForm.row("Play sound on this computer:", playSound);
+        resourcesForm.row("Use this computer's microphone:", useMicrophone);
+        resourcesForm.row("", microphoneHint);
+        resourcesForm.row("Print through jterm:", printToJterm);
+        resourcesForm.row("Make it the default printer:", printerIsDefault);
+        resourcesForm.row("Print without asking on:", autoPrint);
+        resourcesForm.row("", printerHint);
+        resourcesForm.row("Use smart cards:", useSmartCards);
+        resourcesForm.row("Readers:", smartCardReaders);
+        resourcesForm.row("", smartCardHint);
+        com.katmoda.jterm.ui.rdp.SharedFoldersEditor sharedFolders =
+                new com.katmoda.jterm.ui.rdp.SharedFoldersEditor(cfg.getDriveShares());
+        JPanel resources = new JPanel(new BorderLayout(0, UIScale.scale(10)));
+        resources.add(resourcesForm, BorderLayout.NORTH);
+        resources.add(sharedFolders, BorderLayout.CENTER);
+
+        ToggleSwitch allowTls = new ToggleSwitch(cfg.isAllowTlsWithoutNla());
+        allowTls.setToolTipText("Also connect to servers that offer TLS but not Network Level "
+                + "Authentication, such as xrdp.");
+        FormGrid securityForm = new FormGrid();
+        securityForm.row("Allow TLS without NLA:", allowTls);
+        JLabel securityHint = new JLabel("<html><body style='width: " + UIScale.scale(340) + "px'>"
+                + "Off (the default), the server must support Network Level Authentication: it proves "
+                + "it knows your password before the password is sent, which protects it even if a "
+                + "fake server's certificate is accepted on first connect.<br><br>"
+                + "Turn it on for servers that can't do NLA, such as xrdp. The server's certificate "
+                + "is still checked. The older RDP security layer, which can't check it, is always "
+                + "refused.</body></html>");
+        securityHint.setBorder(BorderFactory.createEmptyBorder(UIScale.scale(10), 0, 0, 0));
+        // Windows only: the other systems' helpers have no Kerberos at all, and no restricted token.
+        boolean onWindows = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win");
+        ToggleSwitch useKerberos = new ToggleSwitch(cfg.isUseKerberos());
+        useKerberos.setToolTipText("Sign in with Windows' own authentication, which can use Kerberos. "
+                + "Needed for servers in a domain that refuses NTLM.");
+        JLabel kerberosHint = new JLabel("<html><body style='width: " + UIScale.scale(340) + "px'>"
+                + "jterm normally signs in with NTLM, from a helper that can't read your files or saved "
+                + "passwords. Windows won't let such a restricted program use its own sign-in, so with "
+                + "Kerberos on, this session's helper runs with fewer restrictions. Use it only for "
+                + "servers that need it.</body></html>");
+        kerberosHint.setBorder(BorderFactory.createEmptyBorder(UIScale.scale(10), 0, 0, 0));
+        if (onWindows) {
+            securityForm.row("Use Windows sign-in (Kerberos):", useKerberos);
+        }
+        JPanel securityHints = new JPanel();
+        securityHints.setLayout(new javax.swing.BoxLayout(securityHints, javax.swing.BoxLayout.Y_AXIS));
+        securityHint.setAlignmentX(0f);
+        kerberosHint.setAlignmentX(0f);
+        securityHints.add(securityHint);
+        if (onWindows) {
+            securityHints.add(kerberosHint);
+        }
+        JPanel security = new JPanel(new BorderLayout());
+        security.add(securityForm, BorderLayout.NORTH);
+        security.add(securityHints, BorderLayout.CENTER);
+
+        // Gateway: how the desktop is reached. Directly, through a saved SSH session (its jump
+        // hosts, keys and saved password apply), or through an RD Gateway: one route at a time.
+        // An SSH session id that no longer resolves stays visible as "missing" rather than
+        // silently turning into a direct connection.
+        List<SshChoice> sshChoices = new ArrayList<>();
+        SshChoice selectedSsh = null;
+        for (SshSessionConfig ssh : SessionStore.collectSshSessions(store.root())) {
+            SshChoice choice = new SshChoice(ssh.getId(), ssh.getName() + "  (" + ssh.getHost()
+                    + (ssh.getPort() != 22 ? ":" + ssh.getPort() : "") + ")");
+            sshChoices.add(choice);
+            if (ssh.getId().equals(cfg.getSshTunnelSessionId())) {
+                selectedSsh = choice;
+            }
+        }
+        if (cfg.isViaSsh() && selectedSsh == null) {
+            selectedSsh = new SshChoice(cfg.getSshTunnelSessionId(), "(missing SSH session)");
+            sshChoices.add(selectedSsh);
+        }
+        JComboBox<SshChoice> viaSsh = new JComboBox<>(sshChoices.toArray(new SshChoice[0]));
+        if (selectedSsh != null) {
+            viaSsh.setSelectedItem(selectedSsh);
+        }
+
+        JRadioButton routeDirect = new JRadioButton("Directly");
+        JRadioButton routeSsh = new JRadioButton("Through an SSH session");
+        // "experimental": built against FreeRDP's gateway code and a fake server, never run against a
+        // real RD Gateway. Drop the word (here, in the hint below and in docs/rdp-sessions.md) once it has.
+        JRadioButton routeGateway = new JRadioButton("Through an RD Gateway (experimental)");
+        ButtonGroup routes = new ButtonGroup();
+        routes.add(routeDirect);
+        routes.add(routeSsh);
+        routes.add(routeGateway);
+        (cfg.isViaGateway() ? routeGateway : cfg.isViaSsh() ? routeSsh : routeDirect).setSelected(true);
+        routeSsh.setEnabled(!sshChoices.isEmpty());
+        routeSsh.setToolTipText(sshChoices.isEmpty() ? "You have no saved SSH sessions." : null);
+
+        JTextField gwHost = new JTextField(cfg.getGatewayHost());
+        gwHost.putClientProperty("JTextField.placeholderText", "gateway.example.com");
+        JTextField gwPort = new JTextField(String.valueOf(cfg.getGatewayPort()));
+        ToggleSwitch gwSame = new ToggleSwitch(cfg.isGatewaySameCredentials());
+        gwSame.setToolTipText("Sign in to the gateway with the desktop's user name, domain and password "
+                + "(the usual setup).");
+        JTextField gwUser = new JTextField(cfg.getGatewayUser());
+        JTextField gwDomain = new JTextField(cfg.getGatewayDomain());
+        gwDomain.putClientProperty("JTextField.placeholderText", "(none)");
+        boolean gwHasSaved = cfg.isSaveGatewayPassword() && VaultManager.get().vault()
+                .hasPassword(VaultKeys.rdpGatewayPassword(cfg.getId()));
+        ToggleSwitch gwSavePassword = new ToggleSwitch(cfg.isSaveGatewayPassword());
+        JPasswordField gwPassword = new JPasswordField();
+        gwPassword.putClientProperty("JTextField.placeholderText",
+                gwHasSaved ? "(leave blank to keep saved)" : "(prompt on connect)");
+
+        Runnable syncRoute = () -> {
+            viaSsh.setEnabled(routeSsh.isSelected());
+            boolean gw = routeGateway.isSelected();
+            gwHost.setEnabled(gw);
+            gwPort.setEnabled(gw);
+            gwSame.setEnabled(gw);
+            boolean own = gw && !gwSame.isSelected();
+            gwUser.setEnabled(own);
+            gwDomain.setEnabled(own);
+            gwSavePassword.setEnabled(own);
+            gwPassword.setEnabled(own && gwSavePassword.isSelected());
+        };
+        for (javax.swing.AbstractButton b : List.of(routeDirect, routeSsh, routeGateway, gwSame, gwSavePassword)) {
+            b.addActionListener(a -> syncRoute.run());
+        }
+        syncRoute.run();
+
+        JPanel routePanel = new JPanel(new GridLayout(0, 1, 0, UIScale.scale(2)));
+        routePanel.add(routeDirect);
+        routePanel.add(routeSsh);
+        routePanel.add(routeGateway);
+        FormGrid gatewayForm = new FormGrid();
+        gatewayForm.row("SSH session:", viaSsh);
+        gatewayForm.row("Gateway host:", gwHost);
+        gatewayForm.row("Gateway port:", gwPort);
+        gatewayForm.row("Use desktop credentials:", gwSame);
+        gatewayForm.row("Gateway user:", gwUser);
+        gatewayForm.row("Gateway domain:", gwDomain);
+        gatewayForm.row("Save gateway password:", gwSavePassword);
+        gatewayForm.row("Gateway password:", gwPassword);
+        JLabel gatewayHint = new JLabel("<html><body style='width: " + UIScale.scale(340) + "px'>"
+                + "<b>Through an SSH session</b>, the host and port on the Basic settings tab are "
+                + "reached from the SSH server: use <b>localhost</b> for a desktop on the SSH server "
+                + "itself. The SSH session's own jump hosts, keys and saved password are used.<br><br>"
+                + "<b>Through an RD Gateway</b>, the gateway forwards the connection over HTTPS, as "
+                + "in a company network. Its certificate is checked and pinned like the desktop's."
+                + " This route is experimental: it has not been tested against a real gateway yet."
+                + "<br><br>Either way, the desktop's certificate is checked against the host name you "
+                + "entered.</body></html>");
+        gatewayHint.setBorder(BorderFactory.createEmptyBorder(UIScale.scale(10), 0, 0, 0));
+        JPanel gatewayTop = new JPanel(new BorderLayout(0, UIScale.scale(8)));
+        gatewayTop.add(routePanel, BorderLayout.NORTH);
+        gatewayTop.add(gatewayForm, BorderLayout.CENTER);
+        JPanel gateway = new JPanel(new BorderLayout());
+        gateway.add(gatewayTop, BorderLayout.NORTH);
+        gateway.add(gatewayHint, BorderLayout.CENTER);
+
+        FormGrid.alignLabels(basic, display, resourcesForm, securityForm, gatewayForm);
+        JTabbedPane tabs = new JTabbedPane();
+        tabs.addTab("Basic settings", FormGrid.tab(basic));
+        tabs.addTab("Display", FormGrid.tab(display));
+        tabs.addTab("Local resources", FormGrid.tab(resources, true));
+        tabs.addTab("Security", FormGrid.tab(security));
+        tabs.addTab("Gateway", FormGrid.tab(gateway));
+        applySessionDialogWidth(tabs);
+
+        int result = DialogFocus.showConfirm(this, tabs, title, name);
+        if (result != JOptionPane.OK_OPTION) {
+            java.util.Arrays.fill(password.getPassword(), '\0');
+            return null;
+        }
+        cfg.setName(blankToDefault(name.getText(), "rdp"));
+        cfg.setHost(host.getText());
+        cfg.setUser(user.getText());
+        cfg.setDomain(domain.getText());
+        cfg.setIconId(iconId[0]);
+        try {
+            cfg.setPort(Integer.parseInt(port.getText().trim()));
+        } catch (NumberFormatException ex) {
+            cfg.setPort(RdpSessionConfig.DEFAULT_PORT);
+        }
+        cfg.setWidthMode(sizing.getSelectedIndex() == 1
+                ? RdpSessionConfig.WidthMode.FIXED : RdpSessionConfig.WidthMode.FIT_TO_TAB);
+        try {
+            cfg.setWidth(Integer.parseInt(width.getText().trim()));
+            cfg.setHeight(Integer.parseInt(height.getText().trim()));
+        } catch (NumberFormatException ex) {
+            // keep the previous size
+        }
+        cfg.setRedirectClipboard(shareClipboard.isSelected());
+        cfg.setClipboardToRemote(clipboardToRemote.isSelected());
+        cfg.setClipboardFilesToRemote(filesToRemote.isSelected());
+        cfg.setClipboardFilesToLocal(filesToLocal.isSelected());
+        cfg.setPlaySound(playSound.isSelected());
+        cfg.setUseMicrophone(useMicrophone.isSelected());
+        cfg.setPrintToJterm(printToJterm.isSelected());
+        cfg.setPrinterIsDefault(printerIsDefault.isSelected());
+        Object autoPrinter = autoPrint.getSelectedItem();
+        cfg.setAutoPrintPrinter(autoPrinter == null || askEachTime.equals(autoPrinter) ? "" : autoPrinter.toString());
+        cfg.setUseSmartCards(useSmartCards.isSelected());
+        cfg.setSmartCardReaders(smartCardReaders.readers());
+        cfg.setDriveShares(sharedFolders.shares());
+        cfg.setAllowTlsWithoutNla(allowTls.isSelected());
+        if (onWindows) {
+            cfg.setUseKerberos(useKerberos.isSelected());
+        }
+        // One route at a time: choosing one clears the other's setting.
+        SshChoice via = (SshChoice) viaSsh.getSelectedItem();
+        cfg.setSshTunnelSessionId(routeSsh.isSelected() && via != null ? via.id() : "");
+        cfg.setGatewayHost(routeGateway.isSelected() ? gwHost.getText() : "");
+        try {
+            cfg.setGatewayPort(Integer.parseInt(gwPort.getText().trim()));
+        } catch (NumberFormatException ex) {
+            cfg.setGatewayPort(RdpSessionConfig.DEFAULT_GATEWAY_PORT);
+        }
+        cfg.setGatewaySameCredentials(gwSame.isSelected());
+        cfg.setGatewayUser(gwUser.getText());
+        cfg.setGatewayDomain(gwDomain.getText());
+        boolean ownGatewayPassword = routeGateway.isSelected() && !gwSame.isSelected()
+                && gwSavePassword.isSelected();
+        cfg.setSaveGatewayPassword(applyVaultPassword(VaultKeys.rdpGatewayPassword(cfg.getId()),
+                ownGatewayPassword, gwPassword.getPassword()));
+        // On: a typed password is stored, a blank field keeps any saved one. Off: forget it.
+        cfg.setSavePassword(applyVaultPassword(VaultKeys.sessionPassword(cfg.getId()),
+                savePassword.isSelected(), password.getPassword()));
+
+        FolderOption chosen = (FolderOption) folderCombo.getSelectedItem();
+        return chosen != null ? chosen.folder() : initialFolder;
     }
 
     /** Shared name + icon dialog for creating and editing folders. Mutates {@code folder} on OK. */
@@ -1450,22 +1946,22 @@ public final class SessionSidebar extends JPanel {
         // Custom tab color: a swatch to pick, plus Clear to inherit (folder → global → theme default).
         TabColorPicker tabColor = new TabColorPicker(cfg.getTabColorHex(), "Inherit");
 
-        JPanel basic = formPanel();
-        row(basic, "Name:", name);
-        row(basic, "Folder:", folderCombo);
-        row(basic, "Host:", host);
-        row(basic, "Port:", port);
-        row(basic, "User:", user);
-        row(basic, "Icon:", iconBtn);
-        row(basic, "Forward ssh-agent:", agent);
-        row(basic, "Keep connection alive:", keepAlive.component());
-        row(basic, "Key file:", keyFile.component());
-        row(basic, "Key passphrase:", keyPassphrase);
-        row(basic, "Password auth:", passwordAuth);
-        row(basic, "Password:", password);
-        row(basic, "Run macro on connect:", macroCombo);
-        row(basic, "Output highlighting:", highlightCombo);
-        row(basic, "Tab color:", tabColor.component());
+        FormGrid basic = new FormGrid();
+        basic.row("Name:", name);
+        basic.row("Folder:", folderCombo);
+        basic.row("Host:", host);
+        basic.row("Port:", port);
+        basic.row("User:", user);
+        basic.row("Icon:", iconBtn);
+        basic.row("Forward ssh-agent:", agent);
+        basic.row("Keep connection alive:", keepAlive.component());
+        basic.row("Key file:", keyFile.component());
+        basic.row("Key passphrase:", keyPassphrase);
+        basic.row("Password auth:", passwordAuth);
+        basic.row("Password:", password);
+        basic.row("Run macro on connect:", macroCombo);
+        basic.row("Output highlighting:", highlightCombo);
+        basic.row("Tab color:", tabColor.component());
 
         // ---- Terminal settings ---- (blank fields inherit the application defaults)
         TerminalSettingsForm terminalSettings = new TerminalSettingsForm(true,
@@ -1474,10 +1970,12 @@ public final class SessionSidebar extends JPanel {
         // ---- Jump hosts ---- (up to 4 chained bastions; empty means a direct connection)
         JumpHostsForm jumpHostsForm = new JumpHostsForm(cfg.getJumpHosts());
 
+        FormGrid.alignLabels(basic, terminalSettings.component());
         JTabbedPane tabs = new JTabbedPane();
-        tabs.addTab("Basic settings", basic);
-        tabs.addTab("Terminal Settings", terminalSettings.component());
-        tabs.addTab("Jump Hosts", jumpHostsForm.component());
+        tabs.addTab("Basic settings", FormGrid.tab(basic));
+        tabs.addTab("Terminal Settings", FormGrid.tab(terminalSettings.component()));
+        tabs.addTab("Jump Hosts", FormGrid.tab(jumpHostsForm.component(), true));
+        applySessionDialogWidth(tabs);
 
         int result = DialogFocus.showConfirm(this, tabs, title, name);
         if (result != JOptionPane.OK_OPTION) {
@@ -1536,13 +2034,28 @@ public final class SessionSidebar extends JPanel {
     }
 
 
-    private static JPanel formPanel() {
-        return new JPanel(new GridLayout(0, 2, 6, 6));
+    /**
+     * Minimum width of the SSH and RDP session dialogs, in design pixels (scaled at use). A tabbed
+     * pane is as wide as its widest page, and the SSH pages hold wide forms (the terminal-settings
+     * font list, jump hosts) where the RDP pages are short fields in a grid, so left alone the RDP
+     * dialog opened visibly narrower. One shared floor keeps them alike without measuring a
+     * throwaway SSH form on every open; the SSH dialog may still grow past it where the installed
+     * fonts have longer names (448 px measured for "Red Hat Display ExtraBold Italic").
+     */
+    private static final int SESSION_DIALOG_MIN_WIDTH = 480;
+
+    private static void applySessionDialogWidth(JTabbedPane tabs) {
+        Dimension pref = tabs.getPreferredSize();
+        tabs.setPreferredSize(new Dimension(Math.max(pref.width, UIScale.scale(SESSION_DIALOG_MIN_WIDTH)),
+                pref.height));
     }
 
-    private static void row(JPanel form, String label, JComponent field) {
-        form.add(new JLabel(label));
-        form.add(field);
+    /** An entry of the RDP dialog's "Through SSH session" list: an SSH session id and its label. */
+    private record SshChoice(String id, String label) {
+        @Override
+        public String toString() {
+            return label;
+        }
     }
 
     /**
@@ -1619,6 +2132,9 @@ public final class SessionSidebar extends JPanel {
             for (JumpHostConfig jh : ssh.getJumpHosts()) {
                 vault.removePassword(jh.getId());
             }
+        } else if (node instanceof RdpSessionConfig rdp) {
+            vault.removePassword(VaultKeys.sessionPassword(rdp.getId()));
+            vault.removePassword(VaultKeys.rdpGatewayPassword(rdp.getId()));
         } else if (node instanceof FolderNode folder) {
             vault.removePassword(VaultKeys.folderPassword(folder.getId()));
             vault.removePassword(VaultKeys.folderKeyPassphrase(folder.getId()));

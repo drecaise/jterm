@@ -8,7 +8,7 @@ The easiest way to run jterm is a pre-built binary from the
 | Platform | Asset | Install / run |
 |----------|-------|---------------|
 | Windows | `jterm-<version>.msi` | Run the installer |
-| macOS | `jterm-<version>.dmg` | Open the disk image, drag jterm to Applications |
+| macOS | `jterm-<version>-arm64.dmg` (Apple Silicon) or `-x64.dmg` (Intel) | Open the disk image, drag jterm to Applications |
 | Linux | `jterm-<version>.flatpak` | `flatpak install jterm-<version>.flatpak` |
 | Linux (RHEL family) | `jterm-<version>.x86_64.rpm` | `sudo dnf install ./jterm-<version>.x86_64.rpm` |
 | Linux | `jterm-<version>.snap` | `sudo snap install --classic --dangerous jterm-<version>.snap` |

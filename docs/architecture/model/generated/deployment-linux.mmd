@@ -9,41 +9,49 @@ graph TB
   subgraph diagram ["jterm - Deployment - Linux"]
     style diagram fill:transparent,stroke:transparent
 
-    subgraph 102 [Linux workstation]
-      style 102 fill:transparent,stroke:#888888,color:#6b7280
+    subgraph 137 [Linux workstation]
+      style 137 fill:transparent,stroke:#888888,color:#6b7280
 
-      subgraph 103 [Flatpak sandbox]
-        style 103 fill:transparent,stroke:#888888,color:#6b7280
+      subgraph 138 [Flatpak sandbox]
+        style 138 fill:transparent,stroke:#888888,color:#6b7280
 
-        104("<div style='font-weight: bold'>jterm JVM process</div><div style='font-size: 70%; margin-top: 0px'>[Container: Java 21 / Swing]</div><div style='font-size: 80%; margin-top:10px'>Java 21 Swing app; single OS<br />process hosting every<br />component.</div>")
-        style 104 fill:#1e88e5,stroke:#155fa0,color:#ffffff
+        139("<div style='font-weight: bold'>jterm JVM process</div><div style='font-size: 70%; margin-top: 0px'>[Container: Java 21 / Swing]</div><div style='font-size: 80%; margin-top:10px'>Java 21 Swing app; single OS<br />process hosting every<br />component.</div>")
+        style 139 fill:#1e88e5,stroke:#155fa0,color:#ffffff
+        140("<div style='font-weight: bold'>jterm-rdp-helper</div><div style='font-size: 70%; margin-top: 0px'>[Container: C / FreeRDP 3]</div><div style='font-size: 80%; margin-top:10px'>Small C client embedding<br />FreeRDP 3, one process per<br />RDP connection. Speaks RDP<br />and decodes frames; holds no<br />secret beyond the one<br />password it is handed, so a<br />server-triggered FreeRDP bug<br />stays out of the JVM and away<br />from the vault.</div>")
+        style 140 fill:#5e35b1,stroke:#41257b,color:#ffffff
       end
 
-      subgraph 105 [RPM-installed jterm]
-        style 105 fill:transparent,stroke:#888888,color:#6b7280
+      subgraph 142 [RPM-installed jterm]
+        style 142 fill:transparent,stroke:#888888,color:#6b7280
 
-        106("<div style='font-weight: bold'>jterm JVM process</div><div style='font-size: 70%; margin-top: 0px'>[Container: Java 21 / Swing]</div><div style='font-size: 80%; margin-top:10px'>Java 21 Swing app; single OS<br />process hosting every<br />component.</div>")
-        style 106 fill:#1e88e5,stroke:#155fa0,color:#ffffff
+        143("<div style='font-weight: bold'>jterm JVM process</div><div style='font-size: 70%; margin-top: 0px'>[Container: Java 21 / Swing]</div><div style='font-size: 80%; margin-top:10px'>Java 21 Swing app; single OS<br />process hosting every<br />component.</div>")
+        style 143 fill:#1e88e5,stroke:#155fa0,color:#ffffff
+        145("<div style='font-weight: bold'>jterm-rdp-helper</div><div style='font-size: 70%; margin-top: 0px'>[Container: C / FreeRDP 3]</div><div style='font-size: 80%; margin-top:10px'>Small C client embedding<br />FreeRDP 3, one process per<br />RDP connection. Speaks RDP<br />and decodes frames; holds no<br />secret beyond the one<br />password it is handed, so a<br />server-triggered FreeRDP bug<br />stays out of the JVM and away<br />from the vault.</div>")
+        style 145 fill:#5e35b1,stroke:#41257b,color:#ffffff
       end
 
-      subgraph 107 [secret-tool]
-        style 107 fill:transparent,stroke:#888888,color:#6b7280
+      subgraph 148 [secret-tool]
+        style 148 fill:transparent,stroke:#888888,color:#6b7280
 
-        108("<div style='font-weight: bold'>OS keyring</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>secret-tool (Linux), security<br />(macOS) or Windows Credential<br />Store.</div>")
-        style 108 fill:#6c757d,stroke:#4b5157,color:#ffffff
+        149("<div style='font-weight: bold'>OS keyring</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>secret-tool (Linux), security<br />(macOS) or Windows Credential<br />Store.</div>")
+        style 149 fill:#6c757d,stroke:#4b5157,color:#ffffff
       end
 
-      subgraph 111 [ssh-agent]
-        style 111 fill:transparent,stroke:#888888,color:#6b7280
+      subgraph 152 [ssh-agent]
+        style 152 fill:transparent,stroke:#888888,color:#6b7280
 
-        112("<div style='font-weight: bold'>SSH agent</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Unix-domain socket, OpenSSH<br />named pipe or PuTTY Pageant.</div>")
-        style 112 fill:#6c757d,stroke:#4b5157,color:#ffffff
+        153("<div style='font-weight: bold'>SSH agent</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Unix-domain socket, OpenSSH<br />named pipe or PuTTY Pageant.</div>")
+        style 153 fill:#6c757d,stroke:#4b5157,color:#ffffff
       end
 
     end
 
-    104-. "<div style='padding:4px 8px'><div>Reads and writes native OS<br />secret</div><div style='font-size: 70%'></div></div>" .->108
-    104-. "<div style='padding:4px 8px'><div>Named pipe / Pageant on<br />Windows</div><div style='font-size: 70%'></div></div>" .->112
-    106-. "<div style='padding:4px 8px'><div>Reads and writes native OS<br />secret</div><div style='font-size: 70%'></div></div>" .->108
-    106-. "<div style='padding:4px 8px'><div>Named pipe / Pageant on<br />Windows</div><div style='font-size: 70%'></div></div>" .->112
+    139-. "<div style='padding:4px 8px'><div>Starts one per RDP<br />connection; binary protocol<br />over stdin/stdout</div><div style='font-size: 70%'></div></div>" .->140
+    139-. "<div style='padding:4px 8px'><div>Starts one per RDP<br />connection; binary protocol<br />over stdin/stdout</div><div style='font-size: 70%'></div></div>" .->145
+    139-. "<div style='padding:4px 8px'><div>Reads and writes native OS<br />secret</div><div style='font-size: 70%'></div></div>" .->149
+    139-. "<div style='padding:4px 8px'><div>Named pipe / Pageant on<br />Windows</div><div style='font-size: 70%'></div></div>" .->153
+    143-. "<div style='padding:4px 8px'><div>Starts one per RDP<br />connection; binary protocol<br />over stdin/stdout</div><div style='font-size: 70%'></div></div>" .->140
+    143-. "<div style='padding:4px 8px'><div>Starts one per RDP<br />connection; binary protocol<br />over stdin/stdout</div><div style='font-size: 70%'></div></div>" .->145
+    143-. "<div style='padding:4px 8px'><div>Reads and writes native OS<br />secret</div><div style='font-size: 70%'></div></div>" .->149
+    143-. "<div style='padding:4px 8px'><div>Named pipe / Pageant on<br />Windows</div><div style='font-size: 70%'></div></div>" .->153
   end

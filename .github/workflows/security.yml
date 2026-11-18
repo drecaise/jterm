@@ -1,8 +1,9 @@
 name: Security
 
-# Unit tests on every push/PR, plus an OWASP dependency-vulnerability scan and an end-of-life
-# check on the Flatpak runtime and snap base. Both also run weekly so newly-disclosed CVEs in
-# pinned dependencies, and a runtime retired upstream, surface even without a code change.
+# Unit tests on every push/PR, plus an OWASP dependency-vulnerability scan, an end-of-life
+# check on the Flatpak runtime and snap base, and a check of the FreeRDP bundled with the RDP
+# helper. All also run weekly so newly-disclosed CVEs in pinned dependencies, a runtime retired
+# upstream, and a FreeRDP security release surface even without a code change.
 on:
   push:
     branches: [master]
@@ -72,3 +73,53 @@ jobs:
           sudo apt-get install -y --no-install-recommends flatpak
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
       - run: .github/check-packaging-eol.sh
+
+  # FreeRDP is native code bundled with the RDP helper on every target: invisible to the
+  # dependency scan above, and patched by no distribution -- a FreeRDP security release means a
+  # jterm release. Fails on a published advisory affecting the pin, on a newer 3.x release more
+  # than 14 days old, and on the Flatpak manifest drifting from native/rdp-helper/FREERDP_VERSION.
+  # See .github/check-freerdp.sh (runs locally too). The token only lifts the API's anonymous
+  # rate limit; everything read is public.
+  freerdp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: .github/check-freerdp.sh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  # OpenSSL and cJSON, which the macOS RDP helper builds from pinned sources and bundles (Linux
+  # takes the distribution's, Windows vcpkg's). Fails on a newer OpenSSL patch release in the pinned
+  # series, or a newer cJSON, more than 14 days old, and on a pinned sha256 that no longer matches.
+  # See .github/check-macos-deps.sh (runs locally too).
+  macos-deps:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: .github/check-macos-deps.sh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  # pcsc-lite's client library, which the Flatpak builds from a pinned tarball (the runtime has none;
+  # the RPM, DEB and Snap use the distribution's). Fails on a newer release more than 14 days old and
+  # on a pinned sha256 that no longer matches. See .github/check-pcsc-lite.sh (runs locally too).
+  pcsc-lite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: .github/check-pcsc-lite.sh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  # The OpenH264 decoder jterm downloads on Linux (and builds FreeRDP's headers against). Native,
+  # fed by the remote server, pinned by hash and so updated only by a jterm release -- the Maven scan
+  # can't see it. Fails on a published advisory affecting the pin, on a newer release more than 14
+  # days old, and on the pins (OpenH264.java, build-freerdp-linux.sh, the Flatpak manifest) drifting
+  # or no longer matching Cisco's files. See .github/check-openh264.sh (runs locally too).
+  openh264:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: .github/check-openh264.sh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
